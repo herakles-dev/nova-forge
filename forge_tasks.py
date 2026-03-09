@@ -31,8 +31,8 @@ STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     "pending":     frozenset({"in_progress", "blocked"}),
     "in_progress": frozenset({"completed", "failed", "blocked"}),
     "blocked":     frozenset({"pending", "in_progress"}),
-    "completed":   frozenset(),   # terminal
-    "failed":      frozenset(),   # terminal
+    "completed":   frozenset(),            # terminal
+    "failed":      frozenset({"pending"}), # allow retry
 }
 
 
