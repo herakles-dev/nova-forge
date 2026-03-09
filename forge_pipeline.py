@@ -354,6 +354,7 @@ class WaveExecutor:
                 self._block_dependents(failed_task_ids)
 
         self._artifact_manager.save_index()
+        self._sync_task_state()
 
         return PipelineResult(
             waves_completed=len(wave_results),
@@ -573,6 +574,25 @@ class WaveExecutor:
             ownership={"files": [], "directories": [], "patterns": []},
             description="Default fallback role",
         )
+
+    # ── Task state sync ──────────────────────────────────────────────────────
+
+    def _sync_task_state(self) -> None:
+        """Sync TaskStore counts to .forge/state/task-state.json for SessionManager."""
+        tasks = self.store.list()
+        state = {
+            "total": len(tasks),
+            "completed": sum(1 for t in tasks if t.status == "completed"),
+            "in_progress": sum(1 for t in tasks if t.status == "in_progress"),
+            "pending": sum(1 for t in tasks if t.status == "pending"),
+            "failed": sum(1 for t in tasks if t.status == "failed"),
+            "blocked": sum(1 for t in tasks if t.status == "blocked"),
+            "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        state_file = self.project_root / ".forge" / "state" / "task-state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps(state, indent=2) + "\n")
+        logger.info("Synced task state: %d/%d completed", state["completed"], state["total"])
 
     # ── Failure propagation ───────────────────────────────────────────────────
 

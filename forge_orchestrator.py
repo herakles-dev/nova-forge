@@ -1,6 +1,10 @@
-"""Nova Forge Orchestrator — wires CLI commands to pipeline execution.
+"""Nova Forge Orchestrator — V11-equivalent decision tree + pipeline execution.
 
-Handles the plan → build → deploy → status flow.
+Implements the full V11 orchestration flow:
+  detect → configure → plan → orchestrate → monitor → close
+
+The orchestrator integrates SessionManager, formation selection, DAAO routing,
+autonomy management, and the plan/build/deploy pipeline.
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from config import (
     ForgeProject, ModelConfig, get_model_config, init_forge_dir,
@@ -20,6 +24,7 @@ from config import (
 from forge_agent import ForgeAgent, AgentResult, BUILT_IN_TOOLS
 from forge_guards import PathSandbox
 from forge_hooks import HookSystem
+from forge_session import SessionManager, SessionStatus, AutonomyState, FormationState
 from forge_tasks import TaskStore, Task
 
 logger = logging.getLogger(__name__)
@@ -281,6 +286,11 @@ class ForgeOrchestrator:
 
     def handoff(self) -> str:
         """Generate continuation context for session handoff."""
+        sm = SessionManager(self.project_path)
+        if sm.is_initialized():
+            return sm.handoff()
+
+        # Fallback: basic handoff from TaskStore
         report = self.status()
         store = TaskStore(self.project.tasks_file)
         tasks = store.list()
@@ -308,3 +318,129 @@ class ForgeOrchestrator:
             lines.append("")
 
         return "\n".join(lines)
+
+    # ── V2: Session-aware methods ────────────────────────────────────────────
+
+    def detect(self) -> dict[str, Any]:
+        """Phase 1: Detect project state — V11 decision tree entry point.
+
+        Returns a state dict describing the project's readiness:
+        - initialized: bool (has .forge/)
+        - compliant: bool (all gates pass)
+        - compliance_gates: list of (name, passed, detail)
+        - has_tasks: bool
+        - task_summary: dict with counts
+        - autonomy: dict with level + history
+        - formation: dict or None
+        - needs_setup: list of issues to fix
+        """
+        sm = SessionManager(self.project_path)
+        result: dict[str, Any] = {
+            "project": self.project.name,
+            "project_path": str(self.project_path),
+            "initialized": sm.is_initialized(),
+            "compliant": False,
+            "compliance_gates": [],
+            "has_tasks": False,
+            "task_summary": {},
+            "autonomy": {},
+            "formation": None,
+            "needs_setup": [],
+        }
+
+        if not sm.is_initialized():
+            result["needs_setup"].append("Project not initialized — run 'forge new' or 'forge init'")
+            return result
+
+        # Compliance check
+        gates = sm.check_compliance()
+        result["compliance_gates"] = [(g, p, d) for g, p, d in gates]
+        result["compliant"] = all(p for _, p, _ in gates)
+
+        failed_gates = [g for g, p, _ in gates if not p]
+        if failed_gates:
+            result["needs_setup"].append(f"Failed gates: {', '.join(failed_gates)}")
+
+        # Task state
+        task_state = sm.load_task_state()
+        result["has_tasks"] = task_state.get("total", 0) > 0
+        result["task_summary"] = {
+            "total": task_state.get("total", 0),
+            "completed": task_state.get("completed", 0),
+            "in_progress": task_state.get("in_progress", 0),
+            "pending": task_state.get("pending", 0),
+            "failed": task_state.get("failed", 0),
+            "blocked": task_state.get("blocked", 0),
+        }
+
+        # Autonomy
+        autonomy = sm.load_autonomy()
+        result["autonomy"] = autonomy.to_dict()
+
+        # Formation
+        formation = sm.load_formation()
+        if formation:
+            result["formation"] = formation.to_dict()
+
+        return result
+
+    def configure(self, auto_fix: bool = True) -> list[str]:
+        """Phase 2: Configure project for V11 compliance.
+
+        Returns list of fixes applied.
+        """
+        sm = SessionManager(self.project_path)
+
+        if not sm.is_initialized():
+            sm.init()
+
+        if auto_fix:
+            return sm.auto_fix()
+
+        return []
+
+    def select_formation(
+        self, complexity: str = "medium", scope: str = "medium"
+    ) -> dict[str, Any]:
+        """Phase 3g: DAAO formation selection.
+
+        Returns formation info dict with name, roles, and recommended agents.
+        """
+        from formations import select_formation as _select, get_formation
+
+        formation = _select(complexity, scope)
+        return {
+            "name": formation.name,
+            "description": formation.description,
+            "roles": [
+                {"name": r.name, "model": r.model, "tool_policy": r.tool_policy}
+                for r in formation.roles
+            ],
+            "waves": formation.wave_order,
+            "gate_criteria": formation.gate_criteria,
+        }
+
+    def session_status(self) -> SessionStatus:
+        """Phase 5a: Full session status dashboard."""
+        sm = SessionManager(self.project_path)
+        return sm.status()
+
+    def session_handoff(self) -> str:
+        """Phase 6a: Generate rich handoff context."""
+        sm = SessionManager(self.project_path)
+        return sm.handoff()
+
+    def save_formation(self, formation_name: str, teammates: dict[str, dict]) -> None:
+        """Save a formation registry for active team work."""
+        sm = SessionManager(self.project_path)
+        state = FormationState(
+            name=formation_name,
+            project=self.project.name,
+            teammates=teammates,
+        )
+        sm.save_formation(state)
+
+    def check_compliance(self) -> list[tuple[str, bool, str]]:
+        """Run compliance gates and return results."""
+        sm = SessionManager(self.project_path)
+        return sm.check_compliance()

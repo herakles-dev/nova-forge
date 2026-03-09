@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://herakles.dev/v11/schemas/task-state.schema.json",
+  "title": "V11 Task State",
+  "description": "Schema for task-state JSON written by sync-tasks hook. Internal runtime state, not user-configured.",
+  "type": "object",
+  "properties": {
+    "project":          { "type": "string", "minLength": 1 },
+    "total":            { "type": "integer", "minimum": 0 },
+    "completed":        { "type": "integer", "minimum": 0 },
+    "pending":          { "type": "integer", "minimum": 0 },
+    "in_progress":      { "type": "integer", "minimum": 0 },
+    "blocked":          { "type": "integer", "minimum": 0 },
+    "phase":            { "type": "string" },
+    "active_task":      { "type": ["string", "null"] },
+    "active_task_ids":  { "type": "array", "items": { "type": "string" } },
+    "recent_completed": { "type": "array", "items": { "type": "string" } },
+    "task_artifacts":   { "type": "object" },
+    "last_updated":     { "type": "string" },
+    "last_session_end": { "type": "string" }
+  },
+  "required": ["project", "total", "completed", "pending"]
+}

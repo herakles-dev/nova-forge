@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from config import ModelConfig, get_model_config, get_provider
-from forge_guards import PathSandbox, RiskClassifier, RiskLevel, SandboxViolation
+from forge_guards import PathSandbox, RiskClassifier, RiskLevel, SandboxViolation, AutonomyManager
 from forge_hooks import HookSystem, HookResult
 from model_router import ModelRouter, ModelResponse, ToolCall
 
@@ -133,6 +133,7 @@ class ForgeAgent:
         tools: list[dict] | None = None,
         max_turns: int = 25,
         agent_id: str = "forge-agent",
+        wire_v11_hooks: bool = True,
     ) -> None:
         self.model_config = model_config
         self.project_root = Path(project_root).resolve()
@@ -144,6 +145,30 @@ class ForgeAgent:
         self.max_turns = max_turns
         self.agent_id = agent_id
         self.provider = get_provider(model_config.model_id)
+        self._hook_state = None
+
+        # Auto-wire V11 hooks into the active HookSystem (provided or default)
+        if wire_v11_hooks:
+            self._wire_v11_hooks()
+
+    def _wire_v11_hooks(self) -> None:
+        """Auto-wire the 12 V11 hook implementations into the HookSystem."""
+        try:
+            from forge_hooks_impl import wire_all_hooks
+            autonomy_file = self.project_root / ".forge" / "state" / "autonomy.json"
+            am = None
+            if autonomy_file.exists():
+                am = AutonomyManager(autonomy_file)
+            self._hook_state = wire_all_hooks(
+                self.hooks,
+                project_root=self.project_root,
+                autonomy_manager=am,
+            )
+            logger.debug("V11 hooks auto-wired for project: %s", self.project_root.name)
+        except ImportError:
+            logger.debug("forge_hooks_impl not available — running without V11 hooks")
+        except Exception as exc:
+            logger.warning("Failed to wire V11 hooks: %s", exc)
 
     async def run(
         self,
@@ -180,6 +205,7 @@ class ForgeAgent:
 
             # No tool calls → agent is done
             if not tool_calls:
+                await self.hooks.on_stop(project=self.project_root.name)
                 return AgentResult(
                     output=response.text,
                     turns=turn + 1,
@@ -208,6 +234,9 @@ class ForgeAgent:
                     estimated_tokens,
                     self._estimate_tokens(messages),
                 )
+
+        # Session end — fire stop hooks
+        await self.hooks.on_stop(project=self.project_root.name)
 
         return AgentResult(
             output="Max turns reached",
