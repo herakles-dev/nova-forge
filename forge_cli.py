@@ -71,11 +71,39 @@ PT_STYLE = PTStyle.from_dict({
 
 VERSION = "0.3.0"
 
-# ── State file for remembering recent projects ───────────────────────────────
+# ── Persistent state & config ────────────────────────────────────────────────
 
 STATE_DIR = Path.home() / ".forge"
 STATE_FILE = STATE_DIR / "cli_state.json"
+CONFIG_FILE = STATE_DIR / "config.json"
 HISTORY_FILE = Path.home() / ".forge_history"
+
+# Default config
+DEFAULT_CONFIG: dict[str, Any] = {
+    "default_model": "nova-lite",
+    "project_dir": str(Path.home() / "projects"),
+    "max_turns": 15,
+    "temperature": 0.3,
+    "auto_build": True,         # Auto-confirm builds in guided flow
+    "show_tips": True,
+    "theme": "default",
+}
+
+def _load_config() -> dict:
+    config = dict(DEFAULT_CONFIG)
+    if CONFIG_FILE.exists():
+        try:
+            saved = json.loads(CONFIG_FILE.read_text())
+            config.update(saved)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return config
+
+def _save_config(config: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    # Only save non-default values
+    to_save = {k: v for k, v in config.items() if k in DEFAULT_CONFIG}
+    CONFIG_FILE.write_text(json.dumps(to_save, indent=2) + "\n")
 
 def _load_state() -> dict:
     if STATE_FILE.exists():
@@ -91,10 +119,96 @@ def _save_state(state: dict) -> None:
 
 def _add_recent_project(state: dict, path: str, name: str) -> None:
     projects = state.get("recent_projects", [])
-    # Remove if already exists, then prepend
     projects = [p for p in projects if p["path"] != path]
     projects.insert(0, {"path": path, "name": name, "last_used": time.strftime("%Y-%m-%d")})
-    state["recent_projects"] = projects[:10]  # Keep last 10
+    state["recent_projects"] = projects[:10]
+
+
+# ── Credential detection ─────────────────────────────────────────────────────
+
+PROVIDER_CREDS = {
+    "bedrock": {
+        "env_vars": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+        "display": "Amazon Bedrock (Nova models)",
+        "setup_hint": (
+            "Set AWS credentials:\n"
+            "  export AWS_ACCESS_KEY_ID=your-key\n"
+            "  export AWS_SECRET_ACCESS_KEY=your-secret\n"
+            "  export AWS_DEFAULT_REGION=us-east-1\n\n"
+            "  Or: aws configure"
+        ),
+        "models": ["nova-lite", "nova-pro", "nova-premier"],
+    },
+    "openrouter": {
+        "env_vars": ["OPENROUTER_API_KEY"],
+        "display": "OpenRouter (Gemini, Claude, etc.)",
+        "setup_hint": (
+            "Set your OpenRouter API key:\n"
+            "  export OPENROUTER_API_KEY=your-key\n\n"
+            "  Get a key at: https://openrouter.ai/keys"
+        ),
+        "models": ["gemini-flash", "gemini-pro"],
+    },
+    "anthropic": {
+        "env_vars": ["ANTHROPIC_API_KEY"],
+        "display": "Anthropic (Claude models)",
+        "setup_hint": (
+            "Set your Anthropic API key:\n"
+            "  export ANTHROPIC_API_KEY=your-key\n\n"
+            "  Get a key at: https://console.anthropic.com/"
+        ),
+        "models": ["claude-sonnet", "claude-haiku"],
+    },
+}
+
+def _check_provider(provider: str) -> bool:
+    """Check if a provider's credentials are available in the environment."""
+    info = PROVIDER_CREDS.get(provider, {})
+    return all(os.environ.get(var) for var in info.get("env_vars", []))
+
+def _check_all_providers() -> dict[str, bool]:
+    """Return {provider: is_configured} for all providers."""
+    return {name: _check_provider(name) for name in PROVIDER_CREDS}
+
+def _provider_for_model(alias: str) -> str:
+    """Get which provider a model alias requires."""
+    for prov, info in PROVIDER_CREDS.items():
+        if alias in info["models"]:
+            return prov
+    return "bedrock"
+
+def _available_models() -> list[str]:
+    """Return model aliases that have working credentials."""
+    providers = _check_all_providers()
+    available = []
+    for alias in MODEL_ALIASES:
+        prov = _provider_for_model(alias)
+        if providers.get(prov, False):
+            available.append(alias)
+    return available
+
+def _try_load_env_file(path: str) -> bool:
+    """Load a shell env file (KEY=VALUE format) into os.environ."""
+    p = Path(path).expanduser()
+    if not p.exists():
+        return False
+    try:
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Handle export KEY=VALUE and KEY=VALUE
+            if line.startswith("export "):
+                line = line[7:]
+            if "=" in line:
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and val:
+                    os.environ[key] = val
+        return True
+    except OSError:
+        return False
 
 # ── ASCII Art & Branding ─────────────────────────────────────────────────────
 
@@ -120,7 +234,7 @@ Tell it what you want to build, and it writes the code — start to finish.
   [accent]3.[/]  Nova builds it, wave by wave       [muted]real code, not stubs[/]
   [accent]4.[/]  You get a working project           [muted]ready to run[/]
 
-[hint]No setup needed. Just describe your idea.[/]
+[hint]Just describe your idea — Nova handles the rest.[/]
 """
 
 WELCOME_RETURNING = """[bold bright_white]Welcome back![/]  [muted]Nova Forge v{version}[/]"""
@@ -148,27 +262,34 @@ TIPS = [
 ]
 
 HELP_TEXT = """
-[bold bright_white]Commands[/]                                [muted]Everything else is natural language[/]
-
+[bold bright_white]Build[/]
   [accent]/plan[/] [muted]<goal>[/]        Plan a project from a description
   [accent]/build[/]              Execute the plan — Nova writes all the code
   [accent]/status[/]             Progress bar and project overview
   [accent]/tasks[/]              See all tasks with status and dependencies
-  [accent]/models[/]             Available AI models
-  [accent]/formation[/]          Agent team configurations
-  [accent]/audit[/]              View the build audit log
+
+[bold bright_white]Configuration[/]
+  [accent]/model[/] [muted]<name>[/]        Switch AI model  [muted](e.g. /model gemini-flash)[/]
+  [accent]/models[/]             Show all available models + credential status
+  [accent]/config[/]             View or change settings
+  [accent]/login[/]              Set up API credentials for a provider
+
+[bold bright_white]Project[/]
   [accent]/new[/] [muted]<name>[/]          Start a fresh project directory
   [accent]/cd[/] [muted]<path>[/]           Switch project directory
   [accent]/pwd[/]                Show current project location
+  [accent]/formation[/]          Agent team configurations
+  [accent]/audit[/]              View the build audit log
+
+[bold bright_white]General[/]
   [accent]/clear[/]              Clear the screen
   [accent]/help[/]               This screen
-  [accent]/quit[/]               Exit Nova Forge
+  [accent]/quit[/]               Exit
 
-[bold bright_white]Quick Start[/]
-  Just type what you want to build:
-    [muted]>[/] Build me a REST API for managing recipes with Flask
-    [muted]>[/] Create a CLI tool that converts CSV to JSON
-    [muted]>[/] I need a todo app with a SQLite backend
+[bold bright_white]Quick Start[/]                              [muted]Or just type what you want to build[/]
+  [muted]>[/] Build me a REST API for managing recipes
+  [muted]>[/] Create a CLI tool that converts CSV to JSON
+  [muted]>[/] I need a todo app with a SQLite backend
 """
 
 
@@ -178,10 +299,19 @@ class ForgeShell:
     """Interactive CLI shell for Nova Forge — guided, eager, friendly."""
 
     def __init__(self, project_path: str | Path = ".", default_model: str | None = None):
+        self.config = _load_config()
         self.project_path = Path(project_path).resolve()
-        self.model = resolve_model(default_model) if default_model else DEFAULT_MODELS["planning"]
         self.state = _load_state()
         self.session_builds = 0
+
+        # Resolve model: CLI flag > saved config > hardcoded default
+        if default_model:
+            self.model = resolve_model(default_model)
+        elif self.config.get("default_model"):
+            self.model = resolve_model(self.config["default_model"])
+        else:
+            self.model = DEFAULT_MODELS["planning"]
+
         self._ensure_project()
 
     def _ensure_project(self) -> None:
@@ -198,11 +328,20 @@ class ForgeShell:
         console.print(f"  {TAGLINE}")
         console.print()
 
+        # Try auto-loading credentials from known locations
+        self._auto_load_credentials()
+
         is_first = self.state.get("first_run", True)
 
         if is_first:
+            # Check credentials before onboarding
+            if not self._check_credentials_status(quiet=True):
+                await self._setup_wizard()
             await self._onboard_first_run()
         else:
+            # Show credential status if nothing is configured
+            if not self._check_credentials_status(quiet=True):
+                self._show_credential_warning()
             await self._onboard_returning()
 
         # Main loop
@@ -318,12 +457,23 @@ class ForgeShell:
         console.print(f"  [step]Goal:[/]    {goal}")
         console.print()
 
+        # Check credentials before doing anything
+        active_prov = _provider_for_model(
+            next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), "nova-lite")
+        )
+        if not _check_provider(active_prov):
+            info = PROVIDER_CREDS.get(active_prov, {})
+            console.print(f"  [warning]Need {info.get('display', active_prov)} credentials first.[/]")
+            console.print(f"  [hint]Run /login to set up, or /model to switch models.[/]")
+            return
+
         # Create project directory
-        project_dir = Path.home() / "projects" / name
+        base_dir = Path(self.config.get("project_dir", str(Path.home() / "projects")))
+        project_dir = base_dir / name
         if project_dir.exists():
             # Add suffix if exists
             for i in range(2, 100):
-                candidate = Path.home() / "projects" / f"{name}-{i}"
+                candidate = base_dir / f"{name}-{i}"
                 if not candidate.exists():
                     project_dir = candidate
                     break
@@ -431,6 +581,203 @@ class ForgeShell:
             console.print(f"  [muted]Come back when you're ready to build something.[/]")
         console.print()
 
+    # ── Credential management ────────────────────────────────────────────
+
+    def _auto_load_credentials(self) -> None:
+        """Try loading credentials from common locations."""
+        env_paths = [
+            "~/.secrets/hercules.env",
+            "~/.forge/credentials.env",
+            "~/.env",
+            ".env",
+        ]
+        for path in env_paths:
+            if _try_load_env_file(path):
+                logger.debug("Loaded credentials from %s", path)
+
+    def _check_credentials_status(self, quiet: bool = False) -> bool:
+        """Check and optionally display credential status. Returns True if any provider works."""
+        providers = _check_all_providers()
+        any_configured = any(providers.values())
+
+        if not quiet:
+            console.print()
+            console.print("  [step]Provider Status[/]")
+            for name, configured in providers.items():
+                info = PROVIDER_CREDS[name]
+                icon = "[success]ready[/]" if configured else "[muted]not configured[/]"
+                models = ", ".join(info["models"])
+                console.print(f"    {info['display']:40s} {icon}")
+                if configured:
+                    console.print(f"      [muted]Models: {models}[/]")
+            console.print()
+
+            if any_configured:
+                avail = _available_models()
+                console.print(f"  [success]{len(avail)} models available:[/] {', '.join(avail)}")
+            else:
+                console.print(f"  [warning]No providers configured.[/] Run [accent]/login[/] to set up.")
+            console.print()
+
+        return any_configured
+
+    def _show_credential_warning(self) -> None:
+        """Show a gentle warning about missing credentials."""
+        providers = _check_all_providers()
+        active_prov = _provider_for_model(
+            next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), "nova-lite")
+        )
+        if not providers.get(active_prov, False):
+            console.print(Panel(
+                f"[warning]Your active model ({_short_model(self.model)}) needs credentials.[/]\n\n"
+                f"  Run [accent]/login[/] to set up, or [accent]/model[/] to switch.\n"
+                f"  [muted]You can also: source ~/.secrets/hercules.env[/]",
+                border_style="yellow",
+                padding=(0, 2),
+            ))
+            console.print()
+
+    async def _setup_wizard(self) -> None:
+        """Interactive credential setup wizard."""
+        console.print(Rule("[step] Setup [/]", style="cyan"))
+        console.print()
+        console.print("  Nova Forge needs API credentials to talk to AI models.")
+        console.print("  Let's get you set up. [muted](You can skip and do this later with /login)[/]")
+        console.print()
+
+        # Check if we have a known env file
+        env_path = Path("~/.secrets/hercules.env").expanduser()
+        if env_path.exists():
+            console.print(f"  [success]Found:[/] {env_path}")
+            _try_load_env_file(str(env_path))
+            if _check_all_providers().get("bedrock"):
+                console.print(f"  [success]AWS credentials loaded — Bedrock is ready![/]")
+                console.print()
+                return
+
+        # Show what's needed
+        providers = _check_all_providers()
+        for name, configured in providers.items():
+            if configured:
+                info = PROVIDER_CREDS[name]
+                console.print(f"  [success]{info['display']}[/] — ready")
+
+        unconfigured = [n for n, c in providers.items() if not c]
+        if not unconfigured:
+            console.print("  [success]All providers ready![/]")
+            console.print()
+            return
+
+        console.print()
+        console.print("  [step]To get started, set up at least one provider:[/]")
+        console.print()
+
+        for i, name in enumerate(unconfigured, 1):
+            info = PROVIDER_CREDS[name]
+            console.print(f"  [accent]{i}.[/] {info['display']}")
+            for var in info["env_vars"]:
+                console.print(f"     [muted]{var}[/]")
+        console.print()
+
+        session = PromptSession(style=PT_STYLE)
+        try:
+            choice = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: session.prompt(
+                    HTML("<prompt>Set up which provider? (1/2/3 or Enter to skip) </prompt>"),
+                ),
+            )
+        except (EOFError, KeyboardInterrupt):
+            return
+
+        choice = choice.strip()
+        if not choice or not choice.isdigit():
+            console.print("  [muted]Skipped. You can run /login anytime.[/]")
+            console.print()
+            return
+
+        idx = int(choice) - 1
+        if 0 <= idx < len(unconfigured):
+            await self._login_provider(unconfigured[idx])
+
+    async def _login_provider(self, provider: str) -> None:
+        """Guide user through setting up a specific provider."""
+        info = PROVIDER_CREDS[provider]
+        console.print()
+        console.print(f"  [step]Setting up {info['display']}[/]")
+        console.print()
+
+        session = PromptSession(style=PT_STYLE)
+        creds: dict[str, str] = {}
+
+        for var in info["env_vars"]:
+            current = os.environ.get(var, "")
+            hint = f" [muted](current: ...{current[-8:]})[/]" if current else ""
+            try:
+                val = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda v=var, h=hint: session.prompt(
+                        HTML(f"<prompt>  {v}{h}: </prompt>"),
+                    ),
+                )
+            except (EOFError, KeyboardInterrupt):
+                console.print("  [muted]Cancelled.[/]")
+                return
+
+            val = val.strip()
+            if val:
+                creds[var] = val
+            elif current:
+                creds[var] = current
+            else:
+                console.print(f"  [warning]Skipped {var}[/]")
+
+        if not creds:
+            return
+
+        # Apply to environment
+        for k, v in creds.items():
+            os.environ[k] = v
+
+        # Save to credentials file
+        creds_file = STATE_DIR / "credentials.env"
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Append new vars (don't overwrite existing)
+        existing = {}
+        if creds_file.exists():
+            for line in creds_file.read_text().splitlines():
+                if "=" in line and not line.startswith("#"):
+                    k, _, v = line.partition("=")
+                    existing[k.strip()] = v.strip()
+
+        existing.update(creds)
+        lines = [f"{k}={v}" for k, v in existing.items()]
+        creds_file.write_text("\n".join(lines) + "\n")
+        creds_file.chmod(0o600)
+
+        # Verify
+        if _check_provider(provider):
+            console.print()
+            console.print(f"  [success]{info['display']} is ready![/]")
+            models = ", ".join(info["models"])
+            console.print(f"  [muted]Available models: {models}[/]")
+
+            # Auto-switch to first available model for this provider if current isn't working
+            active_prov = _provider_for_model(
+                next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), "")
+            )
+            if not _check_provider(active_prov):
+                new_model = info["models"][0]
+                self.model = resolve_model(new_model)
+                self.config["default_model"] = new_model
+                _save_config(self.config)
+                console.print(f"  [info]Switched to:[/] {new_model}")
+        else:
+            console.print(f"  [warning]Credentials saved but verification failed.[/]")
+
+        console.print()
+
     # ── Slash command router ─────────────────────────────────────────────
 
     async def _handle_slash(self, raw: str) -> bool:
@@ -467,8 +814,14 @@ class ForgeShell:
                 self._cmd_status()
             case "/tasks":
                 self._cmd_tasks()
+            case "/model":
+                self._cmd_model(arg)
             case "/models":
                 self._cmd_models()
+            case "/config":
+                await self._cmd_config(arg)
+            case "/login":
+                await self._cmd_login(arg)
             case "/formation":
                 self._cmd_formation(arg)
             case "/audit":
@@ -497,6 +850,203 @@ class ForgeShell:
         summary = self._get_task_summary()
         if summary:
             console.print(f"  [muted]{summary['completed']}/{summary['total']} tasks done[/]")
+
+    # ── /model ────────────────────────────────────────────────────────────
+
+    def _cmd_model(self, arg: str) -> None:
+        """Switch the active model."""
+        if not arg:
+            # Show current model and available options
+            current_alias = _short_model(self.model)
+            console.print(f"  [step]Active model:[/] [accent]{current_alias}[/]  [muted]({self.model})[/]")
+            console.print()
+
+            avail = _available_models()
+            all_aliases = list(MODEL_ALIASES.keys())
+            providers = _check_all_providers()
+
+            console.print("  [step]Available models:[/]")
+            for alias in all_aliases:
+                prov = _provider_for_model(alias)
+                ready = providers.get(prov, False)
+                marker = "[success]*[/]" if self.model == resolve_model(alias) else " "
+                status = "" if ready else "  [muted](needs /login)[/]"
+                console.print(f"  {marker} [accent]{alias:18s}[/]{status}")
+
+            console.print()
+            console.print(f"  [hint]Usage: /model nova-lite[/]")
+            return
+
+        # Switch model
+        if arg not in MODEL_ALIASES:
+            console.print(f"  [error]Unknown model:[/] {arg}")
+            console.print(f"  [hint]Available: {', '.join(MODEL_ALIASES.keys())}[/]")
+            return
+
+        # Check credentials
+        prov = _provider_for_model(arg)
+        if not _check_provider(prov):
+            info = PROVIDER_CREDS[prov]
+            console.print(f"  [warning]{arg} needs {info['display']} credentials.[/]")
+            console.print(f"  [hint]Run /login to set up, or set: {', '.join(info['env_vars'])}[/]")
+            return
+
+        self.model = resolve_model(arg)
+        self.config["default_model"] = arg
+        _save_config(self.config)
+        console.print(f"  [success]Switched to[/] [accent]{arg}[/]  [muted]({self.model})[/]")
+
+    # ── /config ──────────────────────────────────────────────────────────
+
+    async def _cmd_config(self, arg: str) -> None:
+        """View or modify configuration."""
+        if not arg:
+            # Show current config
+            console.print()
+            console.print("  [step]Configuration[/]  [muted](~/.forge/config.json)[/]")
+            console.print()
+
+            table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", padding=(0, 1))
+            table.add_column("Setting", min_width=20)
+            table.add_column("Value", min_width=30)
+            table.add_column("Default", width=15, style="dim")
+
+            config_descriptions = {
+                "default_model": ("Default AI model", DEFAULT_CONFIG["default_model"]),
+                "project_dir": ("New project directory", DEFAULT_CONFIG["project_dir"]),
+                "max_turns": ("Max agent turns per task", DEFAULT_CONFIG["max_turns"]),
+                "temperature": ("Model temperature", DEFAULT_CONFIG["temperature"]),
+                "auto_build": ("Auto-confirm builds", DEFAULT_CONFIG["auto_build"]),
+                "show_tips": ("Show tips on startup", DEFAULT_CONFIG["show_tips"]),
+            }
+
+            for key, (desc, default) in config_descriptions.items():
+                current = self.config.get(key, default)
+                is_default = current == default
+                val_str = str(current)
+                if isinstance(current, bool):
+                    val_str = "[success]on[/]" if current else "[muted]off[/]"
+                table.add_row(f"{key}", val_str, str(default))
+
+            console.print(table)
+            console.print()
+
+            # Show provider status
+            self._check_credentials_status(quiet=False)
+
+            console.print(f"  [hint]Set a value: /config default_model gemini-flash[/]")
+            console.print(f"  [hint]Toggle:      /config auto_build off[/]")
+            return
+
+        # Parse "key value"
+        parts = arg.split(None, 1)
+        key = parts[0]
+        val = parts[1] if len(parts) > 1 else None
+
+        if key not in DEFAULT_CONFIG:
+            console.print(f"  [error]Unknown setting:[/] {key}")
+            console.print(f"  [hint]Available: {', '.join(DEFAULT_CONFIG.keys())}[/]")
+            return
+
+        if val is None:
+            # Show single value
+            current = self.config.get(key, DEFAULT_CONFIG[key])
+            console.print(f"  [info]{key}:[/] {current}")
+            return
+
+        # Parse value by type
+        default_val = DEFAULT_CONFIG[key]
+        if isinstance(default_val, bool):
+            parsed = val.lower() in ("true", "on", "yes", "1")
+        elif isinstance(default_val, int):
+            try:
+                parsed = int(val)
+            except ValueError:
+                console.print(f"  [error]{key} must be a number[/]")
+                return
+        elif isinstance(default_val, float):
+            try:
+                parsed = float(val)
+            except ValueError:
+                console.print(f"  [error]{key} must be a number[/]")
+                return
+        else:
+            parsed = val
+
+        # Validate specific keys
+        if key == "default_model":
+            if val not in MODEL_ALIASES:
+                console.print(f"  [error]Unknown model:[/] {val}")
+                console.print(f"  [hint]Available: {', '.join(MODEL_ALIASES.keys())}[/]")
+                return
+            self.model = resolve_model(val)
+
+        if key == "temperature" and not (0.0 <= parsed <= 1.0):
+            console.print(f"  [error]Temperature must be between 0.0 and 1.0[/]")
+            return
+
+        if key == "max_turns" and parsed < 1:
+            console.print(f"  [error]Max turns must be at least 1[/]")
+            return
+
+        self.config[key] = parsed
+        _save_config(self.config)
+        console.print(f"  [success]Set[/] {key} = {parsed}")
+
+    # ── /login ───────────────────────────────────────────────────────────
+
+    async def _cmd_login(self, arg: str) -> None:
+        """Set up API credentials for a provider."""
+        providers = _check_all_providers()
+
+        if arg:
+            # Direct provider login
+            if arg in PROVIDER_CREDS:
+                await self._login_provider(arg)
+                return
+            # Try matching by model alias
+            prov = _provider_for_model(arg)
+            if prov:
+                await self._login_provider(prov)
+                return
+            console.print(f"  [error]Unknown provider:[/] {arg}")
+            console.print(f"  [hint]Available: {', '.join(PROVIDER_CREDS.keys())}[/]")
+            return
+
+        # Show status and let user choose
+        console.print()
+        console.print("  [step]API Providers[/]")
+        console.print()
+
+        choices = []
+        for i, (name, configured) in enumerate(providers.items(), 1):
+            info = PROVIDER_CREDS[name]
+            icon = "[success]ready[/]" if configured else "[warning]not set up[/]"
+            console.print(f"  [accent]{i}.[/] {info['display']:40s} {icon}")
+            choices.append(name)
+
+        console.print()
+
+        session = PromptSession(style=PT_STYLE)
+        try:
+            choice = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: session.prompt(
+                    HTML("<prompt>Set up which provider? (1/2/3 or name) </prompt>"),
+                ),
+            )
+        except (EOFError, KeyboardInterrupt):
+            return
+
+        choice = choice.strip()
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(choices):
+                await self._login_provider(choices[idx])
+        elif choice in PROVIDER_CREDS:
+            await self._login_provider(choice)
+        else:
+            console.print("  [muted]Cancelled.[/]")
 
     # ── /new ─────────────────────────────────────────────────────────────
 
@@ -819,31 +1369,37 @@ class ForgeShell:
     # ── /models ──────────────────────────────────────────────────────────
 
     def _cmd_models(self) -> None:
+        providers = _check_all_providers()
+
         table = Table(
             box=box.ROUNDED, show_header=True,
             header_style="bold cyan", padding=(0, 1),
         )
         table.add_column("Alias", style="bold", min_width=15)
-        table.add_column("Model ID", min_width=40)
         table.add_column("Provider", width=12)
+        table.add_column("Status", width=14)
 
         for alias, model_id in sorted(MODEL_ALIASES.items()):
-            provider = (
+            prov = _provider_for_model(alias)
+            prov_name = (
                 "Bedrock" if "bedrock" in model_id
                 else "OpenRouter" if "openrouter" in model_id
                 else "Anthropic"
             )
-            style = (
-                "magenta" if "bedrock" in model_id
-                else "blue" if "openrouter" in model_id
-                else "green"
-            )
-            marker = " [accent]*[/]" if model_id == self.model else ""
-            table.add_row(f"{alias}{marker}", f"[{style}]{model_id}[/]", provider)
+
+            ready = providers.get(prov, False)
+            if model_id == self.model:
+                status = "[success]active[/]"
+            elif ready:
+                status = "[success]ready[/]"
+            else:
+                status = "[muted]needs /login[/]"
+
+            table.add_row(alias, prov_name, status)
 
         console.print()
         console.print(table)
-        console.print(f"\n  [muted]* = active model[/]")
+        console.print(f"\n  [hint]Switch: /model <alias>  |  Set up: /login <provider>[/]")
 
     # ── /formation ───────────────────────────────────────────────────────
 
