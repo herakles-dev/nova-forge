@@ -165,8 +165,13 @@ class ForgeOrchestrator:
                     store = TaskStore(self.project.tasks_file)
                     for i, t in enumerate(tasks_data):
                         blocked = t.get("blocked_by", [])
-                        # Convert int indices to string task IDs
-                        blocked_str = [str(b) for b in blocked] if blocked else None
+                        # Convert 0-based indices to 1-based task IDs
+                        blocked_str = [str(int(b) + 1) for b in blocked] if blocked else None
+                        # Filter out references to tasks not yet created
+                        if blocked_str:
+                            max_created = str(i + 1)  # tasks created so far: 1..i
+                            blocked_str = [b for b in blocked_str if int(b) <= i]
+                            blocked_str = blocked_str or None
                         store.create(
                             subject=t.get("subject", f"Task {i+1}"),
                             description=t.get("description", ""),

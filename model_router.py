@@ -148,7 +148,19 @@ class BedrockAdapter(ProviderAdapter):
 
             # Merge consecutive same-role messages (Bedrock requires alternation)
             if normalized and normalized[-1]["role"] == role:
-                normalized[-1]["content"].extend(content)
+                # Deduplicate toolResult blocks by toolUseId
+                existing_ids = {
+                    b.get("toolResult", {}).get("toolUseId")
+                    for b in normalized[-1]["content"]
+                    if "toolResult" in b
+                }
+                for block in content:
+                    tid = block.get("toolResult", {}).get("toolUseId")
+                    if tid and tid in existing_ids:
+                        continue  # skip duplicate
+                    normalized[-1]["content"].append(block)
+                    if tid:
+                        existing_ids.add(tid)
             else:
                 normalized.append({"role": role, "content": content})
 

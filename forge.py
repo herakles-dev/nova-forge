@@ -527,5 +527,17 @@ def formation_select(complexity: str, scope: str) -> None:
         click.echo(f"\nGate: {', '.join(formation.gate_criteria)}")
 
 
+# ── forge chat ──────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--model", "-m", default=None, help="Model for the interactive agent (e.g. nova-lite)")
+def chat(model: str | None) -> None:
+    """Launch interactive Forge shell (like Claude Code, but any LLM)."""
+    from forge_cli import ForgeShell
+
+    shell = ForgeShell(default_model=model)
+    asyncio.run(shell.run())
+
+
 if __name__ == "__main__":
     cli()
