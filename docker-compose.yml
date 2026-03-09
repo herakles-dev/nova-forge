@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  forge-web:
+    build: .
+    container_name: nova-forge-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8162:8162"
+    environment:
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - forge-data:/app/.forge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8162/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    external: true
+    name: hercules-apps
+
+volumes:
+  forge-data:

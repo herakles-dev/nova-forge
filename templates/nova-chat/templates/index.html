@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nova Chat</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="chat-app">
+    <header class="chat-header">
+      <div class="chat-header__inner">
+        <span class="chat-header__logo">&#9889;</span>
+        <h1 class="chat-header__title">Nova Chat</h1>
+        <span class="chat-header__model">amazon.nova-lite-v1:0</span>
+      </div>
+    </header>
+
+    <main class="chat-main">
+      <div class="messages" id="messages">
+        <div class="message message--assistant">
+          <div class="message__bubble">Hello! I'm Nova. How can I help you today?</div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="chat-footer">
+      <form class="input-bar" id="chat-form">
+        <textarea
+          id="user-input"
+          class="input-bar__textarea"
+          placeholder="Type a message..."
+          rows="1"
+          autofocus
+        ></textarea>
+        <button type="submit" class="input-bar__send" id="send-btn" aria-label="Send">
+          &#8593;
+        </button>
+      </form>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("user-input");
+    const messages = document.getElementById("messages");
+    const sendBtn = document.getElementById("send-btn");
+
+    // Auto-resize textarea
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 160) + "px";
+    });
+
+    // Send on Enter (Shift+Enter for newline)
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    function appendMessage(role, text) {
+      const div = document.createElement("div");
+      div.className = `message message--${role}`;
+      const bubble = document.createElement("div");
+      bubble.className = "message__bubble";
+      bubble.textContent = text;
+      div.appendChild(bubble);
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return bubble;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendMessage("user", text);
+      input.value = "";
+      input.style.height = "auto";
+      sendBtn.disabled = true;
+
+      const thinkingBubble = appendMessage("assistant", "...");
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        const data = await res.json();
+        thinkingBubble.textContent = data.reply || data.error || "No response.";
+      } catch (err) {
+        thinkingBubble.textContent = "Error: could not reach the server.";
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
