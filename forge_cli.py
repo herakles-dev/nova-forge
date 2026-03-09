@@ -275,6 +275,7 @@ HELP_TEXT = """
   [accent]/login[/]              Set up API credentials for a provider
 
 [bold bright_white]Project[/]
+  [accent]/resume[/] [muted]<n>[/]         Resume a recent project  [muted](e.g. /resume 1)[/]
   [accent]/new[/] [muted]<name>[/]          Start a fresh project directory
   [accent]/cd[/] [muted]<path>[/]           Switch project directory
   [accent]/pwd[/]                Show current project location
@@ -415,35 +416,73 @@ class ForgeShell:
             console.print(f"  [muted]{builds} project{'s' if builds != 1 else ''} built so far[/]")
         console.print()
 
-        # Check for existing project with pending work
-        existing_tasks = self._get_task_summary()
-        if existing_tasks and existing_tasks["pending"] > 0:
-            console.print(Panel(
-                f"[bold]Resume: {self.project_path.name}[/]\n"
-                f"  {existing_tasks['completed']}/{existing_tasks['total']} tasks done, "
-                f"{existing_tasks['pending']} remaining\n\n"
-                f"  [hint]Type [accent]/build[/][hint] to continue, or describe something new[/]",
-                border_style="bright_magenta",
-                padding=(1, 2),
-            ))
-            console.print()
+        # Auto-resume: find the most recent project with pending/failed work
+        resumed = self._try_auto_resume()
+        if resumed:
             return
 
-        # Show recent projects
+        # Show recent projects with status
         recent = self.state.get("recent_projects", [])
         if recent:
             console.print("  [step]Recent projects:[/]")
             for i, proj in enumerate(recent[:5], 1):
-                exists = Path(proj["path"]).exists()
-                marker = "[success]>[/]" if i == 1 else " "
-                status = "" if exists else " [muted](deleted)[/]"
-                console.print(f"  {marker} [accent]{i}.[/] {proj['name']}{status}  [muted]{proj['path']}[/]")
+                p = Path(proj["path"])
+                if not p.exists():
+                    console.print(f"    [accent]{i}.[/] [muted]{proj['name']}  (deleted)[/]")
+                    continue
+                summary = self._get_task_summary_for(p)
+                if summary and summary["total"] > 0:
+                    done = summary["completed"]
+                    total = summary["total"]
+                    failed = summary["failed"]
+                    if done == total:
+                        tag = "[success]complete[/]"
+                    elif failed > 0:
+                        tag = f"[yellow]{done}/{total} done, {failed} failed[/]"
+                    else:
+                        tag = f"[cyan]{done}/{total} done[/]"
+                else:
+                    tag = "[muted]empty[/]"
+                console.print(f"    [accent]{i}.[/] {proj['name']:30s} {tag}")
+                console.print(f"       [muted]{proj['path']}[/]")
+            console.print()
+            console.print(f"  [hint]Type [accent]/resume[/] or [accent]/resume 1[/] to continue a project[/]")
             console.print()
 
-        # Prompt
-        idea = random.choice(IDEAS)
-        console.print(f"  [hint]Tip: {random.choice(TIPS)}[/]")
-        console.print()
+        if self.config.get("show_tips", True):
+            console.print(f"  [hint]Tip: {random.choice(TIPS)}[/]")
+            console.print()
+
+    def _try_auto_resume(self) -> bool:
+        """Auto-switch to the most recent project that has pending/failed work."""
+        recent = self.state.get("recent_projects", [])
+        for proj in recent:
+            p = Path(proj["path"])
+            if not p.exists():
+                continue
+            summary = self._get_task_summary_for(p)
+            if summary and (summary["pending"] > 0 or summary["failed"] > 0):
+                # Found a project with work to do — switch to it
+                self.project_path = p
+                self._ensure_project()
+                done = summary["completed"]
+                total = summary["total"]
+                pending = summary["pending"]
+                failed = summary["failed"]
+
+                remaining = pending + failed
+                console.print(Panel(
+                    f"[bold]{proj['name']}[/]\n"
+                    f"  {done}/{total} tasks done, {remaining} remaining\n"
+                    f"  [muted]{p}[/]\n\n"
+                    f"  Type [accent]/build[/] to continue, or describe something new.",
+                    border_style="bright_magenta",
+                    title="[bold bright_magenta] Resuming [/]",
+                    padding=(1, 2),
+                ))
+                console.print()
+                return True
+        return False
 
     # ── Guided build flow (the magic) ────────────────────────────────────
 
@@ -799,6 +838,8 @@ class ForgeShell:
                 console.print(f"  [info]Project:[/] {self.project_path}")
             case "/cd":
                 self._cmd_cd(arg)
+            case "/resume":
+                self._cmd_resume(arg)
             case "/new":
                 await self._cmd_new(arg)
             case "/plan":
@@ -850,6 +891,93 @@ class ForgeShell:
         summary = self._get_task_summary()
         if summary:
             console.print(f"  [muted]{summary['completed']}/{summary['total']} tasks done[/]")
+
+    # ── /resume ───────────────────────────────────────────────────────────
+
+    def _cmd_resume(self, arg: str) -> None:
+        """Resume a recent project."""
+        recent = self.state.get("recent_projects", [])
+        if not recent:
+            console.print("  [muted]No recent projects. Start one with /new or describe what to build.[/]")
+            return
+
+        # If a number or name was given, use it directly
+        if arg:
+            target = None
+            if arg.isdigit():
+                idx = int(arg) - 1
+                if 0 <= idx < len(recent):
+                    target = recent[idx]
+            else:
+                # Match by name
+                for proj in recent:
+                    if proj["name"] == arg or arg in proj["name"]:
+                        target = proj
+                        break
+
+            if not target:
+                console.print(f"  [error]Project not found:[/] {arg}")
+                console.print(f"  [hint]Use /resume to see the list[/]")
+                return
+
+            p = Path(target["path"])
+            if not p.exists():
+                console.print(f"  [error]Directory deleted:[/] {target['path']}")
+                return
+
+            self.project_path = p
+            self._ensure_project()
+            console.print(f"  [success]Resumed[/] [bold]{target['name']}[/]")
+            console.print(f"  [muted]{p}[/]")
+
+            summary = self._get_task_summary()
+            if summary:
+                done = summary["completed"]
+                total = summary["total"]
+                failed = summary["failed"]
+                pending = summary["pending"]
+                remaining = pending + failed
+                console.print(f"  {done}/{total} tasks done", end="")
+                if remaining > 0:
+                    console.print(f", {remaining} remaining")
+                    console.print()
+                    console.print(f"  [hint]Type [accent]/build[/] to continue[/]")
+                else:
+                    console.print(" [success](all complete)[/]")
+            return
+
+        # No argument — show list
+        console.print()
+        console.print("  [step]Recent projects:[/]")
+        console.print()
+
+        for i, proj in enumerate(recent[:10], 1):
+            p = Path(proj["path"])
+            if not p.exists():
+                console.print(f"  [accent]{i}.[/] [muted]{proj['name']}  (deleted)[/]")
+                continue
+
+            summary = self._get_task_summary_for(p)
+            if summary and summary["total"] > 0:
+                done = summary["completed"]
+                total = summary["total"]
+                failed = summary["failed"]
+                pending = summary["pending"]
+                if done == total:
+                    tag = "[success]complete[/]"
+                elif failed > 0 or pending > 0:
+                    remaining = pending + failed
+                    tag = f"[yellow]{done}/{total} done, {remaining} to go[/]"
+                else:
+                    tag = f"[cyan]{done}/{total}[/]"
+            else:
+                tag = "[muted]no tasks[/]"
+
+            active = " [accent]<-[/]" if p == self.project_path else ""
+            console.print(f"  [accent]{i}.[/] {proj['name']:30s} {tag}{active}")
+
+        console.print()
+        console.print(f"  [hint]Usage: /resume 1  or  /resume project-name[/]")
 
     # ── /model ────────────────────────────────────────────────────────────
 
@@ -1594,9 +1722,13 @@ class ForgeShell:
             return False
 
     def _get_task_summary(self) -> dict | None:
+        return self._get_task_summary_for(self.project_path)
+
+    def _get_task_summary_for(self, path: Path) -> dict | None:
+        """Get task summary for any project path."""
         from forge_tasks import TaskStore
-        project = ForgeProject(root=self.project_path)
         try:
+            project = ForgeProject(root=path)
             store = TaskStore(project.tasks_file)
             tasks = store.list()
             if not tasks:
