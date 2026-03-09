@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Nova Forge CLI — launch with: herakles
+# Auto-loads credentials and starts the interactive shell.
+
+FORGE_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+
+# Auto-load credentials from known locations
+for envfile in ~/.secrets/hercules.env ~/.forge/credentials.env ~/.env; do
+    [ -f "$envfile" ] && source "$envfile" 2>/dev/null
+done
+
+exec python3 "$FORGE_DIR/forge_cli.py" "$@"
