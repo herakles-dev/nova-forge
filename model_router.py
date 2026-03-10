@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncGenerator, Callable
 
 from config import ModelConfig, get_provider
+
+
+# ── Token estimation helper ───────────────────────────────────────────────────
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count. Uses char/4 heuristic."""
+    return max(1, len(text) // 4)
 
 
 # ── Data structures ──────────────────────────────────────────────────────────
@@ -30,6 +38,24 @@ class ModelResponse:
     usage: dict[str, int]  # keys: input_tokens, output_tokens
 
 
+@dataclass
+class StreamDelta:
+    """A chunk of streaming response.
+
+    kind values:
+      "text"       — partial text content (see .text)
+      "tool_start" — a new tool call begins (see .tool_name, .tool_id)
+      "tool_delta" — partial JSON for tool args (see .tool_args_chunk)
+      "tool_end"   — the current tool call's args are complete
+      "done"       — stream is finished
+    """
+    kind: str
+    text: str = ""
+    tool_name: str = ""
+    tool_id: str = ""
+    tool_args_chunk: str = ""
+
+
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
 class ProviderAdapter(ABC):
@@ -49,6 +75,19 @@ class ProviderAdapter(ABC):
             tools: List of tool definitions in common format
                    ``{"name": str, "description": str, "parameters": dict}``.
             model_config: Model selection and inference parameters.
+        """
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Stream a conversation turn, yielding StreamDelta objects.
+
+        Implementations must be async generators (use ``yield``).
+        Each delta represents a partial chunk of the model response.
         """
 
     @abstractmethod
@@ -217,6 +256,65 @@ class BedrockAdapter(ProviderAdapter):
             },
         )
 
+    async def stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Stream responses from the Bedrock converse_stream API.
+
+        Bedrock streaming events:
+          contentBlockStart  — new content block (text or toolUse)
+          contentBlockDelta  — delta for current block
+          contentBlockStop   — block complete
+          messageStop        — message complete
+        """
+        system_blocks, norm_messages = self._normalize_messages(messages)
+
+        kwargs: dict[str, Any] = {
+            "modelId": self._bare_model_id(model_config.model_id),
+            "messages": norm_messages,
+            "inferenceConfig": {
+                "maxTokens": model_config.max_tokens,
+                "temperature": model_config.temperature,
+            },
+        }
+        if system_blocks:
+            kwargs["system"] = system_blocks
+        if tools:
+            kwargs["toolConfig"] = {"tools": self._convert_tools(tools)}
+
+        def _call_converse_stream(**kw: Any):
+            return self._client.converse_stream(**kw)
+
+        raw = await asyncio.to_thread(_call_converse_stream, **kwargs)
+        event_stream = raw.get("stream", [])
+
+        for event in event_stream:
+            if "contentBlockStart" in event:
+                start_payload = event["contentBlockStart"].get("start", {})
+                if "toolUse" in start_payload:
+                    tu = start_payload["toolUse"]
+                    yield StreamDelta(
+                        kind="tool_start",
+                        tool_name=tu.get("name", ""),
+                        tool_id=tu.get("toolUseId", ""),
+                    )
+            elif "contentBlockDelta" in event:
+                delta = event["contentBlockDelta"].get("delta", {})
+                if "text" in delta:
+                    yield StreamDelta(kind="text", text=delta["text"])
+                elif "toolUse" in delta:
+                    yield StreamDelta(
+                        kind="tool_delta",
+                        tool_args_chunk=delta["toolUse"].get("input", ""),
+                    )
+            elif "contentBlockStop" in event:
+                yield StreamDelta(kind="tool_end")
+            elif "messageStop" in event:
+                yield StreamDelta(kind="done")
+
     def format_tool_result(self, call_id: str, result_str: str) -> dict:
         return _bedrock_tool_result(call_id, result_str)
 
@@ -322,8 +420,6 @@ class OpenAIAdapter(ProviderAdapter):
 
         tool_calls: list[ToolCall] = []
         if message.tool_calls:
-            import json
-
             for tc in message.tool_calls:
                 tool_calls.append(
                     ToolCall(
@@ -344,14 +440,77 @@ class OpenAIAdapter(ProviderAdapter):
             },
         )
 
+    async def stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Stream responses from an OpenAI-compatible API."""
+        kwargs: dict[str, Any] = {
+            "model": self._strip_prefix(model_config.model_id),
+            "messages": messages,
+            "max_tokens": model_config.max_tokens,
+            "temperature": model_config.temperature,
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = self._convert_tools(tools)
+            kwargs["tool_choice"] = "auto"
+
+        response = await self._client.chat.completions.create(**kwargs)
+
+        # Track in-progress tool calls by index (OpenAI streaming delivers them
+        # across multiple chunks, each with a delta.tool_calls list entry).
+        # We need to detect when a new tool call starts vs. continues.
+        last_tool_index: int | None = None
+
+        async for chunk in response:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if not delta:
+                continue
+
+            if delta.content:
+                yield StreamDelta(kind="text", text=delta.content)
+
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    # tc.index tells us which tool call position this delta belongs to
+                    current_index = getattr(tc, "index", None)
+
+                    # New tool call begins when the index changes
+                    if current_index != last_tool_index:
+                        if last_tool_index is not None:
+                            # Close the previous tool call
+                            yield StreamDelta(kind="tool_end")
+                        last_tool_index = current_index
+                        yield StreamDelta(
+                            kind="tool_start",
+                            tool_name=tc.function.name if tc.function else "",
+                            tool_id=tc.id or "",
+                        )
+
+                    # Partial arguments chunk
+                    if tc.function and tc.function.arguments:
+                        yield StreamDelta(
+                            kind="tool_delta",
+                            tool_args_chunk=tc.function.arguments,
+                        )
+
+        # Close any open tool call
+        if last_tool_index is not None:
+            yield StreamDelta(kind="tool_end")
+
+        yield StreamDelta(kind="done")
+
     def format_tool_result(self, call_id: str, result_str: str) -> dict:
         return _openai_tool_result(call_id, result_str)
 
     def format_assistant_message(self, response: ModelResponse) -> dict:
         msg: dict[str, Any] = {"role": "assistant", "content": response.text}
         if response.tool_calls:
-            import json
-
             msg["tool_calls"] = [
                 {
                     "id": tc.id,
@@ -446,6 +605,53 @@ class AnthropicAdapter(ProviderAdapter):
                 "output_tokens": response.usage.output_tokens,
             },
         )
+
+    async def stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Stream responses from the Anthropic messages API."""
+        kwargs: dict[str, Any] = {
+            "model": self._strip_prefix(model_config.model_id),
+            "messages": messages,
+            "max_tokens": model_config.max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = self._convert_tools(tools)
+        if model_config.temperature is not None:
+            kwargs["temperature"] = model_config.temperature
+
+        async with self._client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                event_type = getattr(event, "type", None)
+
+                if event_type == "content_block_start":
+                    block = getattr(event, "content_block", None)
+                    if block and getattr(block, "type", None) == "tool_use":
+                        yield StreamDelta(
+                            kind="tool_start",
+                            tool_name=block.name,
+                            tool_id=block.id,
+                        )
+
+                elif event_type == "content_block_delta":
+                    delta = getattr(event, "delta", None)
+                    if delta:
+                        if hasattr(delta, "text"):
+                            yield StreamDelta(kind="text", text=delta.text)
+                        elif hasattr(delta, "partial_json"):
+                            yield StreamDelta(
+                                kind="tool_delta",
+                                tool_args_chunk=delta.partial_json,
+                            )
+
+                elif event_type == "content_block_stop":
+                    yield StreamDelta(kind="tool_end")
+
+                elif event_type == "message_stop":
+                    yield StreamDelta(kind="done")
 
     def format_tool_result(self, call_id: str, result_str: str) -> dict:
         return _anthropic_tool_result(call_id, result_str)
@@ -574,6 +780,94 @@ class ModelRouter:
         """Convenience wrapper: route, then send with retry."""
         adapter = self.route(model_config.model_id)
         return await _with_retry(adapter.send, messages, tools, model_config)
+
+    async def stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Stream a response. Yields StreamDelta objects.
+
+        Delegates to the appropriate adapter's stream() method.
+        """
+        adapter = self.route(model_config.model_id)
+        async for delta in adapter.stream(messages, tools, model_config):
+            yield delta
+
+    async def stream_send(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+        on_delta: Callable[[StreamDelta], None] | None = None,
+    ) -> ModelResponse:
+        """Stream a response while accumulating a final ModelResponse.
+
+        Calls *on_delta* for each StreamDelta (useful for real-time UI updates)
+        and returns a complete ModelResponse when the stream is exhausted.
+
+        Falls back silently to the blocking send() if the adapter's stream()
+        raises any exception.
+        """
+        try:
+            return await self._stream_accumulate(messages, tools, model_config, on_delta)
+        except Exception:
+            # Fallback: use the non-streaming path
+            return await self.send(messages, tools, model_config)
+
+    async def _stream_accumulate(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model_config: ModelConfig,
+        on_delta: Callable[[StreamDelta], None] | None,
+    ) -> ModelResponse:
+        """Internal: stream and accumulate into a ModelResponse."""
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        current_tool: dict[str, str] | None = None
+        current_args: list[str] = []
+
+        async for delta in self.stream(messages, tools, model_config):
+            if on_delta is not None:
+                try:
+                    on_delta(delta)
+                except Exception:
+                    pass  # Never let UI callback crash the agent loop
+
+            if delta.kind == "text":
+                text_parts.append(delta.text)
+            elif delta.kind == "tool_start":
+                current_tool = {"name": delta.tool_name, "id": delta.tool_id}
+                current_args = []
+            elif delta.kind == "tool_delta":
+                current_args.append(delta.tool_args_chunk)
+            elif delta.kind == "tool_end":
+                if current_tool is not None:
+                    args_str = "".join(current_args)
+                    try:
+                        args: dict[str, Any] = json.loads(args_str) if args_str else {}
+                    except json.JSONDecodeError:
+                        args = {"_raw": args_str}
+                    tool_calls.append(
+                        ToolCall(
+                            id=current_tool["id"],
+                            name=current_tool["name"],
+                            args=args,
+                        )
+                    )
+                    current_tool = None
+                    current_args = []
+            # "done" — nothing to do; loop will end naturally
+
+        return ModelResponse(
+            text="".join(text_parts),
+            tool_calls=tool_calls,
+            stop_reason="end_turn",
+            # Streaming APIs typically don't return token counts in the stream
+            usage={"input_tokens": 0, "output_tokens": 0},
+        )
 
     def extract_tool_calls(self, response: ModelResponse) -> list[ToolCall]:
         """Return the tool calls embedded in *response*."""

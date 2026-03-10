@@ -105,6 +105,26 @@ class TestGuardWriteGates:
         result = _run(hs.pre_tool_use("Write", {"file_path": str(project / "src/app.py")}))
         assert not result.blocked
 
+    def test_allows_when_all_tasks_completed(self, hook_system, project):
+        hs, state = hook_system
+        # All tasks done — chat editing should be allowed
+        task_state = {"total": 3, "completed": 3, "pending": 0, "in_progress": 0}
+        state_file = project / ".forge" / "state" / "task-state.json"
+        state_file.write_text(json.dumps(task_state))
+
+        result = _run(hs.pre_tool_use("Write", {"file_path": str(project / "src/app.py")}))
+        assert not result.blocked
+
+    def test_allows_when_only_failed_remain(self, hook_system, project):
+        hs, state = hook_system
+        # Failed tasks with no pending — user manually fixing via chat
+        task_state = {"total": 3, "completed": 2, "pending": 0, "failed": 1, "in_progress": 0}
+        state_file = project / ".forge" / "state" / "task-state.json"
+        state_file.write_text(json.dumps(task_state))
+
+        result = _run(hs.pre_tool_use("Write", {"file_path": str(project / "src/app.py")}))
+        assert not result.blocked
+
     def test_tracks_session_writes(self, hook_system, project):
         hs, state = hook_system
         _run(hs.pre_tool_use("Write", {"file_path": str(project / "a.py")}))

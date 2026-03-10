@@ -41,7 +41,7 @@ from rich.rule import Rule
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    MODEL_ALIASES, DEFAULT_MODELS, resolve_model, get_model_config,
+    MODEL_ALIASES, DEFAULT_MODELS, resolve_model, get_model_config, get_provider,
     ForgeProject, init_forge_dir,
 )
 
@@ -70,6 +70,14 @@ PT_STYLE = PTStyle.from_dict({
 })
 
 VERSION = "0.3.0"
+
+# ── Concurrency limits per provider ──────────────────────────────────────────
+
+PROVIDER_CONCURRENCY: dict[str, int] = {
+    "bedrock": 3,
+    "openai": 6,    # OpenRouter
+    "anthropic": 4,
+}
 
 # ── Persistent state & config ────────────────────────────────────────────────
 
@@ -265,6 +273,8 @@ HELP_TEXT = """
 [bold bright_white]Build[/]
   [accent]/plan[/] [muted]<goal>[/]        Plan a project from a description
   [accent]/build[/]              Execute the plan — Nova writes all the code
+  [accent]/preview[/]            Launch Cloudflare Tunnel for live preview
+  [accent]/deploy[/]             Ship to production with Docker + nginx
   [accent]/status[/]             Progress bar and project overview
   [accent]/tasks[/]              See all tasks with status and dependencies
 
@@ -421,8 +431,31 @@ class ForgeShell:
         if resumed:
             return
 
-        # Show recent projects with status
+        # Second pass: if no pending/failed, auto-switch to most recent completed project
         recent = self.state.get("recent_projects", [])
+        for proj in recent:
+            p = Path(proj["path"])
+            if not p.exists():
+                continue
+            summary = self._get_task_summary_for(p)
+            if summary and summary["total"] > 0 and summary["completed"] == summary["total"]:
+                self.project_path = p
+                self._ensure_project()
+                console.print(Panel(
+                    f"[bold]{proj['name']}[/]\n"
+                    f"  [success]{summary['total']}/{summary['total']} tasks complete[/]\n"
+                    f"  [muted]{p}[/]\n\n"
+                    f"  [hint]/preview[/] — share a live URL\n"
+                    f"  [hint]/deploy[/] — ship to production\n"
+                    f"  Tell me to add features, or describe a new project!",
+                    border_style="green",
+                    title="[bold green] Project Ready [/]",
+                    padding=(1, 2),
+                ))
+                console.print()
+                return
+
+        # Show recent projects with status
         if recent:
             console.print("  [step]Recent projects:[/]")
             for i, proj in enumerate(recent[:5], 1):
@@ -461,7 +494,7 @@ class ForgeShell:
             if not p.exists():
                 continue
             summary = self._get_task_summary_for(p)
-            if summary and (summary["pending"] > 0 or summary["failed"] > 0):
+            if summary and (summary["pending"] > 0 or summary["failed"] > 0 or summary.get("in_progress", 0) > 0):
                 # Found a project with work to do — switch to it
                 self.project_path = p
                 self._ensure_project()
@@ -470,7 +503,7 @@ class ForgeShell:
                 pending = summary["pending"]
                 failed = summary["failed"]
 
-                remaining = pending + failed
+                remaining = pending + failed + summary.get("in_progress", 0)
                 console.print(Panel(
                     f"[bold]{proj['name']}[/]\n"
                     f"  {done}/{total} tasks done, {remaining} remaining\n"
@@ -830,6 +863,7 @@ class ForgeShell:
                 return True
             case "/help" | "/h" | "/?":
                 console.print(HELP_TEXT)
+                self._suggest_next_action()
             case "/clear" | "/cls":
                 console.clear()
                 console.print(LOGO)
@@ -867,6 +901,10 @@ class ForgeShell:
                 self._cmd_formation(arg)
             case "/audit":
                 self._cmd_audit()
+            case "/preview":
+                self._cmd_preview(arg)
+            case "/deploy":
+                self._cmd_deploy(arg)
             case _:
                 console.print(f"  [warning]Unknown command:[/] {cmd}")
                 console.print(f"  [hint]Type /help for commands, or just describe what you want.[/]")
@@ -887,10 +925,11 @@ class ForgeShell:
         self._ensure_project()
         console.print(f"  [success]Switched to[/] {self.project_path}")
 
-        # Show project state if tasks exist
+        # Show project state and guidance
         summary = self._get_task_summary()
         if summary:
             console.print(f"  [muted]{summary['completed']}/{summary['total']} tasks done[/]")
+            self._suggest_next_action()
 
     # ── /resume ───────────────────────────────────────────────────────────
 
@@ -936,7 +975,8 @@ class ForgeShell:
                 total = summary["total"]
                 failed = summary["failed"]
                 pending = summary["pending"]
-                remaining = pending + failed
+                in_prog = summary.get("in_progress", 0)
+                remaining = pending + failed + in_prog
                 console.print(f"  {done}/{total} tasks done", end="")
                 if remaining > 0:
                     console.print(f", {remaining} remaining")
@@ -944,6 +984,7 @@ class ForgeShell:
                     console.print(f"  [hint]Type [accent]/build[/] to continue[/]")
                 else:
                     console.print(" [success](all complete)[/]")
+                    self._suggest_next_action()
             return
 
         # No argument — show list
@@ -1184,7 +1225,8 @@ class ForgeShell:
             console.print("  [muted]Example: /new my-cool-api[/]")
             return
 
-        project_dir = self.project_path / name
+        base_dir = Path(self.config.get("project_dir", str(Path.home() / "projects")))
+        project_dir = base_dir / name
         project_dir.mkdir(parents=True, exist_ok=True)
 
         from forge_compliance import ComplianceChecker
@@ -1226,6 +1268,7 @@ class ForgeShell:
             console.print(f"  [hint]Check that AWS credentials are loaded (source ~/.secrets/hercules.env)[/]")
             return
 
+
         # Show spec summary
         if result.spec_path and result.spec_path.exists():
             spec_text = result.spec_path.read_text()
@@ -1248,10 +1291,282 @@ class ForgeShell:
                 console.print(f"  [success]Plan:[/] {len(tasks_data)} tasks")
                 console.print()
                 self._render_task_table(tasks_data)
+
+                # Check for file ownership conflicts
+                file_owners: dict[str, list[str]] = {}
+                for t in tasks_data:
+                    for f in t.get("files", []):
+                        file_owners.setdefault(f, []).append(t.get("subject", "?"))
+                conflicts = {f: owners for f, owners in file_owners.items() if len(owners) > 1}
+                if conflicts:
+                    console.print()
+                    console.print("  [warning]File ownership conflicts:[/]")
+                    for f, owners in conflicts.items():
+                        console.print(f"    [warning]{f}[/] ← {', '.join(owners)}")
+                    console.print("  [hint]Consider merging overlapping tasks before /build[/]")
             except json.JSONDecodeError:
                 console.print(f"  [success]Plan:[/] {result.task_count} tasks")
         elif result.task_count > 0:
             console.print(f"  [success]Plan:[/] {result.task_count} tasks ready")
+
+    # ── Single-task executor (used by _cmd_build for parallel waves) ─────
+
+    async def _run_single_task(
+        self,
+        task: Any,
+        store: Any,
+        all_tasks: list,
+        wave_idx: int,
+        formation: Any,
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[int, str, str, float, int, int]:
+        """Execute a single task inside a semaphore-limited slot.
+
+        Returns (wave_idx, subject, status, duration_secs, tool_calls, files_count).
+        """
+        from forge_agent import ForgeAgent, BUILT_IN_TOOLS
+
+        async with semaphore:
+            # Resolve per-task model and tool set from formation role
+            role = None
+            if formation is not None:
+                try:
+                    role = self._assign_formation_role(task, formation)
+                except Exception:
+                    role = None
+
+            if role is not None:
+                task_model = resolve_model(role.model)
+                task_mc = get_model_config(task_model, max_tokens=4096)
+                role_name = role.name
+                try:
+                    from formations import TOOL_PROFILES
+                    allowed_names = TOOL_PROFILES.get(role.tool_policy, set())
+                    task_tools = (
+                        [t for t in BUILT_IN_TOOLS if t["name"] in allowed_names]
+                        if allowed_names
+                        else BUILT_IN_TOOLS
+                    )
+                    if not task_tools:
+                        task_tools = BUILT_IN_TOOLS
+                except Exception:
+                    task_tools = BUILT_IN_TOOLS
+            else:
+                task_mc = get_model_config(self.model, max_tokens=4096)
+                role_name = "implementer"
+                task_tools = BUILT_IN_TOOLS
+
+            agent = ForgeAgent(
+                model_config=task_mc,
+                project_root=self.project_path,
+                tools=task_tools,
+                max_turns=15,
+                agent_id=f"forge-{role_name}-{task.id}",
+            )
+
+            spec_text = ""
+            spec_path = self.project_path / "spec.md"
+            if spec_path.exists():
+                spec_text = spec_path.read_text()[:4000]
+
+            # Gather upstream artifacts for context
+            upstream_context = self._gather_upstream_artifacts(task, store, all_tasks)
+            context_sections = []
+            if upstream_context:
+                for section_content in upstream_context.values():
+                    context_sections.append(section_content)
+
+            context_hint = ""
+            if context_sections:
+                context_hint = "\n\n" + "\n\n".join(context_sections)
+
+            # Also include existing files not from artifacts
+            existing = self._gather_project_files()
+            if existing:
+                file_list = ", ".join(list(existing.keys())[:15])
+                context_hint += f"\n\nExisting files in project: {file_list}"
+
+            # File ownership boundaries from planning metadata
+            ownership_hint = ""
+            task_files = (task.metadata or {}).get("files", [])
+            if task_files:
+                ownership_hint = (
+                    f"\n\n## File Ownership\n"
+                    f"You are responsible for ONLY these files: {', '.join(task_files)}\n"
+                    f"Do NOT modify any other files. Other tasks own other files."
+                )
+
+            prompt = (
+                f"## Project Spec\n{spec_text}\n\n"
+                f"## Your Task\n{task.subject}: {task.description}\n\n"
+                f"## Instructions\n"
+                f"Implement this task. Use write_file to create files. "
+                f"Read existing files first with read_file if you need context. "
+                f"Write complete, working code — not stubs or placeholders."
+                f"{ownership_hint}"
+                f"{context_hint}"
+            )
+
+            # V11-grade system prompt
+            from prompt_builder import PromptBuilder
+            pb = PromptBuilder(self.project_path)
+            system_prompt = pb.build_system_prompt(
+                role="builder",
+                project_context=spec_text[:2000] if spec_text else "",
+            )
+
+            wave_start = time.time()
+            try:
+                result = await agent.run(prompt=prompt, system=system_prompt)
+                duration = time.time() - wave_start
+                tc = result.tool_calls_made
+                fc = len(result.artifacts) if result.artifacts else 0
+
+                if result.error:
+                    store.update(task.id, status="failed")
+                    return (wave_idx, task.subject, "fail", duration, tc, fc)
+                else:
+                    store.update(task.id, status="completed", artifacts=result.artifacts)
+                    return (wave_idx, task.subject, "pass", duration, tc, fc)
+
+            except Exception:
+                duration = time.time() - wave_start
+                store.update(task.id, status="failed")
+                return (wave_idx, task.subject, "fail", duration, 0, 0)
+
+    def _assign_formation_role(self, task: Any, formation: Any) -> Any:
+        """Map a task to the best-matching formation role by keyword heuristics."""
+        role_by_name: dict[str, Any] = {r.name: r for r in formation.roles}
+        desc = (task.subject + " " + (task.description or "")).lower()
+        role_keywords: dict[str, list[str]] = {
+            "backend-impl":   ["backend", "api", "server", "route", "endpoint", "database", "model"],
+            "frontend-impl":  ["frontend", "ui", "component", "page", "html", "css", "style"],
+            "integrator":     ["integrate", "connect", "wire", "compose", "nginx", "docker-compose"],
+            "architect":      ["architect", "design", "structure", "scaffold", "plan", "config"],
+            "impl-1":         ["scaffold", "skeleton", "build", "create", "implement", "add", "write"],
+            "impl-2":         ["database", "schema", "migration", "seed", "sql"],
+            "implementer":    ["build", "create", "implement", "add", "write", "feature"],
+            "tester":         ["test", "spec", "verify", "check", "validate", "coverage"],
+            "optimizer":      ["optim", "perf", "speed", "profile", "benchmark", "cache"],
+            "investigator-1": ["debug", "bug", "fix", "trace", "error"],
+            "investigator-2": ["log", "metric", "temporal", "history", "timeline"],
+            "investigator-3": ["isolat", "reproduc", "minimal", "repro"],
+            "threat-modeler": ["threat", "model", "risk", "attack", "surface"],
+            "scanner":        ["scan", "audit", "cve", "dependency", "vuln"],
+            "fixer":          ["fix", "patch", "remediat", "harden"],
+            "reviewer-1":     ["security", "auth", "injection", "secret"],
+            "reviewer-2":     ["perf", "speed", "n+1", "memory", "complexity"],
+            "reviewer-3":     ["coverage", "test", "edge", "case", "gap"],
+        }
+
+        best_role_name = None
+        best_score = 0
+        for r in formation.roles:
+            keywords = role_keywords.get(r.name, [])
+            score = sum(1 for kw in keywords if kw in desc)
+            if score > best_score:
+                best_score = score
+                best_role_name = r.name
+
+        if not best_role_name:
+            for r in formation.roles:
+                if any(x in r.name for x in ("impl", "build", "implement")):
+                    best_role_name = r.name
+                    break
+        if not best_role_name:
+            best_role_name = formation.roles[0].name
+
+        return role_by_name[best_role_name]
+
+    # ── Artifact handoff helpers ──────────────────────────────────────────
+
+    def _shorten_path(self, path_str: str) -> str:
+        """Convert absolute path to relative."""
+        try:
+            return str(Path(path_str).relative_to(self.project_path))
+        except (ValueError, TypeError):
+            return str(Path(path_str).name)
+
+    def _shorten_paths(self, paths: list) -> list:
+        return [self._shorten_path(p) for p in paths]
+
+    def _extract_exports_from_files(self, file_paths: list) -> list:
+        """Extract function/class names and API endpoints from project files."""
+        exports = []
+        for rel_path in file_paths:
+            full_path = self.project_path / rel_path
+            if not full_path.exists() or not full_path.suffix == '.py':
+                continue
+            try:
+                content = full_path.read_text(encoding="utf-8", errors="replace")
+                for line in content.split('\n'):
+                    stripped = line.strip()
+                    if stripped.startswith('def ') and not stripped.startswith('def _'):
+                        name = stripped.split('(')[0].replace('def ', '')
+                        exports.append(f"- `{rel_path}`: def {name}()")
+                    elif stripped.startswith('class '):
+                        name = stripped.split('(')[0].split(':')[0].replace('class ', '')
+                        exports.append(f"- `{rel_path}`: class {name}")
+                    elif '@app.route' in stripped or '@router.' in stripped:
+                        exports.append(f"- `{rel_path}`: {stripped}")
+            except Exception:
+                continue
+        return exports[:30]
+
+    def _gather_upstream_artifacts(
+        self,
+        task: Any,
+        store: Any,
+        all_tasks: list,
+    ) -> dict:
+        """Gather structured artifact context from completed upstream tasks."""
+        context: dict = {}
+
+        # 1. Direct dependencies' artifacts
+        upstream_artifacts = []
+        for dep_id in task.blocked_by:
+            dep = store.get(dep_id)
+            if dep and dep.status == "completed" and dep.artifacts:
+                upstream_artifacts.append({
+                    "task": dep.subject,
+                    "files": list(dep.artifacts.keys()),
+                    "details": dep.artifacts,
+                })
+
+        if upstream_artifacts:
+            lines = ["## Upstream Task Results"]
+            for ua in upstream_artifacts:
+                lines.append(f"\n### {ua['task']}")
+                lines.append(f"Files created: {', '.join(self._shorten_paths(ua['files']))}")
+                for fpath, info in list(ua['details'].items())[:5]:
+                    short = self._shorten_path(fpath)
+                    action = info.get('action', 'unknown') if isinstance(info, dict) else 'written'
+                    lines.append(f"  - {short} ({action})")
+            context["upstream_results"] = "\n".join(lines)
+
+        # 2. All project files from completed tasks
+        all_created_files = []
+        for t in all_tasks:
+            if t.status == "completed" and t.artifacts:
+                for fpath in t.artifacts.keys():
+                    short = self._shorten_path(fpath)
+                    all_created_files.append(short)
+
+        if all_created_files:
+            context["project_files"] = (
+                "## Project Files (created by prior tasks)\n" +
+                ", ".join(sorted(set(all_created_files)))
+            )
+
+        # 3. Auto-extract exports/endpoints
+        exports = self._extract_exports_from_files(all_created_files)
+        if exports:
+            context["available_exports"] = (
+                "## Available Imports & Endpoints\n" +
+                "\n".join(exports)
+            )
+
+        return context
 
     # ── /build ───────────────────────────────────────────────────────────
 
@@ -1269,22 +1584,63 @@ class ForgeShell:
 
         pending = [t for t in tasks if t.status == "pending"]
         failed_tasks = [t for t in tasks if t.status == "failed"]
-        retryable = pending + failed_tasks  # Retry failed tasks too
+        stale_active = [t for t in tasks if t.status == "in_progress"]
+        retryable = pending + failed_tasks + stale_active
 
         if not retryable:
             console.print("  [success]All tasks already complete![/]")
             self._cmd_status()
+            self._suggest_next_action()
             return
 
-        # Reset failed tasks to pending for retry
-        for t in failed_tasks:
+        # Reset failed and stale in_progress tasks to pending for retry
+        for t in failed_tasks + stale_active:
             store.update(t.id, status="pending")
 
+        # ── Formation selection ───────────────────────────────────────────
+        formation = None
+        try:
+            from formations import select_formation
+
+            n = len(tasks)
+            scope = "small" if n <= 3 else ("medium" if n <= 8 else "large")
+
+            complex_keywords = {"architecture", "design", "integrate", "migrate", "refactor", "security", "oauth"}
+            all_text = " ".join(
+                (t.subject + " " + (t.description or "")).lower() for t in tasks
+            )
+            if any(kw in all_text for kw in complex_keywords):
+                complexity = "complex"
+            elif n <= 3:
+                complexity = "routine"
+            else:
+                complexity = "medium"
+
+            formation = select_formation(complexity=complexity, scope=scope)
+        except Exception:
+            formation = None
+
+        if formation is not None:
+            console.print(
+                f"  [accent]Formation:[/] {formation.name} "
+                f"({len(formation.roles)} roles)"
+            )
+            for role in formation.roles:
+                wave_idx_hint = next(
+                    (i for i, wave in enumerate(formation.wave_order) if role.name in wave),
+                    0,
+                )
+                console.print(
+                    f"    [muted]Wave {wave_idx_hint}:[/] {role.name} "
+                    f"[muted]({_short_model(role.model)})[/]"
+                )
+            console.print()
+
+        # ── Execute waves ─────────────────────────────────────────────────
         console.print(f"  [nova]Nova[/] is building your project...")
         console.print(f"  [muted]{len(retryable)} tasks to complete[/]")
         console.print()
 
-        # Compute waves
         try:
             waves = store.compute_waves()
         except ValueError as exc:
@@ -1296,8 +1652,6 @@ class ForgeShell:
         total_files = 0
         wave_results: list[tuple[int, str, str, float]] = []
 
-        from forge_agent import ForgeAgent, BUILT_IN_TOOLS
-
         for wave_idx, wave_tasks in enumerate(waves):
             runnable = [
                 t for t in wave_tasks
@@ -1308,88 +1662,82 @@ class ForgeShell:
                     wave_results.append((wave_idx, t.subject, "skip", 0.0))
                 continue
 
+            # Determine concurrency limit based on provider
+            provider = get_provider(self.model)
+            max_concurrent = PROVIDER_CONCURRENCY.get(provider, 4)
+            semaphore = asyncio.Semaphore(min(max_concurrent, len(runnable)))
+
+            if len(runnable) > 1:
+                console.print(
+                    f"  [accent]Wave {wave_idx}:[/] {len(runnable)} tasks in parallel "
+                    f"(max {semaphore._value} concurrent)"
+                )
+
+            # Mark all runnable tasks as in_progress before launching
             for task in runnable:
                 store.update(task.id, status="in_progress")
 
-                with Progress(
-                    SpinnerColumn("dots"),
-                    TextColumn(f"[step]{task.subject}[/]"),
-                    TimeElapsedColumn(),
-                    console=console,
-                    transient=True,
-                ) as progress:
-                    progress.add_task(task.subject, total=None)
+            # Launch all tasks in this wave concurrently
+            coros = [
+                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore)
+                for task in runnable
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
 
-                    mc = get_model_config(self.model, max_tokens=4096)
-                    agent = ForgeAgent(
-                        model_config=mc,
-                        project_root=self.project_path,
-                        tools=BUILT_IN_TOOLS,
-                        max_turns=15,
-                        agent_id=f"forge-wave{wave_idx}-{task.id}",
+            # Process results
+            for i, result in enumerate(results):
+                task = runnable[i]
+                if isinstance(result, Exception):
+                    store.update(task.id, status="failed")
+                    wave_results.append((wave_idx, task.subject, "fail", 0.0))
+                    console.print(
+                        f"  [error]{task.subject}[/]  [muted](error: {result})[/]"
                     )
-
-                    spec_text = ""
-                    spec_path = self.project_path / "spec.md"
-                    if spec_path.exists():
-                        spec_text = spec_path.read_text()[:4000]
-
-                    # Gather existing project files for context
-                    existing = self._gather_project_files()
-                    context_hint = ""
-                    if existing:
-                        context_hint = f"\n\nExisting project files: {', '.join(existing.keys())}"
-                        for fname, content in list(existing.items())[:3]:
-                            context_hint += f"\n\n--- {fname} ---\n{content[:2000]}"
-
-                    prompt = (
-                        f"## Project Spec\n{spec_text}\n\n"
-                        f"## Your Task\n{task.subject}: {task.description}\n\n"
-                        f"## Instructions\n"
-                        f"Implement this task. Use write_file to create files. "
-                        f"Read existing files first with read_file if you need context. "
-                        f"Write complete, working code — not stubs or placeholders."
-                        f"{context_hint}"
-                    )
-
-                    wave_start = time.time()
-                    try:
-                        result = await agent.run(
-                            prompt=prompt,
-                            system=(
-                                "You are a skilled Python developer building a real project. "
-                                "Write complete, production-quality code. Use tools to create files. "
-                                "Build on existing files when they exist."
-                            ),
-                        )
-                        duration = time.time() - wave_start
-                        total_tool_calls += result.tool_calls_made
-                        if result.artifacts:
-                            total_files += len(result.artifacts)
-
-                        if result.error:
-                            store.update(task.id, status="failed")
-                            wave_results.append((wave_idx, task.subject, "fail", duration))
-                        else:
-                            store.update(task.id, status="completed", artifacts=result.artifacts)
-                            wave_results.append((wave_idx, task.subject, "pass", duration))
-
-                    except Exception:
-                        duration = time.time() - wave_start
-                        store.update(task.id, status="failed")
-                        wave_results.append((wave_idx, task.subject, "fail", duration))
-
-                # Print result after progress bar clears
-                _, name, status, dur = wave_results[-1]
-                if status == "pass":
-                    console.print(f"  [success]{name}[/]  [muted]{dur:.0f}s[/]")
-                elif status == "fail":
-                    console.print(f"  [error]{name}[/]  [muted]{dur:.0f}s[/]")
                 else:
-                    console.print(f"  [muted]{name}  (skipped)[/]")
+                    w_idx, name, status, dur, tc, fc = result
+                    wave_results.append((w_idx, name, status, dur))
+                    total_tool_calls += tc
+                    total_files += fc
+                    if status == "pass":
+                        console.print(f"  [success]{name}[/]  [muted]{dur:.0f}s[/]")
+                    elif status == "fail":
+                        console.print(f"  [error]{name}[/]  [muted]{dur:.0f}s[/]")
+                    else:
+                        console.print(f"  [muted]{name}  (skipped)[/]")
 
         total_duration = time.time() - total_start
         self._sync_task_state()
+
+        # Write artifact manifest
+        artifact_manifest = {}
+        for t in store.list():
+            if t.artifacts:
+                artifact_manifest[t.id] = {
+                    "task": t.subject,
+                    "status": t.status,
+                    "files": list(t.artifacts.keys()),
+                }
+        if artifact_manifest:
+            manifest_dir = self.project_path / "artifacts"
+            manifest_dir.mkdir(exist_ok=True)
+            (manifest_dir / "index.json").write_text(
+                json.dumps(artifact_manifest, indent=2)
+            )
+
+        # Gate review (skip with --no-review)
+        if "--no-review" not in arg:
+            spec_text = ""
+            spec_path = self.project_path / "spec.md"
+            if spec_path.exists():
+                spec_text = spec_path.read_text()[:4000]
+            gate_result = await self._run_gate_review(store, spec_text)
+            gate_status = gate_result["status"]
+            if gate_status == "pass":
+                console.print("  [success]Gate: PASS[/]")
+            elif gate_status == "fail":
+                console.print(f"  [error]Gate: FAIL[/] — {gate_result['summary']}")
+            else:
+                console.print(f"  [warning]Gate: CONDITIONAL[/] — {gate_result['summary']}")
 
         # Summary line
         passed = sum(1 for _, _, s, _ in wave_results if s == "pass")
@@ -1404,6 +1752,88 @@ class ForgeShell:
         all_files = self._list_project_files()
         if all_files:
             console.print(f"  [muted]Files: {', '.join(all_files[:10])}[/]")
+
+        self._suggest_next_action()
+
+    async def _run_gate_review(self, store: Any, spec_text: str) -> dict:
+        """Run adversarial gate review on build artifacts.
+
+        Returns: {"status": "pass"|"fail"|"conditional", "issues": [...], "summary": "..."}
+        """
+        from forge_agent import ForgeAgent, BUILT_IN_TOOLS
+
+        # Read-only tools for review agent
+        review_tools = [
+            t for t in BUILT_IN_TOOLS
+            if t["name"] in {"read_file", "glob_files", "grep", "list_directory", "think"}
+        ]
+
+        mc = get_model_config(self.model, max_tokens=4096)
+        agent = ForgeAgent(
+            model_config=mc,
+            project_root=self.project_path,
+            tools=review_tools,
+            max_turns=10,
+            agent_id="forge-gate-reviewer",
+        )
+
+        # Gather file list from completed tasks
+        completed_tasks = store.list(status="completed")
+        file_list = []
+        for t in completed_tasks:
+            if t.artifacts:
+                file_list.extend(t.artifacts.keys())
+
+        files_str = "\n".join(f"- {self._shorten_path(f)}" for f in file_list[:20])
+        task_str = "\n".join(f"- [{t.id}] {t.subject}" for t in completed_tasks)
+
+        prompt = (
+            f"## Gate Review\n\n"
+            f"Review the build output. The project should match the spec.\n\n"
+            f"### Spec\n{spec_text[:2000]}\n\n"
+            f"### Completed Tasks\n{task_str}\n\n"
+            f"### Files Created\n{files_str}\n\n"
+            f"### Your Instructions\n"
+            f"1. Use glob_files and read_file to examine the created files\n"
+            f"2. Check that: files exist, no syntax errors, imports resolve, "
+            f"code is complete (not stubs)\n"
+            f"3. End your response with exactly one of these on its own line:\n"
+            f"   GATE: PASS\n"
+            f"   GATE: FAIL - [reason]\n"
+            f"   GATE: CONDITIONAL - [issues to fix]\n"
+        )
+
+        system = (
+            "You are a code reviewer. Examine the files carefully. "
+            "Be strict: placeholder code, empty functions, or missing imports = FAIL. "
+            "Working code with minor style issues = PASS. "
+            "Working code with some gaps = CONDITIONAL."
+        )
+
+        try:
+            result = await agent.run(prompt=prompt, system=system)
+            output = result.output or ""
+
+            if "GATE: PASS" in output:
+                return {"status": "pass", "issues": [], "summary": "All checks passed"}
+            elif "GATE: FAIL" in output:
+                reason = output.split("GATE: FAIL")[-1].strip().lstrip("- ").strip()
+                return {"status": "fail", "issues": [reason], "summary": reason[:200]}
+            elif "GATE: CONDITIONAL" in output:
+                reason = output.split("GATE: CONDITIONAL")[-1].strip().lstrip("- ").strip()
+                return {"status": "conditional", "issues": [reason], "summary": reason[:200]}
+            else:
+                return {
+                    "status": "conditional",
+                    "issues": ["Review agent did not produce a clear verdict"],
+                    "summary": output[:200],
+                }
+        except Exception as exc:
+            return {
+                "status": "conditional",
+                "issues": [f"Gate review error: {exc}"],
+                "summary": str(exc)[:200],
+            }
 
     # ── /status ──────────────────────────────────────────────────────────
 
@@ -1446,6 +1876,8 @@ class ForgeShell:
                 if (self.project_path / f).exists()
             )
             console.print(f"  [muted]{len(all_files)} files ({total_size:,} bytes)[/]")
+
+        self._suggest_next_action()
 
     # ── /tasks ───────────────────────────────────────────────────────────
 
@@ -1493,6 +1925,7 @@ class ForgeShell:
 
         console.print()
         console.print(table)
+        self._suggest_next_action()
 
     # ── /models ──────────────────────────────────────────────────────────
 
@@ -1611,6 +2044,211 @@ class ForgeShell:
 
         console.print(table)
 
+    # ── /preview ────────────────────────────────────────────────────────
+
+    def _cmd_preview(self, arg: str) -> None:
+        """Launch Cloudflare Tunnel for live preview."""
+        import subprocess as sp
+        import re
+
+        if arg == "stop":
+            if hasattr(self, "_preview_procs"):
+                for proc in self._preview_procs:
+                    if proc.poll() is None:
+                        proc.kill()
+                del self._preview_procs
+                console.print("  [success]Preview stopped.[/]")
+            else:
+                console.print("  [muted]No preview running.[/]")
+            return
+
+        cf_path = shutil.which("cloudflared")
+        if not cf_path:
+            console.print("  [error]cloudflared not found.[/]")
+            console.print("  [hint]Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/[/]")
+            return
+
+        # Find a free port
+        import socket
+        def _find_free_port(start: int) -> int:
+            for p in range(start, start + 20):
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    if s.connect_ex(('127.0.0.1', p)) != 0:
+                        return p
+            return start + 20
+
+        def _port_is_listening(p: int) -> bool:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex(('127.0.0.1', p)) == 0
+
+        # ── Detect app type and entry point ──────────────────────────
+        pp = self.project_path
+
+        # Search root + common subdirectories for entry points
+        search_dirs = [pp]
+        for sub in ("backend", "server", "api", "src", "app"):
+            sd = pp / sub
+            if sd.is_dir():
+                search_dirs.append(sd)
+
+        # 1) Flask / Python app
+        flask_entry = None
+        flask_cwd = pp
+        for d in search_dirs:
+            for fname in ("app.py", "main.py", "server.py", "wsgi.py", "run.py"):
+                fp = d / fname
+                if fp.exists():
+                    try:
+                        src = fp.read_text()
+                        if "flask" in src.lower() or "Flask" in src:
+                            flask_entry = fname
+                            flask_cwd = d
+                            break
+                    except Exception:
+                        pass
+            if flask_entry:
+                break
+
+        # 2) Node.js app
+        node_cwd = None
+        for d in search_dirs:
+            if (d / "package.json").exists():
+                node_cwd = d
+                break
+        # Also check frontend dirs for Node
+        if not node_cwd:
+            for sub in ("frontend", "client", "web", "ui"):
+                sd = pp / sub
+                if sd.is_dir() and (sd / "package.json").exists():
+                    node_cwd = sd
+                    break
+
+        # 3) Static site (index.html)
+        static_cwd = None
+        for d in search_dirs:
+            if (d / "index.html").exists():
+                static_cwd = d
+                break
+        # Also check frontend dirs for static
+        if not static_cwd:
+            for sub in ("frontend", "client", "web", "public", "dist", "build"):
+                sd = pp / sub
+                if sd.is_dir() and (sd / "index.html").exists():
+                    static_cwd = sd
+                    break
+
+        # ── Pick the best server ─────────────────────────────────────
+        port = None
+        server_cmd = None
+        server_cwd = pp
+        stack = None
+
+        if flask_entry:
+            port = _find_free_port(5000)
+            module = flask_entry[:-3]  # strip .py
+            server_cmd = f"python3 -m flask --app {module}:app run --host 0.0.0.0 --port {port}"
+            server_cwd = flask_cwd
+            stack = "flask"
+        elif node_cwd:
+            port = _find_free_port(3000)
+            server_cmd = f"PORT={port} npm start"
+            server_cwd = node_cwd
+            stack = "node"
+        elif static_cwd:
+            port = _find_free_port(8080)
+            server_cmd = f"python3 -m http.server {port}"
+            server_cwd = static_cwd
+            stack = "static"
+        else:
+            # No recognizable entry point — don't serve a bare directory listing
+            console.print("  [warning]No servable entry point found.[/]")
+            console.print()
+            console.print("  [muted]Looked for:[/]")
+            console.print("    Flask app   (app.py, main.py, server.py with Flask import)")
+            console.print("    Node app    (package.json)")
+            console.print("    Static site (index.html)")
+            console.print()
+            console.print("  [hint]In root and subdirs: backend/, server/, frontend/, src/[/]")
+            return
+
+        rel = server_cwd.relative_to(pp) if server_cwd != pp else Path(".")
+        loc = f" from {rel}/" if str(rel) != "." else ""
+        console.print(f"  [info]Preview:[/] {pp.name} ({stack}{loc}) on port {port}")
+
+        procs = []
+        console.print(f"  [muted]Server: {server_cmd}[/]")
+        err_log = pp / ".forge" / "preview-stderr.log"
+        err_fh = open(err_log, "w")
+        server_proc = sp.Popen(
+            server_cmd, shell=True, cwd=str(server_cwd),
+            stdout=sp.DEVNULL, stderr=err_fh,
+        )
+        procs.append(server_proc)
+        # Wait for server to start listening
+        for _ in range(10):
+            time.sleep(0.5)
+            if _port_is_listening(port):
+                break
+            if server_proc.poll() is not None:
+                # Server crashed
+                err_fh.close()
+                err_text = err_log.read_text().strip()
+                console.print(f"  [error]Server failed to start![/]")
+                if err_text:
+                    for ln in err_text.split("\n")[-5:]:
+                        console.print(f"    [muted]{ln}[/]")
+                return
+        else:
+            if not _port_is_listening(port):
+                console.print(f"  [warning]Server may not have started (port {port} not open)[/]")
+
+        console.print("  Starting Cloudflare Tunnel...")
+        tunnel_proc = sp.Popen(
+            [cf_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=sp.PIPE, stderr=sp.STDOUT, text=True,
+        )
+        procs.append(tunnel_proc)
+
+        tunnel_url = None
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            line = tunnel_proc.stdout.readline()
+            if not line:
+                break
+            if "trycloudflare.com" in line:
+                match = re.search(r"(https://[a-z0-9-]+\.trycloudflare\.com)", line)
+                if match:
+                    tunnel_url = match.group(1)
+                    break
+
+        if not tunnel_url:
+            console.print("  [error]Could not establish tunnel.[/]")
+            for proc in procs:
+                if proc.poll() is None:
+                    proc.kill()
+            return
+
+        self._preview_procs = procs
+        console.print()
+        console.print(Panel(
+            f"[bold green]{tunnel_url}[/]\n\n"
+            f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
+            border_style="green",
+            title="[bold green] Live Preview [/]",
+            padding=(1, 2),
+        ))
+
+    # ── /deploy ─────────────────────────────────────────────────────────
+
+    def _cmd_deploy(self, arg: str) -> None:
+        """Deploy project with Docker + nginx."""
+        console.print("  [info]Deploy:[/] Coming soon!")
+        console.print()
+        console.print("  [muted]For now, use the CLI command:[/]")
+        console.print(f"    [accent]forge deploy --domain yourapp.example.com[/]")
+        console.print()
+        console.print("  [hint]Or try /preview for a quick shareable URL.[/]")
+
     # ── Natural language handler ─────────────────────────────────────────
 
     async def _handle_natural(self, user_input: str) -> None:
@@ -1623,11 +2261,41 @@ class ForgeShell:
             "i need", "make me", "create me", "write me", "generate",
             "scaffold", "set up", "setup", "start a",
         ]
-        if any(kw in lower for kw in build_triggers) and not self._has_tasks():
-            console.print()
-            console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
-            await self._guided_build(user_input)
-            return
+        if any(kw in lower for kw in build_triggers):
+            if not self._has_tasks():
+                console.print()
+                console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
+                await self._guided_build(user_input)
+                return
+            else:
+                # User wants to build something new but has an existing project
+                console.print()
+                console.print(f"  [nova]Nova[/] [muted]--[/] You already have a project here "
+                              f"([bold]{self.project_path.name}[/]).")
+                console.print()
+                console.print(f"    [accent]1.[/] Start a fresh project for this")
+                console.print(f"    [accent]2.[/] Add to the current project (chat)")
+                console.print(f"    [accent]3.[/] Cancel")
+                console.print()
+                try:
+                    session = PromptSession(style=PT_STYLE)
+                    choice = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: session.prompt(HTML("<prompt>Choice (1/2/3): </prompt>")),
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    return
+                choice = choice.strip()
+                if choice == "1":
+                    console.print()
+                    console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
+                    await self._guided_build(user_input)
+                    return
+                elif choice == "2":
+                    pass  # Fall through to chat agent below
+                else:
+                    console.print("  [muted]Cancelled.[/]")
+                    return
 
         # If we have tasks and user says "build" / "go" / "start" / "yes"
         if lower in ("build", "go", "start", "yes", "y", "do it", "run it", "let's go"):
@@ -1661,7 +2329,7 @@ class ForgeShell:
                 model_config=mc,
                 project_root=self.project_path,
                 tools=BUILT_IN_TOOLS,
-                max_turns=10,
+                max_turns=20,
                 agent_id="forge-chat",
             )
 
@@ -1720,6 +2388,33 @@ class ForgeShell:
             return len(store.list()) > 0
         except Exception:
             return False
+
+    def _suggest_next_action(self) -> None:
+        """Show contextual next-step guidance based on current project state."""
+        summary = self._get_task_summary()
+
+        if not summary or summary["total"] == 0:
+            console.print()
+            console.print("  [hint]Tell me what you want to build, or try /interview for guided setup[/]")
+            return
+
+        total = summary["total"]
+        done = summary["completed"]
+        failed = summary.get("failed", 0)
+        pending = summary.get("pending", 0)
+
+        in_prog = summary.get("in_progress", 0)
+
+        if done == total and in_prog == 0:
+            console.print()
+            console.print("  [hint]/preview[/] — share a live URL  |  [hint]/deploy[/] — ship to production")
+        elif failed > 0:
+            console.print()
+            console.print(f"  [hint]{failed} task(s) failed. Run /build to retry them.[/]")
+        elif pending > 0 or in_prog > 0:
+            remaining = pending + in_prog
+            console.print()
+            console.print(f"  [hint]{remaining} task(s) remaining. Run /build to continue.[/]")
 
     def _get_task_summary(self) -> dict | None:
         return self._get_task_summary_for(self.project_path)

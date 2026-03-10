@@ -543,6 +543,70 @@ class AutonomyManager:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    @property
+    def current_level(self) -> int:
+        """Return the current autonomy level (0-4)."""
+        return int(self._state.get("level", 0))
+
+    def check_permission(self, risk: RiskLevel) -> bool:
+        """Check if the current autonomy level permits an operation of *risk*.
+
+        Simple facade over the full check() logic — used by ForgeAgent during
+        tool execution when file/command context is not yet needed for the
+        permission decision.
+
+        A0 (Manual)    — nothing allowed automatically.
+        A1 (Guided)    — only LOW risk allowed.
+        A2 (Supervised)— LOW and MEDIUM allowed; HIGH blocked.
+        A3 (Trusted)   — LOW and MEDIUM and HIGH allowed.
+        A4 (Autonomous)— everything allowed (includes any future CRITICAL level).
+        """
+        level = self.current_level
+        if level >= 4:
+            # A4: Autonomous — everything allowed.
+            return True
+        if level >= 3:
+            # A3: Trusted — allow LOW, MEDIUM, HIGH; block only hypothetical CRITICAL.
+            return risk in (RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH)
+        if level >= 2:
+            # A2: Supervised — allow LOW and MEDIUM; block HIGH.
+            return risk in (RiskLevel.LOW, RiskLevel.MEDIUM)
+        if level >= 1:
+            # A1: Guided — only LOW allowed.
+            return risk == RiskLevel.LOW
+        # A0: Manual — block everything (all need explicit confirmation).
+        return False
+
+    def record_build_result(self, passed: int, failed: int, total: int) -> None:
+        """Record a build outcome for trust scoring.
+
+        A clean build (no failures) counts as a success; any failure counts
+        as an error.  Both paths call save() to persist the updated state.
+        """
+        if failed == 0 and total > 0:
+            self.record_success()
+        elif failed > 0:
+            self.record_error()
+        self._save()
+
+    def record_success(self) -> None:
+        """Increment successful_actions and potentially escalate level."""
+        now = _utcnow()
+        self._state["successful_actions"] = self._state.get("successful_actions", 0) + 1
+        self._maybe_escalate(now)
+
+    def record_error(self) -> None:
+        """Increment error_count, append to error_history, and potentially de-escalate."""
+        now = _utcnow()
+        self._state["error_count"] = self._state.get("error_count", 0) + 1
+        history: list = self._state.setdefault("error_history", [])
+        history.append({
+            "timestamp": _iso(now),
+            "tool": "build",
+            "error": "build_failure",
+        })
+        self._maybe_deescalate(now)
+
     def check(
         self,
         tool_name: str,
@@ -727,7 +791,7 @@ class AutonomyManager:
         if level == 0:
             return
 
-        # Check for 2+ errors within the 10-minute window → A0.
+        # Check for 5+ errors within the 10-minute window → A0.
         history: list[dict] = self._state.get("error_history", [])
         window_start = now - _DE_ESCALATION_WINDOW
         recent_errors = [
@@ -735,7 +799,7 @@ class AutonomyManager:
             if (_parse_iso(e.get("timestamp", "")) or datetime.min.replace(tzinfo=timezone.utc))
             >= window_start
         ]
-        if len(recent_errors) >= 2:
+        if len(recent_errors) >= 5:
             self._state["level"] = 0
             self._state["name"] = _LEVEL_NAMES[0]
             self._state["last_escalation"] = _iso(now)
@@ -770,8 +834,8 @@ class AutonomyManager:
     @staticmethod
     def _default_state() -> dict:
         return {
-            "level": 0,
-            "name": "Manual",
+            "level": 2,
+            "name": "Supervised",
             "successful_actions": 0,
             "error_count": 0,
             "approved_categories": [],

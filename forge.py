@@ -115,20 +115,192 @@ def build(ctx: click.Context, model: str | None, formation: str | None, max_conc
 @click.option("--domain", "-d", default=None, help="Domain name (e.g. weather.herakles.dev)")
 @click.pass_context
 def deploy(ctx: click.Context, port: int | None, domain: str | None) -> None:
-    """Deploy the built project to a live URL."""
-    project_path = ctx.obj["project"]
-    click.echo(f"Deploying: {project_path.name}")
+    """Deploy the built project to a live URL (Docker + nginx + SSL)."""
+    from config import ForgeProject
+    from forge_deployer import ForgeDeployer
 
-    try:
-        from forge_deployer import ForgeDeployer
-        deployer = ForgeDeployer(project_path)
-        result = asyncio.run(deployer.deploy(port=port, domain=domain))
-        click.echo(f"URL: {result.url}")
-        click.echo(f"Port: {result.port}")
-        click.echo(f"Health: {'OK' if result.health_status else 'FAIL'}")
-    except ImportError:
-        click.echo("Deployer not yet implemented (Sprint 3)", err=True)
+    project_path = ctx.obj["project"]
+    project = ForgeProject(root=project_path)
+    domain = domain or f"{project.name}.herakles.dev"
+
+    click.echo(f"Deploying: {project_path.name} -> {domain}")
+
+    deployer = ForgeDeployer()
+    result = asyncio.run(deployer.deploy(project, domain=domain, requested_port=port))
+
+    if result.error:
+        click.echo(f"Error: {result.error}", err=True)
         sys.exit(1)
+
+    click.echo(f"URL:       {result.url}")
+    click.echo(f"Port:      {result.port}")
+    click.echo(f"Container: {result.container_id}")
+    click.echo(f"Health:    {'OK' if result.health_status else 'FAIL'}")
+
+
+# ── forge preview ───────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--port", "-p", type=int, default=None, help="Local port to tunnel (auto-detects if omitted)")
+@click.pass_context
+def preview(ctx: click.Context, port: int | None) -> None:
+    """Launch a Cloudflare Tunnel for live preview (shareable URL, no account needed)."""
+    import subprocess as sp
+    import shutil
+    import re
+    import signal
+
+    cf_path = shutil.which("cloudflared")
+    if not cf_path:
+        click.echo("Error: cloudflared not found. Install from:")
+        click.echo("  https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/")
+        sys.exit(1)
+
+    project_path = ctx.obj["project"]
+    import socket
+
+    def _find_free_port(start: int) -> int:
+        for p in range(start, start + 20):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(('127.0.0.1', p)) != 0:
+                    return p
+        return start + 20
+
+    # Auto-detect stack and port
+    server_cmd = None
+    server_cwd = project_path
+
+    if port is None:
+        # Search root + common subdirectories
+        search_dirs = [project_path]
+        for sub in ("backend", "server", "api", "src", "app"):
+            sd = project_path / sub
+            if sd.is_dir():
+                search_dirs.append(sd)
+
+        # 1) Flask app
+        flask_entry = None
+        flask_cwd = project_path
+        for d in search_dirs:
+            for fname in ("app.py", "main.py", "server.py", "wsgi.py", "run.py"):
+                fp = d / fname
+                if fp.exists():
+                    try:
+                        src = fp.read_text()
+                        if "flask" in src.lower() or "Flask" in src:
+                            flask_entry = fname
+                            flask_cwd = d
+                            break
+                    except Exception:
+                        pass
+                if flask_entry:
+                    break
+            if flask_entry:
+                break
+
+        # 2) Node.js
+        node_cwd = None
+        for d in search_dirs:
+            if (d / "package.json").exists():
+                node_cwd = d
+                break
+        if not node_cwd:
+            for sub in ("frontend", "client", "web", "ui"):
+                sd = project_path / sub
+                if sd.is_dir() and (sd / "package.json").exists():
+                    node_cwd = sd
+                    break
+
+        # 3) Static site
+        static_cwd = None
+        for d in search_dirs:
+            if (d / "index.html").exists():
+                static_cwd = d
+                break
+        if not static_cwd:
+            for sub in ("frontend", "client", "web", "public", "dist", "build"):
+                sd = project_path / sub
+                if sd.is_dir() and (sd / "index.html").exists():
+                    static_cwd = sd
+                    break
+
+        if flask_entry:
+            port = _find_free_port(5000)
+            module = flask_entry[:-3]
+            server_cmd = f"python3 -m flask --app {module}:app run --host 0.0.0.0 --port {port}"
+            server_cwd = flask_cwd
+        elif node_cwd:
+            port = _find_free_port(3000)
+            server_cmd = f"PORT={port} npm start"
+            server_cwd = node_cwd
+        elif static_cwd:
+            port = _find_free_port(8080)
+            server_cmd = f"python3 -m http.server {port}"
+            server_cwd = static_cwd
+        else:
+            click.echo("Error: No servable entry point found (Flask, Node, or index.html).", err=True)
+            click.echo("Searched root and subdirs: backend/, server/, frontend/, src/", err=True)
+            sys.exit(1)
+
+    click.echo(f"Preview: {project_path.name} on port {port}")
+
+    # Start dev server if needed
+    server_proc = None
+    if server_cmd:
+        click.echo(f"Server: {server_cmd}")
+        click.echo(f"  cwd: {server_cwd}")
+        server_proc = sp.Popen(
+            server_cmd, shell=True, cwd=str(server_cwd),
+            stdout=sp.DEVNULL, stderr=sp.PIPE,
+        )
+        import time
+        time.sleep(2)
+        if server_proc.poll() is not None:
+            stderr = server_proc.stderr.read().decode() if server_proc.stderr else ""
+            click.echo(f"Error: Server crashed. {stderr[-200:]}", err=True)
+            sys.exit(1)
+
+    # Start tunnel
+    click.echo("Starting Cloudflare Tunnel...")
+    tunnel_proc = sp.Popen(
+        [cf_path, "tunnel", "--url", f"http://localhost:{port}"],
+        stdout=sp.PIPE, stderr=sp.STDOUT, text=True,
+    )
+
+    # Find the URL
+    tunnel_url = None
+    import time
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        line = tunnel_proc.stdout.readline()
+        if not line:
+            break
+        if "trycloudflare.com" in line:
+            match = re.search(r"(https://[a-z0-9-]+\.trycloudflare\.com)", line)
+            if match:
+                tunnel_url = match.group(1)
+                break
+
+    if not tunnel_url:
+        click.echo("Error: Could not establish tunnel.", err=True)
+        tunnel_proc.kill()
+        if server_proc:
+            server_proc.kill()
+        sys.exit(1)
+
+    click.echo(f"\nLive preview: {tunnel_url}")
+    click.echo("Press Ctrl+C to stop.\n")
+
+    # Wait for Ctrl+C
+    try:
+        tunnel_proc.wait()
+    except KeyboardInterrupt:
+        click.echo("\nStopping preview...")
+    finally:
+        if tunnel_proc.poll() is None:
+            tunnel_proc.kill()
+        if server_proc and server_proc.poll() is None:
+            server_proc.kill()
 
 
 # ── forge status ─────────────────────────────────────────────────────────────

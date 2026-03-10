@@ -13,3 +13,5 @@ build/
 venv/
 .venv/
 node_modules/
+test-*/
+*.db

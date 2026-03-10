@@ -70,6 +70,41 @@ CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+def get_prompt_budget(context_window: int) -> dict:
+    """Return token budget allocation for each prompt zone.
+
+    Zones: system_prompt, project_index, chat_history, memory, working_space
+    All values in tokens (1 token ≈ 4 chars).
+    """
+    if context_window <= 32_000:
+        return {
+            "system_prompt": 4_000,      # 12.5%
+            "project_index": 1_500,
+            "chat_history": 2_000,
+            "memory": 1_000,
+            "working_space": 23_500,     # 73.4%
+            "compaction_threshold": 0.60,
+        }
+    elif context_window <= 200_000:
+        return {
+            "system_prompt": 8_000,
+            "project_index": 4_000,
+            "chat_history": 6_000,
+            "memory": 2_000,
+            "working_space": 108_000,
+            "compaction_threshold": 0.75,
+        }
+    else:
+        return {
+            "system_prompt": 16_000,
+            "project_index": 8_000,
+            "chat_history": 12_000,
+            "memory": 4_000,
+            "working_space": 260_000,
+            "compaction_threshold": 0.80,
+        }
+
+
 def resolve_model(model_str: str) -> str:
     """Resolve alias or passthrough full model ID."""
     return MODEL_ALIASES.get(model_str, model_str)

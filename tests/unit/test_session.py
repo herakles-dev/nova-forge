@@ -61,10 +61,10 @@ class TestTaskState:
 
 
 class TestAutonomyState:
-    def test_load_empty_returns_a0(self, sm):
+    def test_load_empty_returns_a2(self, sm):
         sm.init()
         autonomy = sm.load_autonomy()
-        assert autonomy.level == 0
+        assert autonomy.level == 2  # Default is A2 (Supervised)
 
     def test_save_and_load_roundtrip(self, sm):
         sm.init()

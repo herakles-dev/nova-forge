@@ -159,8 +159,8 @@ class ComplianceChecker:
 
         # Gate 5: autonomy state
         if not self.project.autonomy_file.exists():
-            self.sm.save_autonomy(AutonomyState(level=0))
-            fixes.append("Initialized autonomy at A0")
+            self.sm.save_autonomy(AutonomyState(level=2))
+            fixes.append("Initialized autonomy at A2 (Supervised)")
 
         # Gate 7: FORGE.md
         if not self.project.forge_md.exists():

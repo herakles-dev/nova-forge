@@ -54,15 +54,27 @@ def test_update_status(tmp_path):
 
 
 def test_invalid_transition(tmp_path):
-    """in_progress → pending is not an allowed transition and raises ValueError."""
+    """completed → pending is not an allowed transition and raises ValueError."""
     store = make_store(tmp_path)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         task = store.create("Task B", "desc", metadata=valid_meta())
     store.update(task.id, status="in_progress")
+    store.update(task.id, status="completed")
 
     with pytest.raises(ValueError, match="Cannot transition"):
         store.update(task.id, status="pending")
+
+
+def test_in_progress_to_pending_allowed(tmp_path):
+    """in_progress → pending is allowed for interrupted build retries."""
+    store = make_store(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        task = store.create("Task C", "desc", metadata=valid_meta())
+    store.update(task.id, status="in_progress")
+    updated = store.update(task.id, status="pending")
+    assert updated.status == "pending"
 
 
 def test_list_filter_by_status(tmp_path):

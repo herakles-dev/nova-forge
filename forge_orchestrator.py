@@ -83,6 +83,7 @@ class ForgeOrchestrator:
         goal: str,
         model: str | None = None,
         template: str | None = None,
+        extra_context: str | None = None,
     ) -> PlanResult:
         """Phase 1+2: Generate spec.md and tasks.json from a user goal."""
         plan_model = resolve_model(model or self.model)
@@ -105,6 +106,10 @@ class ForgeOrchestrator:
         if template:
             template_hint = f"\nUse the '{template}' template as a starting point."
 
+        interview_block = ""
+        if extra_context:
+            interview_block = f"\n\n{extra_context}"
+
         plan_result = await planning_agent.run(
             prompt=(
                 f"Create a project specification for: {goal}\n\n"
@@ -115,7 +120,8 @@ class ForgeOrchestrator:
                 f"- Data models\n"
                 f"- Dependencies\n"
                 f"- Deployment notes\n"
-                f"{template_hint}\n"
+                f"{template_hint}"
+                f"{interview_block}\n"
                 f"Be concise. Write the spec.md file now."
             ),
             system=(
@@ -144,43 +150,130 @@ class ForgeOrchestrator:
                 "Read spec.md and create a tasks.json file with the implementation tasks.\n\n"
                 "Format: JSON array of objects, each with:\n"
                 '  {"subject": "...", "description": "...", "sprint": "sprint-01", '
-                '"risk": "low|medium|high", "blocked_by": []}\n\n'
-                "Order tasks by dependency. Use blocked_by to reference earlier task indices.\n"
-                "Keep it to 5-15 tasks. Write the tasks.json file now."
+                '"risk": "low|medium|high", "blocked_by": [], "files": ["path/file.py"]}\n\n'
+                "CRITICAL RULES:\n"
+                "1. Each task MUST list the files it will create or modify in the 'files' field.\n"
+                "2. NO TWO TASKS may write to the same file. If two features touch the same file,\n"
+                "   combine them into one task or make the second task depend on (blocked_by) the first.\n"
+                "3. Group related edits to the same file into a single task.\n"
+                "4. Order tasks by dependency. Use blocked_by to reference earlier task indices.\n"
+                "5. Keep it to 5-15 tasks.\n\n"
+                "Example:\n"
+                '  [{"subject": "Create database models", "description": "Create SQLite models for User and Task",\n'
+                '    "files": ["models.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": []},\n'
+                '   {"subject": "Create API routes", "description": "REST endpoints for CRUD operations",\n'
+                '    "files": ["routes.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [0]}]\n\n'
+                "Write the tasks.json file now."
             ),
             system=(
                 "You are a task decomposer. Read the spec and break it into implementable tasks. "
-                "Write the tasks.json file using write_file tool."
+                "Write the tasks.json file using write_file tool. "
+                "IMPORTANT: Each task must own unique files — never assign the same file to multiple tasks."
             ),
         )
 
+        if decomp_result.error:
+            logger.warning("Decomposer error: %s", decomp_result.error)
+
         tasks_path = self.project_path / "tasks.json"
+
+        # Retry once if decomposer didn't produce tasks.json
+        # (Nova Lite sometimes responds with text instead of calling write_file)
+        if not tasks_path.exists():
+            logger.info("tasks.json not created on first attempt — retrying decomposer")
+            retry_agent = ForgeAgent(
+                model_config=mc,
+                project_root=self.project_path,
+                tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
+                max_turns=10,
+                agent_id="forge-decomposer-retry",
+            )
+            decomp_result = await retry_agent.run(
+                prompt=(
+                    "Read spec.md and create a tasks.json file.\n"
+                    "You MUST call the write_file tool to create tasks.json.\n"
+                    "Format: JSON array, each with subject, description, files, sprint, risk, blocked_by.\n"
+                    "Write tasks.json now using write_file."
+                ),
+                system=(
+                    "You are a task decomposer. You MUST use the write_file tool to create tasks.json. "
+                    "Do not just describe the tasks — actually write the file."
+                ),
+            )
+            if decomp_result.error:
+                logger.warning("Decomposer retry error: %s", decomp_result.error)
         task_count = 0
         if tasks_path.exists():
             try:
                 tasks_data = json.loads(tasks_path.read_text())
                 if isinstance(tasks_data, list):
+                    # Merge tasks that share files to prevent parallel conflicts
+                    tasks_data = self._dedup_tasks(tasks_data)
                     task_count = len(tasks_data)
                     # Load into TaskStore
                     store = TaskStore(self.project.tasks_file)
+                    # Build subject-to-index map for resolving non-integer blocked_by
+                    subject_index: dict[str, int] = {}
+                    for idx, td in enumerate(tasks_data):
+                        subj = td.get("subject", "").lower().strip()
+                        if subj:
+                            subject_index[subj] = idx
+
                     for i, t in enumerate(tasks_data):
                         blocked = t.get("blocked_by", [])
-                        # Convert 0-based indices to 1-based task IDs
-                        blocked_str = [str(int(b) + 1) for b in blocked] if blocked else None
-                        # Filter out references to tasks not yet created
-                        if blocked_str:
-                            max_created = str(i + 1)  # tasks created so far: 1..i
-                            blocked_str = [b for b in blocked_str if int(b) <= i]
-                            blocked_str = blocked_str or None
+                        blocked_str = None
+                        if blocked:
+                            resolved: list[str] = []
+                            for b in blocked:
+                                if isinstance(b, int):
+                                    # 0-based index → 1-based task ID
+                                    task_id = b + 1
+                                    if task_id <= i:  # only reference prior tasks
+                                        resolved.append(str(task_id))
+                                elif isinstance(b, str):
+                                    # Try parsing as integer first
+                                    try:
+                                        idx = int(b)
+                                        task_id = idx + 1
+                                        if task_id <= i:
+                                            resolved.append(str(task_id))
+                                    except ValueError:
+                                        # Try matching by subject name
+                                        key = b.lower().strip()
+                                        if key in subject_index and subject_index[key] < i:
+                                            resolved.append(str(subject_index[key] + 1))
+                                        # Silently skip unresolvable references
+                            blocked_str = resolved or None
+                        # Normalize LLM-generated metadata values
+                        raw_sprint = str(t.get("sprint", "sprint-01"))
+                        if not raw_sprint.startswith("sprint-"):
+                            # Normalize "1" -> "sprint-01", "2" -> "sprint-02", etc.
+                            raw_sprint = f"sprint-{raw_sprint.zfill(2)}"
+                        raw_risk = str(t.get("risk", "low")).lower()
+                        if raw_risk not in ("low", "medium", "high"):
+                            raw_risk = "low"
+
                         store.create(
                             subject=t.get("subject", f"Task {i+1}"),
                             description=t.get("description", ""),
                             metadata={
                                 "project": self.project.name,
-                                "sprint": t.get("sprint", "sprint-01"),
-                                "risk": t.get("risk", "low"),
+                                "sprint": raw_sprint,
+                                "risk": raw_risk,
+                                "files": t.get("files", []),
                             },
                             blocked_by=blocked_str,
+                        )
+                    # Warn about file ownership conflicts
+                    file_owners: dict[str, list[str]] = {}
+                    for t in tasks_data:
+                        for f in t.get("files", []):
+                            file_owners.setdefault(f, []).append(t.get("subject", "?"))
+                    conflicts = {f: owners for f, owners in file_owners.items() if len(owners) > 1}
+                    if conflicts:
+                        logger.warning(
+                            "File ownership conflicts detected: %s",
+                            {f: owners for f, owners in conflicts.items()},
                         )
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning("Failed to parse tasks.json: %s", e)
@@ -444,6 +537,93 @@ class ForgeOrchestrator:
             teammates=teammates,
         )
         sm.save_formation(state)
+
+    @staticmethod
+    def _dedup_tasks(tasks_data: list[dict]) -> list[dict]:
+        """Merge tasks that share file ownership to prevent parallel write conflicts.
+
+        Uses union-find to group tasks by shared files, then merges each group
+        into a single task with combined descriptions and the union of their files.
+        """
+        if not tasks_data:
+            return tasks_data
+
+        n = len(tasks_data)
+        # Build file → task indices mapping
+        file_to_tasks: dict[str, list[int]] = {}
+        for i, t in enumerate(tasks_data):
+            for f in t.get("files", []):
+                file_to_tasks.setdefault(f, []).append(i)
+
+        # Check if any merging is needed
+        has_conflicts = any(len(indices) > 1 for indices in file_to_tasks.values())
+        if not has_conflicts:
+            return tasks_data
+
+        # Union-find
+        parent = list(range(n))
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a: int, b: int) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra  # keep lower index as root
+
+        # Union tasks that share files
+        for indices in file_to_tasks.values():
+            for j in range(1, len(indices)):
+                union(indices[0], indices[j])
+
+        # Group tasks by root
+        groups: dict[int, list[int]] = {}
+        for i in range(n):
+            root = find(i)
+            groups.setdefault(root, []).append(i)
+
+        # Merge each group
+        merged: list[dict] = []
+        for root, members in sorted(groups.items()):
+            if len(members) == 1:
+                merged.append(tasks_data[members[0]])
+            else:
+                # Combine into single task
+                subjects = [tasks_data[m].get("subject", "") for m in members]
+                descriptions = [tasks_data[m].get("description", "") for m in members]
+                all_files: list[str] = []
+                seen_files: set[str] = set()
+                for m in members:
+                    for f in tasks_data[m].get("files", []):
+                        if f not in seen_files:
+                            all_files.append(f)
+                            seen_files.add(f)
+
+                # Use highest risk from any member (normalize case)
+                risk_order = {"low": 0, "medium": 1, "high": 2}
+                max_risk = max(
+                    (str(tasks_data[m].get("risk", "low")).lower() for m in members),
+                    key=lambda r: risk_order.get(r, 0),
+                )
+
+                combined = {
+                    "subject": " + ".join(s for s in subjects if s),
+                    "description": "\n\n".join(d for d in descriptions if d),
+                    "files": all_files,
+                    "sprint": tasks_data[members[0]].get("sprint", "sprint-01"),
+                    "risk": max_risk,
+                    "blocked_by": [],  # dependencies rebuilt after merge
+                }
+                merged.append(combined)
+                logger.info(
+                    "Merged %d tasks into '%s' (shared files: %s)",
+                    len(members), combined["subject"][:60], ", ".join(all_files),
+                )
+
+        return merged
 
     def check_compliance(self) -> list[tuple[str, bool, str]]:
         """Run compliance gates and return results."""

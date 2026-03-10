@@ -135,12 +135,18 @@ def _guard_write_gates_hook(state: _HookState) -> callable:
             return ownership_result
 
         # Part B: Task state enforcement
+        # Only block writes when there are pending tasks waiting to be started
+        # (i.e., a build should be running). Allow writes when:
+        #   - All tasks are complete (post-build chat editing)
+        #   - Only failed tasks remain (user manually fixing)
+        #   - No tasks exist yet
         task_state = _load_task_state(state)
         if task_state:
             total = task_state.get("total", 0)
+            pending = task_state.get("pending", 0)
             in_progress = task_state.get("in_progress", 0)
 
-            if total >= 2 and in_progress == 0:
+            if total >= 2 and in_progress == 0 and pending > 0:
                 return HookResult(
                     blocked=True,
                     reason=(
@@ -447,11 +453,12 @@ def _track_autonomy_hook(state: _HookState) -> callable:
         if not state.active_project or not state.project_root:
             return HookResult()
 
-        # Determine success/failure from result
+        # Determine success/failure from result — only count severe failures,
+        # not normal tool errors like "old_string not found" or "File not found"
         is_error = False
         if result and isinstance(result, str):
             is_error = bool(re.search(
-                r"(?:error|traceback|exception|failed|FAILED)", result, re.I
+                r"(?:SANDBOX VIOLATION|Traceback|BLOCKED)", result
             ))
 
         # Update autonomy manager

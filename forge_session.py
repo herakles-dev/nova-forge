@@ -59,7 +59,7 @@ class SessionStatus:
 @dataclass
 class AutonomyState:
     """Persistent autonomy trust state."""
-    level: int = 0
+    level: int = 2
     successful: int = 0
     errors: int = 0
     rollbacks: int = 0
@@ -470,8 +470,8 @@ class SessionManager:
 
         # Fix gate 5: initialize autonomy
         if not self.project.autonomy_file.exists():
-            self.save_autonomy(AutonomyState(level=0))
-            fixes.append("Initialized autonomy state at A0")
+            self.save_autonomy(AutonomyState(level=2))
+            fixes.append("Initialized autonomy state at A2 (Supervised)")
 
         # Fix gate 4: create minimal settings.json
         if not self.project.settings_file.exists():

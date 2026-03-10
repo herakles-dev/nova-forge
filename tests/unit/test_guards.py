@@ -84,13 +84,23 @@ def test_sandbox_read_denied(tmp_path):
 
 
 def test_autonomy_a0_blocks_medium(tmp_path):
-    """A0 (default) blocks MEDIUM risk operations."""
+    """A0 blocks MEDIUM risk operations when explicitly set."""
     autonomy_file = tmp_path / "autonomy.json"
+    autonomy_file.write_text('{"level": 0, "name": "Manual", "successful_actions": 0, "error_count": 0, "approved_categories": [], "grants": [], "high_risk_history": [], "last_escalation": null, "error_history": []}')
     mgr = AutonomyManager(autonomy_file)
-    # Default level is 0 (Manual)
     result = mgr.check("Write", RiskLevel.MEDIUM, file_path="/some/file.py")
     assert result.allowed is False
     assert "A0" in result.reason or "Manual" in result.reason
+
+
+def test_autonomy_default_is_supervised(tmp_path):
+    """Default autonomy level is A2 (Supervised) — allows LOW and MEDIUM."""
+    autonomy_file = tmp_path / "autonomy.json"
+    mgr = AutonomyManager(autonomy_file)
+    assert mgr.current_level == 2
+    assert mgr.check_permission(RiskLevel.LOW) is True
+    assert mgr.check_permission(RiskLevel.MEDIUM) is True
+    assert mgr.check_permission(RiskLevel.HIGH) is False
 
 
 def test_autonomy_low_always_allowed(tmp_path):
