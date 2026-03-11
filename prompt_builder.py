@@ -35,6 +35,24 @@ _CONTEXT_ITEM_MAX_CHARS = 8_000
 # Section index of CONTEXT in the user-prompt section list
 _CONTEXT_SECTION_IDX = 1  # 0-based index within the user-prompt sections
 
+# ── Slim system prompt for 32K models (~600 chars vs 4,975 for full set) ──────
+
+_SECTION_SLIM = """\
+## Identity
+You are Nova, an AI build assistant. You ACT — don't chat. Write working code using tools.
+
+## Rules
+- Read files before editing. Match existing style.
+- MUST use write_file to create files. Max ~80 lines per write_file call.
+- For large files: write_file (first ~80 lines) then append_file (rest). Repeat until complete.
+- After writing, check the tool output for SYNTAX ERROR or INCOMPLETE — fix immediately.
+- If a tool fails, try a different approach. Don't repeat failing calls.
+- Write complete code — no stubs, placeholders, or TODOs.
+- Validate inputs, handle errors, use parameterized SQL queries.
+- After writing all files, verify: run "python3 -c 'import MODULE'" for Python modules.
+- No docs unless asked. Be concise.\
+"""
+
 # ── V11-grade system prompt sections ──────────────────────────────────────────
 
 _SECTION_IDENTITY = """\
@@ -109,6 +127,35 @@ _SECTION_ERROR_HANDLING = """\
 - If an import fails, check whether the package is in requirements.txt and installed.
 - When a dependency is missing, add it and document the change — do not work around it.
 - If you encounter a circular import, refactor to break the cycle rather than using local imports.\
+"""
+
+_SECTION_SELF_VERIFY = """\
+## Self-Verification
+After writing or editing a file, ALWAYS check the tool output for:
+- **SYNTAX ERROR**: Fix immediately before proceeding. Do not move to the next file.
+- **HTML ERROR / CSS ERROR**: Fix unclosed tags or braces before moving on.
+- **INCOMPLETE**: Replace TODO/FIXME/stub/placeholder with real implementation. Never leave them.
+- **WARNING**: Address the warning (e.g., read file before overwriting).
+
+Before marking a task complete, verify your work:
+1. All required files exist (use glob_files to confirm).
+2. Python files: run bash("python3 -c \\"import MODULE\\"") to verify imports.
+3. API endpoints: if you wrote a server, test it with bash("curl http://localhost:PORT/api/...").
+4. Frontend: if you wrote HTML, verify it references the correct JS/CSS filenames.
+
+If verification reveals a bug, fix it NOW — do not leave it for a later task.\
+"""
+
+_SECTION_CODE_QUALITY = """\
+## Code Quality
+- Write defensive code: validate function parameters, handle edge cases (empty lists, null values, 0).
+- Every API endpoint: validate request data, return proper HTTP status codes, catch exceptions.
+- Frontend: handle fetch errors with try/catch, show user-friendly error messages, handle loading states.
+- Use consistent naming: snake_case for Python, camelCase for JavaScript/TypeScript.
+- Keep functions under 40 lines. If longer, extract helper functions.
+- No global mutable state unless absolutely necessary. Prefer function parameters.
+- Close resources: database connections, file handles, network sockets.
+- Security basics: parameterized SQL queries (never f-strings), escape HTML output, validate user input.\
 """
 
 # Role-specific behavioral profiles injected after the core sections.
@@ -364,22 +411,36 @@ class PromptBuilder:
         Returns:
             A complete system prompt string (typically 80+ lines for "builder").
         """
-        sections: list[str] = [
-            _SECTION_IDENTITY,
-            _SECTION_TOOL_RULES,
-            _SECTION_BEHAVIOR,
-            _SECTION_ERROR_HANDLING,
-        ]
+        from config import get_context_window
+        ctx = get_context_window(model_id) if model_id else 200_000
 
-        # Role-specific profile
-        profile = ROLE_PROFILES.get(role)
-        if profile:
-            sections.append(profile)
+        if ctx <= 32_000:
+            # Slim prompt for small-context models (~600 chars vs ~4,975)
+            sections: list[str] = [_SECTION_SLIM]
+            profile = ROLE_PROFILES.get(role, "")
+            if profile:
+                # First 3 lines of role profile only
+                short_profile = "\n".join(profile.strip().splitlines()[:3])
+                sections.append(short_profile)
         else:
-            sections.append(
-                f"## Role: {role}\n"
-                "Complete assigned tasks precisely and report results clearly."
-            )
+            sections: list[str] = [
+                _SECTION_IDENTITY,
+                _SECTION_TOOL_RULES,
+                _SECTION_BEHAVIOR,
+                _SECTION_ERROR_HANDLING,
+                _SECTION_SELF_VERIFY,
+                _SECTION_CODE_QUALITY,
+            ]
+
+            # Role-specific profile
+            profile = ROLE_PROFILES.get(role)
+            if profile:
+                sections.append(profile)
+            else:
+                sections.append(
+                    f"## Role: {role}\n"
+                    "Complete assigned tasks precisely and report results clearly."
+                )
 
         # Optional context blocks — each truncated independently
         if project_context:

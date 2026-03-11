@@ -1332,14 +1332,16 @@ class ForgeShell:
                 role_name = role.name
                 try:
                     from formations import TOOL_PROFILES
+                    from forge_agent import get_tools_for_model
+                    base_tools = get_tools_for_model(ctx, has_build_context=build_ctx is not None)
                     allowed_names = TOOL_PROFILES.get(role.tool_policy, set())
                     task_tools = (
-                        [t for t in BUILT_IN_TOOLS if t["name"] in allowed_names]
+                        [t for t in base_tools if t["name"] in allowed_names]
                         if allowed_names
-                        else BUILT_IN_TOOLS
+                        else base_tools
                     )
                     if not task_tools:
-                        task_tools = BUILT_IN_TOOLS
+                        task_tools = base_tools
                 except Exception:
                     task_tools = BUILT_IN_TOOLS
             else:
@@ -1348,7 +1350,8 @@ class ForgeShell:
                 build_max_tokens = 5120 if ctx >= 200_000 else 4096
                 task_mc = get_model_config(self.model, max_tokens=build_max_tokens)
                 role_name = "implementer"
-                task_tools = BUILT_IN_TOOLS
+                from forge_agent import get_tools_for_model
+                task_tools = get_tools_for_model(ctx, has_build_context=build_ctx is not None)
 
             from forge_models import get_escalation_model
             escalation = get_escalation_model(task_mc.model_id)
@@ -1469,6 +1472,16 @@ class ForgeShell:
                         + "\n".join(f"- {c}" for c in unique)
                     )
 
+            # Output limit coaching for small-context models
+            chunk_hint = ""
+            if ctx <= 32_000:
+                chunk_hint = (
+                    "\n\n## OUTPUT LIMIT\n"
+                    "You have a ~4K token output limit (~80 lines of code per tool call).\n"
+                    "NEVER write more than 80 lines in a single write_file call.\n"
+                    "Strategy: write_file (first 80 lines) → append_file (next 80) → repeat.\n"
+                )
+
             prompt = (
                 f"## Project Spec\n{spec_text}\n\n"
                 f"## Your Task\n{task.subject}: {task.description}\n\n"
@@ -1478,6 +1491,7 @@ class ForgeShell:
                 f"Read existing files first with read_file if you need context. "
                 f"Write complete, working code — not stubs or placeholders. "
                 f"Do NOT create extra files beyond what is listed in your task's file list."
+                f"{chunk_hint}"
                 f"{spec_constraints}"
                 f"{read_instruction}"
                 f"{ownership_hint}"

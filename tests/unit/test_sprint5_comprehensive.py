@@ -316,8 +316,8 @@ class TestThinkToolReadTrackingAutoVerify:
         assert "WARNING" not in result, f"Unexpected WARNING for a read-then-write: {result}"
 
     @pytest.mark.asyncio
-    async def test_edit_unread_file_includes_warning(self, tmp_path):
-        """Editing a file that hasn't been read should produce a WARNING."""
+    async def test_edit_unread_file_is_blocked(self, tmp_path):
+        """Editing a file that hasn't been read should be BLOCKED (Sprint 8 enforcement)."""
         agent = make_agent(tmp_path)
         target = tmp_path / "source.py"
         target.write_text("x = 1\n")
@@ -327,7 +327,8 @@ class TestThinkToolReadTrackingAutoVerify:
             {"path": str(target), "old_string": "x = 1", "new_string": "x = 2"},
             {},
         )
-        assert "WARNING" in result
+        assert "BLOCKED" in result
+        assert "read_file" in result
 
     @pytest.mark.asyncio
     async def test_edit_read_file_no_warning(self, tmp_path):

@@ -292,6 +292,58 @@ BUILT_IN_TOOLS: list[dict] = [
 ]
 
 
+# ── Slim tool definitions for 32K models ─────────────────────────────────────
+# 8 essential tools with 1-line descriptions (~2,800 chars vs 7,312 for full set)
+
+SLIM_TOOLS: list[dict] = [
+    {"name": "read_file", "description": "Read a file. Args: path, offset (opt), limit (opt).",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}
+     }, "required": ["path"]}},
+    {"name": "write_file", "description": "Create/overwrite a file. Max ~80 lines per call.",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string"}, "content": {"type": "string"}
+     }, "required": ["path", "content"]}},
+    {"name": "append_file", "description": "Append to file (or create). Use after write_file for large files.",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string"}, "content": {"type": "string"}
+     }, "required": ["path", "content"]}},
+    {"name": "edit_file", "description": "Replace old_string with new_string in a file. old_string must be unique.",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string"}, "old_string": {"type": "string"}, "new_string": {"type": "string"}
+     }, "required": ["path", "old_string", "new_string"]}},
+    {"name": "bash", "description": "Run a shell command.",
+     "parameters": {"type": "object", "properties": {
+         "command": {"type": "string"}
+     }, "required": ["command"]}},
+    {"name": "glob_files", "description": "Find files by pattern (e.g. '**/*.py').",
+     "parameters": {"type": "object", "properties": {
+         "pattern": {"type": "string"}
+     }, "required": ["pattern"]}},
+    {"name": "grep", "description": "Search file contents by regex.",
+     "parameters": {"type": "object", "properties": {
+         "pattern": {"type": "string"}, "path": {"type": "string"}
+     }, "required": ["pattern"]}},
+    {"name": "list_directory", "description": "List files in a directory.",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string"}
+     }, "required": ["path"]}},
+]
+
+
+def get_tools_for_model(context_window: int, has_build_context: bool = False) -> list[dict]:
+    """Return appropriate tool set based on model context window size.
+
+    32K models get SLIM_TOOLS (8 essential tools, ~1,350 fewer tokens per turn).
+    Larger models get the full BUILT_IN_TOOLS set.
+    """
+    if context_window <= 32_000:
+        if has_build_context:
+            return SLIM_TOOLS + [t for t in BUILT_IN_TOOLS if t["name"] in ("claim_file", "check_context")]
+        return list(SLIM_TOOLS)
+    return list(BUILT_IN_TOOLS)
+
+
 # ── ForgeAgent ───────────────────────────────────────────────────────────────
 
 class ForgeAgent:
@@ -466,12 +518,22 @@ class ForgeAgent:
                 for call in tool_calls:
                     if not isinstance(call.args, dict):
                         malformed.append(call)
+                    elif "_raw" in call.args or "_truncated" in call.args:
+                        malformed.append(call)
                     else:
                         valid_calls.append(call)
 
                 if malformed and not valid_calls:
                     # All calls malformed — inject error and let model retry
-                    error_msg = "Your tool calls had invalid arguments. Please retry with valid JSON. Errors: "
+                    has_truncated = any("_truncated" in (c.args if isinstance(c.args, dict) else {}) or "_raw" in (c.args if isinstance(c.args, dict) else {}) for c in malformed)
+                    if has_truncated:
+                        error_msg = (
+                            "Tool call truncated — output hit token limit. "
+                            "Write SHORTER content: max ~80 lines per write_file. "
+                            "Use write_file for first 80 lines, then append_file for the rest. "
+                        )
+                    else:
+                        error_msg = "Your tool calls had invalid arguments. Please retry with valid JSON. Errors: "
                     for mc in malformed:
                         error_msg += f"{mc.name}(args={mc.args!r}) — args must be a JSON object. "
                     adapter = self.router.route(self.model_config.model_id)
@@ -648,6 +710,13 @@ class ForgeAgent:
 
         # Use modified args if hook provided them
         args = hook_result.modified_args if hook_result.modified_args else call.args
+
+        # Reject truncated tool calls that slipped past malformed detection
+        if "_raw" in args or "_truncated" in args:
+            return (
+                f"ERROR: Tool '{call.name}' had truncated args (output limit). "
+                f"Write shorter content — max ~80 lines per call. Use append_file for the rest."
+            )
 
         # Risk check — autonomy-aware when AutonomyManager is wired in
         command = args.get("command", "")
@@ -837,15 +906,21 @@ class ForgeAgent:
             if self.on_event:
                 self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
-        # Read-tracking warning
+        # Read-tracking: warn on overwrite without reading (but allow new files)
         warning = ""
         if path.exists() and str(path) not in self._files_read:
-            warning = "WARNING: You haven't read this file yet. Read it first to understand current content before editing.\n\n"
+            warning = (
+                "WARNING: You are overwriting an existing file you haven't read. "
+                "Use read_file first to understand current content, then edit_file to make changes.\n\n"
+            )
 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(args["content"], encoding="utf-8")
         artifacts[str(path)] = {"action": "write", "size": len(args["content"])}
         verify = await self._auto_verify(path)
+
+        # Completeness check: detect stubs, TODOs, placeholders
+        completeness = self._check_completeness(args["content"], path.suffix)
 
         # Auto-announce file creation with interface summary
         if self.build_context is not None:
@@ -853,7 +928,7 @@ class ForgeAgent:
             summary = self._extract_interface_summary(path)
             self.build_context.announce(self.agent_id, "file_created", f"{rel}: {summary}")
 
-        return f"{warning}File written: {rel} ({len(args['content'])} chars){verify}"
+        return f"{warning}File written: {rel} ({len(args['content'])} chars){verify}{completeness}"
 
     async def _tool_append_file(self, args: dict, artifacts: dict) -> str:
         args["content"] = self._unescape_content(args.get("content", ""))
@@ -886,7 +961,11 @@ class ForgeAgent:
             self.build_context.update_claim_status(str(rel), self.agent_id, "done")
             self.build_context.announce(self.agent_id, "file_appended", f"{rel}: +{len(chunk)} chars")
 
-        return f"Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}"
+        # Completeness check on full file after append
+        full_content = path.read_text(encoding="utf-8", errors="replace")
+        completeness = self._check_completeness(full_content, path.suffix)
+
+        return f"Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}{completeness}"
 
     async def _tool_edit_file(self, args: dict, artifacts: dict) -> str:
         path = self._resolve_path(args["path"])
@@ -906,19 +985,43 @@ class ForgeAgent:
             if self.on_event:
                 self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
-        # Read-tracking warning
-        warning = ""
+        # Read-tracking: BLOCK edit on unread files (agent must read first)
         if str(path) not in self._files_read:
-            warning = "WARNING: You haven't read this file yet. Read it first to understand current content before editing.\n\n"
+            return (
+                f"BLOCKED: You must read_file('{self._relative_path(path)}') before editing it. "
+                f"Read the file first to find the exact text to replace."
+            )
 
         content = path.read_text(encoding="utf-8", errors="replace")
         old = args["old_string"]
         new = args["new_string"]
         count = content.count(old)
         if count == 0:
-            return f"old_string not found in {rel}"
+            # Smart hint: show nearby matches to help agent self-correct
+            hint = ""
+            first_line = old.split('\n')[0].strip()[:60]
+            if first_line:
+                # Try exact substring match first
+                matches = [i+1 for i, line in enumerate(content.split('\n')) if first_line in line]
+                if not matches:
+                    # Try matching key identifiers (function/class/variable names)
+                    import re as _re
+                    keywords = _re.findall(r'\b[a-zA-Z_]\w+\b', first_line)
+                    # Find lines containing the most distinctive keyword (longest, non-common)
+                    common = {'def', 'class', 'function', 'const', 'let', 'var', 'return', 'if', 'else', 'for', 'while', 'import', 'from', 'self', 'this'}
+                    distinctive = [k for k in keywords if k.lower() not in common and len(k) > 2]
+                    if distinctive:
+                        key = distinctive[0]
+                        matches = [i+1 for i, line in enumerate(content.split('\n')) if key in line]
+                if matches:
+                    hint = f" Similar text found at lines {matches[:5]}. Read those lines to find the exact text."
+                else:
+                    hint = " The text may have been modified or has different whitespace/indentation."
+            return f"old_string not found in {rel}.{hint} Use read_file to see current contents."
         if count > 1:
-            return f"old_string appears {count} times in {rel} — must be unique (1 occurrence)"
+            # Show line numbers of each occurrence
+            lines_with = [i+1 for i, line in enumerate(content.split('\n')) if old.split('\n')[0] in line]
+            return f"old_string appears {count} times in {rel} (lines: {lines_with[:10]}) — include more surrounding context to make it unique."
         content = content.replace(old, new, 1)
         path.write_text(content, encoding="utf-8")
         artifacts[str(path)] = {"action": "edit", "old_len": len(old), "new_len": len(new)}
@@ -929,26 +1032,93 @@ class ForgeAgent:
             summary = self._extract_interface_summary(path)
             self.build_context.announce(self.agent_id, "file_edited", f"{rel}: {summary}")
 
-        return f"{warning}File edited: {rel} (replaced {len(old)} chars with {len(new)} chars){verify}"
+        return f"File edited: {rel} (replaced {len(old)} chars with {len(new)} chars){verify}"
 
     def _extract_interface_summary(self, path: Path, max_chars: int = 500) -> str:
-        """Extract compact interface summary using AST. Fallback to filename."""
-        if not path.exists() or path.suffix != ".py":
+        """Extract compact interface summary using AST (Python) or regex (JS/TS)."""
+        if not path.exists():
             return str(path.name)
-        try:
-            import ast as _ast
-            tree = _ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-            parts = []
-            for node in _ast.iter_child_nodes(tree):
-                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
-                    if not node.name.startswith("_"):
-                        args = ", ".join(a.arg for a in node.args.args if a.arg != "self")
-                        parts.append(f"{node.name}({args})")
-                elif isinstance(node, _ast.ClassDef) and not node.name.startswith("_"):
-                    parts.append(f"class {node.name}")
-            return "; ".join(parts)[:max_chars] if parts else str(path.name)
-        except Exception:
-            return str(path.name)
+        ext = path.suffix.lower()
+
+        # Python: AST-based extraction
+        if ext == ".py":
+            try:
+                import ast as _ast
+                tree = _ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+                parts = []
+                for node in _ast.iter_child_nodes(tree):
+                    if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                        if not node.name.startswith("_"):
+                            args = ", ".join(a.arg for a in node.args.args if a.arg != "self")
+                            parts.append(f"{node.name}({args})")
+                    elif isinstance(node, _ast.ClassDef) and not node.name.startswith("_"):
+                        parts.append(f"class {node.name}")
+                return "; ".join(parts)[:max_chars] if parts else str(path.name)
+            except Exception:
+                return str(path.name)
+
+        # JS/TS: regex-based extraction of exports and top-level functions
+        if ext in (".js", ".ts", ".jsx", ".tsx", ".mjs"):
+            try:
+                import re
+                content = path.read_text(encoding="utf-8", errors="replace")
+                parts = []
+                # Exported functions: export function name(params)
+                for m in re.finditer(r'(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)', content):
+                    parts.append(f"{m.group(1)}({m.group(2).strip()})")
+                # Arrow exports: export const name = (params) =>
+                for m in re.finditer(r'export\s+(?:const|let|var)\s+(\w+)\s*=', content):
+                    if m.group(1) not in [p.split('(')[0] for p in parts]:
+                        parts.append(f"export {m.group(1)}")
+                # Express/Flask-style routes: app.get('/path', ...) or @app.route
+                for m in re.finditer(r"app\.(get|post|put|delete|patch)\s*\(\s*['\"]([^'\"]+)", content):
+                    parts.append(f"{m.group(1).upper()} {m.group(2)}")
+                return "; ".join(parts)[:max_chars] if parts else str(path.name)
+            except Exception:
+                return str(path.name)
+
+        return str(path.name)
+
+    @staticmethod
+    def _check_completeness(content: str, suffix: str) -> str:
+        """Detect stubs, TODOs, and placeholder patterns that indicate incomplete code."""
+        import re
+        issues = []
+
+        # TODO/FIXME/HACK markers
+        todo_count = len(re.findall(r'\b(?:TODO|FIXME|HACK|XXX|STUB)\b', content, re.IGNORECASE))
+        if todo_count:
+            issues.append(f"{todo_count} TODO/FIXME markers")
+
+        # Placeholder patterns: "pass", "...", "# implement", "throw new Error('not implemented')"
+        lines = content.split('\n')
+        stub_patterns = [
+            r'^\s*pass\s*$',           # Python stubs
+            r'^\s*\.\.\.\s*$',          # Python ellipsis stubs
+            r'//\s*implement',          # JS comment stubs
+            r'#\s*implement',           # Python comment stubs
+            r"raise\s+NotImplementedError",
+            r"throw\s+new\s+Error\s*\(\s*['\"]not\s+implemented",
+        ]
+        stub_count = 0
+        for line in lines:
+            for pat in stub_patterns:
+                if re.search(pat, line, re.IGNORECASE):
+                    stub_count += 1
+                    break
+        if stub_count > 0:
+            issues.append(f"{stub_count} stub/placeholder lines")
+
+        # Empty function bodies (JS/TS)
+        if suffix in ('.js', '.ts', '.jsx', '.tsx'):
+            # Matches: function name() {}, () => {}, (x) => {}
+            empty_funcs = len(re.findall(r'(?:function\s+\w+\s*\([^)]*\)|=>\s*)\s*\{\s*\}', content))
+            if empty_funcs:
+                issues.append(f"{empty_funcs} empty function bodies")
+
+        if issues:
+            return f" (INCOMPLETE: {', '.join(issues)} — replace with real implementation)"
+        return ""
 
     async def _tool_bash(self, args: dict) -> str:
         command = args["command"]
@@ -1179,29 +1349,83 @@ class ForgeAgent:
     # ── Auto-verify after writes ─────────────────────────────────────────────
 
     async def _auto_verify(self, path: Path) -> str:
-        """Auto-verify syntax after write/edit. Returns verification status string."""
+        """Auto-verify syntax after write/edit. Returns verification status string.
+
+        Checks: Python (py_compile), JSON, YAML, JavaScript (node --check),
+        HTML (tag balance), CSS (brace balance).
+        """
         ext = path.suffix.lower()
+
+        # Shell-based checks
         checks = {
             '.py': f"python3 -c \"import py_compile; py_compile.compile('{path}', doraise=True)\"",
             '.json': f"python3 -c \"import json; json.load(open('{path}'))\"",
             '.yaml': f"python3 -c \"import yaml; yaml.safe_load(open('{path}'))\"",
             '.yml': f"python3 -c \"import yaml; yaml.safe_load(open('{path}'))\"",
+            '.js': f"node --check '{path}'",
+            '.mjs': f"node --check '{path}'",
         }
         cmd = checks.get(ext)
-        if not cmd:
-            return ""  # No check available for this type
+        if cmd:
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+                if proc.returncode == 0:
+                    return " (syntax OK)"
+                else:
+                    err = stderr.decode(errors='replace').strip().split('\n')[-1][:200]
+                    return f" (SYNTAX ERROR: {err})"
+            except Exception:
+                return ""
+
+        # In-process checks for HTML/CSS
+        if ext in ('.html', '.htm'):
+            return self._verify_html(path)
+        elif ext == '.css':
+            return self._verify_css(path)
+
+        return ""  # No check available for this type
+
+    @staticmethod
+    def _verify_html(path: Path) -> str:
+        """Basic HTML verification: checks tag balance and required structure."""
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
-            if proc.returncode == 0:
-                return " (syntax OK)"
-            else:
-                err = stderr.decode(errors='replace').strip().split('\n')[-1][:200]
-                return f" (SYNTAX ERROR: {err})"
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if not content.strip():
+                return " (WARNING: empty file)"
+            # Check for unclosed script/style tags (common LLM mistake)
+            import re
+            for tag in ("script", "style"):
+                opens = len(re.findall(rf'<{tag}[\s>]', content, re.IGNORECASE))
+                closes = len(re.findall(rf'</{tag}>', content, re.IGNORECASE))
+                if opens > closes:
+                    return f" (HTML ERROR: unclosed <{tag}> tag — {opens} opened, {closes} closed)"
+            # Check basic HTML structure
+            lower = content.lower()
+            if '<html' in lower and '</html>' not in lower:
+                return " (HTML ERROR: missing </html> closing tag)"
+            if '<body' in lower and '</body>' not in lower:
+                return " (HTML ERROR: missing </body> closing tag)"
+            return " (HTML OK)"
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _verify_css(path: Path) -> str:
+        """Basic CSS verification: checks brace balance."""
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if not content.strip():
+                return " (WARNING: empty file)"
+            opens = content.count('{')
+            closes = content.count('}')
+            if opens != closes:
+                return f" (CSS ERROR: unbalanced braces — {opens} open, {closes} close)"
+            return " (CSS OK)"
         except Exception:
             return ""
 
@@ -1289,7 +1513,8 @@ class ForgeAgent:
                     if not has_tool_use:
                         break  # no tool use in this assistant turn — safe
 
-        # Compress middle section
+        # Compress middle section — preserve file paths for write/edit/append
+        files_acted = []
         summary_parts = []
         for msg in middle:
             role = msg.get("role", "unknown")
@@ -1308,15 +1533,24 @@ class ForgeAgent:
                             text_bits.append("[tool result]")
                         elif "toolUse" in block:
                             name = block["toolUse"].get("name", "?")
-                            # Drop read_file content from compacted turns
+                            inp = block["toolUse"].get("input", {})
                             if name == "read_file":
-                                text_bits.append("[read_file — dropped]")
+                                text_bits.append("[read — dropped]")
+                            elif name in ("write_file", "append_file", "edit_file"):
+                                fpath = inp.get("path", "?")
+                                text_bits.append(f"[{name}:{fpath}]")
+                                files_acted.append(fpath)
                             else:
                                 text_bits.append(f"[tool:{name}]")
                         elif block.get("type") == "tool_use":
                             name = block.get("name", "?")
+                            inp = block.get("input", {})
                             if name == "read_file":
-                                text_bits.append("[read_file — dropped]")
+                                text_bits.append("[read — dropped]")
+                            elif name in ("write_file", "append_file", "edit_file"):
+                                fpath = inp.get("path", "?")
+                                text_bits.append(f"[{name}:{fpath}]")
+                                files_acted.append(fpath)
                             else:
                                 text_bits.append(f"[tool:{name}]")
                         elif block.get("type") == "tool_result":
@@ -1326,8 +1560,15 @@ class ForgeAgent:
                 content = content[:40] + "…"
             summary_parts.append(f"{role}: {content}")
 
+        # Prepend files-created summary so agent remembers what it already wrote
+        summary_prefix = ""
+        if files_acted:
+            unique_files = list(dict.fromkeys(files_acted))
+            summary_prefix = f"Files written so far: {', '.join(unique_files)}\n"
+
         summary = (
             "[Context compacted — older turns summarized]\n"
+            + summary_prefix
             + "\n".join(summary_parts)
         )
 

@@ -460,12 +460,15 @@ async def run_benchmark(coding_model: str):
                 elif evt.kind == "file_conflict":
                     print(f"    ⚠ Conflict: {evt.file_path} — {evt.error}")
 
+            from forge_agent import get_tools_for_model
+            task_tools = get_tools_for_model(ctx, has_build_context=build_context is not None)
+
             agent = ForgeAgent(
                 model_config=mc,
                 project_root=PROJECT_DIR,
                 hooks=hooks,
                 sandbox=sandbox,
-                tools=BUILT_IN_TOOLS,
+                tools=task_tools,
                 max_turns=30,
                 agent_id=f"task-{task.id}",
                 build_context=build_context,

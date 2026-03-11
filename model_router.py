@@ -849,7 +849,15 @@ class ModelRouter:
                     try:
                         args: dict[str, Any] = json.loads(args_str) if args_str else {}
                     except json.JSONDecodeError:
-                        args = {"_raw": args_str}
+                        # Try closing common truncation patterns
+                        for suffix in ['"}', '"}]', '"}]}', '}', ']}']:
+                            try:
+                                args = json.loads(args_str + suffix)
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                        else:
+                            args = {"_truncated": True, "_raw": args_str}
                     tool_calls.append(
                         ToolCall(
                             id=current_tool["id"],

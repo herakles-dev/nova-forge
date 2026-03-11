@@ -375,10 +375,10 @@ def test_compact_messages_drops_read_file_content(tmp_path):
 
     result = agent._compact_messages(messages)
 
-    # The compacted summary should contain "read_file — dropped" not the full content
+    # The compacted summary should contain "read — dropped" not the full content
     all_content = " ".join(
         m.get("content", "") if isinstance(m.get("content"), str) else ""
         for m in result
     )
-    assert "read_file — dropped" in all_content
+    assert "read — dropped" in all_content
     assert "very long file content" not in all_content

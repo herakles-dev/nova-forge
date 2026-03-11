@@ -84,6 +84,7 @@ class ForgeOrchestrator:
         model: str | None = None,
         template: str | None = None,
         extra_context: str | None = None,
+        build_model: str | None = None,
     ) -> PlanResult:
         """Phase 1+2: Generate spec.md and tasks.json from a user goal."""
         plan_model = resolve_model(model or self.model)
@@ -145,12 +146,27 @@ class ForgeOrchestrator:
             agent_id="forge-decomposer",
         )
 
+        # Inject size constraint when build model has small context
+        size_hint = ""
+        if build_model:
+            from config import get_context_window as _gcw
+            build_ctx_window = _gcw(resolve_model(build_model))
+            if build_ctx_window <= 32_000:
+                size_hint = (
+                    "\nSMALL MODEL CONSTRAINT:\n"
+                    "The build model can write ~80 lines per tool call.\n"
+                    "For files expected to be >150 lines, split into TWO tasks:\n"
+                    "- Task A: create the file with initial structure (write_file)\n"
+                    "- Task B: extend the file with remaining features (append_file, blocked_by Task A)\n\n"
+                )
+
         decomp_result = await decomp_agent.run(
             prompt=(
                 "Read spec.md and create a tasks.json file with the implementation tasks.\n\n"
                 "Format: JSON array of objects, each with:\n"
                 '  {"subject": "...", "description": "...", "sprint": "sprint-01", '
                 '"risk": "low|medium|high", "blocked_by": [], "files": ["path/file.py"]}\n\n'
+                + size_hint +
                 "DECOMPOSITION STRATEGY — FILE-CENTRIC TASKS:\n"
                 "Create ONE task per output file. Each task builds that file COMPLETELY with all "
                 "features that belong in it. Do NOT create feature-based tasks (bad: 'Add dark mode', "

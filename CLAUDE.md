@@ -8,9 +8,9 @@
 - **CLI**: Click (forge.py) + custom interactive shell (forge_cli.py)
 - **LLM Providers**: AWS Bedrock (Nova), OpenRouter (Gemini), Anthropic (Claude)
 - **UI**: Rich (live progress, tables, panels, spinners)
-- **Testing**: pytest (303 tests in tests/unit/)
+- **Testing**: pytest (768 tests in 35 test files)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
-- **Dependencies**: boto3, openai, anthropic, flask, rich, click, pyyaml, jsonschema
+- **Dependencies**: boto3, openai, anthropic, flask, rich, click, pyyaml, jsonschema, pydantic
 
 ## Commands
 
@@ -49,33 +49,51 @@ User Goal -> Interview (scope, stack, risk)
           -> ForgeDeployer (Docker + nginx) -> Live URL
 ```
 
-## Module Map (25 files, 13,719 LOC)
+## Module Map (34 files, 19,866 LOC)
+
+### Core Modules
 
 | Module | LOC | Purpose |
 |--------|-----|---------|
-| forge_cli.py | ~2400 | Interactive shell, interview, all /commands |
-| forge_agent.py | ~800 | Tool-use loop + AgentEvent system |
-| forge_pipeline.py | ~700 | WaveExecutor + ArtifactManager + GateReviewer |
-| forge_display.py | ~430 | Rich live UI (BuildDisplay) |
-| forge_guards.py | ~650 | RiskClassifier + PathSandbox + AutonomyManager |
-| forge_hooks.py | ~400 | Hook system (V11 compatible) |
-| forge_hooks_impl.py | ~500 | 12 hook implementations |
-| model_router.py | ~600 | 3 provider adapters (Bedrock, OpenAI, Anthropic) |
-| forge_tasks.py | ~400 | TaskStore + topological sort (Kahn's algorithm) |
-| formations.py | ~500 | 8 formations + DAAO routing |
-| prompt_builder.py | ~350 | 7-section prompt construction |
-| forge_orchestrator.py | ~600 | Plan/build/deploy orchestration |
-| forge_deployer.py | ~500 | Docker + nginx + SSL deployment |
-| forge_web.py | ~400 | Web dashboard (forge.herakles.dev) |
-| forge_session.py | ~300 | Session lifecycle + persistence |
-| forge_compliance.py | ~350 | 10-gate compliance checker |
-| forge_registry.py | ~300 | Agent definition registry (20 agents) |
-| forge_schema.py | ~250 | 8 JSON schema validators |
-| forge_audit.py | ~200 | JSONL audit trail |
-| forge_migrate.py | ~200 | Legacy version migration |
-| forge_teams.py | ~300 | Multi-agent team spawning |
-| config.py | ~235 | Model configs + .forge/ init |
-| forge.py | ~500 | Click CLI commands |
+| forge_cli.py | 2894 | Interactive shell, interview, all /commands |
+| forge_agent.py | 1603 | Tool-use loop, 12 tools, AgentEvent, auto-verify, read-before-write |
+| forge_hooks_impl.py | 1057 | 12 hook implementations |
+| model_router.py | 902 | 3 provider adapters (Bedrock, OpenAI, Anthropic) + JSON recovery |
+| forge_pipeline.py | 848 | WaveExecutor + ArtifactManager + GateReviewer |
+| forge_guards.py | 846 | RiskClassifier + PathSandbox + AutonomyManager |
+| prompt_builder.py | 798 | 7-section prompt + slim variants for 32K models |
+| forge.py | 740 | Click CLI commands (14 commands) |
+| forge_orchestrator.py | 670 | Plan/build/deploy orchestration |
+| formations.py | 656 | 8 formations + DAAO routing + 5 tool policies |
+| forge_tasks.py | 643 | TaskStore + topological sort (Kahn's algorithm) |
+| forge_index.py | 634 | ProjectIndex, export/import scanning, dependency graph |
+| forge_verify.py | 564 | BuildVerifier — L1 static, L2 server, L3 browser checks |
+| forge_display.py | 560 | Rich live UI (BuildDisplay, TaskTrace) |
+| forge_session.py | 494 | Session lifecycle + persistence |
+| forge_preview.py | 427 | PreviewManager — Cloudflare Tunnel + dev server |
+| forge_deployer.py | 384 | Docker + nginx + SSL deployment |
+| forge_teams.py | 318 | Multi-agent team spawning |
+| forge_memory.py | 309 | Persistent memory system |
+| forge_migrate.py | 295 | Legacy version migration (V5-V10 → Forge) |
+| forge_hooks.py | 293 | Hook system (V11 compatible) |
+| forge_models.py | 286 | Model definitions and capability profiles |
+| forge_compliance.py | 280 | 10-gate compliance checker |
+| forge_registry.py | 276 | Agent definition registry (20 agents) |
+| config.py | 269 | Model configs, .forge/ init, context windows |
+| forge_livereload.py | 252 | LiveReloadServer for build previews |
+| forge_web.py | 238 | Web dashboard (forge.herakles.dev) |
+| forge_audit.py | 224 | JSONL audit trail |
+| forge_comms.py | 196 | BuildContext, FileClaim, AgentAnnouncement |
+| forge_schema.py | 134 | 8 JSON schema validators |
+| forge_prompt.py | 106 | Prompt utilities |
+
+### Benchmark & Demo Scripts
+
+| Module | LOC | Purpose |
+|--------|-----|---------|
+| benchmark_expense_tracker.py | 832 | End-to-end benchmark (5 tasks, 3 waves, 25 checks) |
+| demo_nova_e2e.py | 564 | E2E demo script |
+| challenge_build.py | 274 | Challenge build runner |
 
 ## Key Patterns
 
@@ -104,33 +122,44 @@ Requires exact 1:1 toolUse/toolResult pairing per turn. The router handles this 
 nova-forge/
 ├── bin/forge              # Bash wrapper -> forge_cli.py
 ├── bin/herakles           # Alias
-├── forge.py               # Click CLI
-├── forge_cli.py           # Interactive shell (2400 LOC, main file)
-├── forge_agent.py         # Core agent loop
+├── forge.py               # Click CLI (14 commands)
+├── forge_cli.py           # Interactive shell (main file)
+├── forge_agent.py         # Core agent loop + 12 tools
+├── forge_comms.py         # BuildContext, FileClaim, announcements
+├── forge_compliance.py    # 10-gate compliance checker
+├── forge_deployer.py      # Docker + nginx + SSL deployment
 ├── forge_display.py       # Rich live UI
-├── model_router.py        # LLM provider adapters
-├── forge_tasks.py         # Task CRUD + topo sort
-├── forge_pipeline.py      # WaveExecutor + ArtifactManager
 ├── forge_guards.py        # Security (risk, sandbox, autonomy)
-├── forge_hooks.py         # Hook system
+├── forge_hooks.py         # Hook system (V11 compatible)
 ├── forge_hooks_impl.py    # 12 hook implementations
-├── formations.py          # 8 formations + DAAO
-├── prompt_builder.py      # Prompt construction
+├── forge_index.py         # ProjectIndex, exports, dependencies
+├── forge_livereload.py    # Live reload server for previews
+├── forge_memory.py        # Persistent memory system
+├── forge_migrate.py       # Version migration (V5-V10)
+├── forge_models.py        # Model definitions + capabilities
 ├── forge_orchestrator.py  # Plan/build/deploy coordination
-├── forge_deployer.py      # Docker deployment
-├── forge_web.py           # Web dashboard
-├── forge_session.py       # Session persistence
-├── forge_compliance.py    # Compliance checker
-├── forge_registry.py      # Agent registry
+├── forge_pipeline.py      # WaveExecutor + ArtifactManager
+├── forge_preview.py       # PreviewManager + Cloudflare Tunnel
+├── forge_prompt.py        # Prompt utilities
+├── forge_registry.py      # Agent definition registry
 ├── forge_schema.py        # JSON schema validation
-├── forge_audit.py         # Audit trail
-├── forge_migrate.py       # Version migration
+├── forge_session.py       # Session persistence
+├── forge_tasks.py         # Task CRUD + topo sort
 ├── forge_teams.py         # Team spawning
-├── config.py              # Configuration
+├── forge_verify.py        # BuildVerifier (L1-L3 checks)
+├── forge_web.py           # Web dashboard
+├── forge_audit.py         # JSONL audit trail
+├── formations.py          # 8 formations + DAAO routing
+├── model_router.py        # LLM provider adapters
+├── prompt_builder.py      # System prompt construction
+├── config.py              # Configuration + context windows
+├── benchmark_expense_tracker.py  # E2E benchmark
+├── demo_nova_e2e.py       # E2E demo script
+├── challenge_build.py     # Challenge build runner
 ├── agents/                # 20 YAML agent definitions
 ├── schemas/               # 8 JSON schemas
-├── templates/             # 4 app skeleton templates
-├── tests/unit/            # 303 tests (19 test files)
+├── templates/             # 4 app skeletons (flask-api, streamlit-dash, static-site, nova-chat)
+├── tests/unit/            # 768 tests (35 test files)
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
