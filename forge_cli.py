@@ -2509,14 +2509,14 @@ class ForgeShell:
                 padding=(1, 2),
             ))
             console.print()
-            console.print("  [hint]Set with: /autonomy 0  through  /autonomy 4[/]")
+            console.print("  [hint]Set with: /autonomy 0  through  /autonomy 5[/]")
             return
 
         # /autonomy <number>
         if arg and arg.isdigit():
             new_level = int(arg)
-            if new_level not in range(5):
-                console.print(f"  [error]Level must be 0-4[/]")
+            if new_level not in range(6):
+                console.print(f"  [error]Level must be 0-5[/]")
                 return
 
             if self.assistant.set_autonomy_level(new_level):

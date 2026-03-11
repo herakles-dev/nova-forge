@@ -218,7 +218,7 @@ class TestAutonomyExplanations:
         """get_autonomy_capabilities should return (can, asks) lists."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
-        for level in range(5):
+        for level in range(6):
             can, asks = assistant.get_autonomy_capabilities(level)
             assert isinstance(can, list)
             assert isinstance(asks, list)
@@ -248,36 +248,36 @@ class TestAutonomyExplanations:
 class TestFormationRecommendation:
     """Validate formation selection from project descriptions."""
 
-    def test_simple_script_recommends_solo(self):
-        """'a simple CLI tool' should recommend solo."""
+    def test_simple_script_recommends_single_file(self):
+        """'a simple CLI tool' should recommend single-file."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
         name, reason = assistant.get_formation_recommendation("a simple CLI tool")
-        assert name == "solo"
+        assert name == "single-file"
         assert isinstance(reason, str)
 
-    def test_fullstack_project_recommends_fullstack(self):
-        """Project with both backend and frontend keywords gets full-stack."""
+    def test_fullstack_project_recommends_new_project(self):
+        """Project with both backend and frontend keywords gets new-project."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
         name, reason = assistant.get_formation_recommendation(
             "a full-stack e-commerce platform with API backend and React dashboard"
         )
-        assert name == "full-stack"
+        assert name == "new-project"
 
-    def test_debug_task_recommends_debug_trace(self):
-        """Bug-related description should get debug-trace."""
+    def test_debug_task_recommends_bug_investigation(self):
+        """Bug-related description should get bug-investigation."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
         name, _ = assistant.get_formation_recommendation("debug the login bug")
-        assert name == "debug-trace"
+        assert name == "bug-investigation"
 
-    def test_security_task_recommends_security_audit(self):
-        """Security review should get security-audit."""
+    def test_security_task_recommends_security_review(self):
+        """Security review should get security-review."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
         name, _ = assistant.get_formation_recommendation("audit our auth vulnerability")
-        assert name == "security-audit"
+        assert name == "security-review"
 
     def test_backend_only_recommends_feature_impl(self):
         """API-only project should get feature-impl."""
@@ -447,7 +447,7 @@ class TestAutonomyBar:
         """Bar should include A{level} text."""
         shell = _make_shell()
         assistant = ForgeAssistant(shell)
-        for level in range(5):
+        for level in range(6):
             bar = assistant.format_autonomy_bar(level)
             assert f"A{level}" in bar
 
@@ -531,10 +531,10 @@ class TestAutonomyStateReadWrite:
         assert assistant.read_autonomy_level() == 2
 
     def test_read_level_from_state_file(self, tmp_path):
-        """Should read level from .forge/autonomy.json."""
-        forge_dir = tmp_path / ".forge"
-        forge_dir.mkdir()
-        state_file = forge_dir / "autonomy.json"
+        """Should read level from .forge/state/autonomy.json (canonical path)."""
+        state_dir = tmp_path / ".forge" / "state"
+        state_dir.mkdir(parents=True)
+        state_file = state_dir / "autonomy.json"
         state_file.write_text(json.dumps({"level": 3}))
         shell = _make_shell(project_path=str(tmp_path))
         assistant = ForgeAssistant(shell)
@@ -542,21 +542,22 @@ class TestAutonomyStateReadWrite:
 
     def test_read_level_corrupt_file(self, tmp_path):
         """Corrupt JSON should return default level 2."""
-        forge_dir = tmp_path / ".forge"
-        forge_dir.mkdir()
-        state_file = forge_dir / "autonomy.json"
+        state_dir = tmp_path / ".forge" / "state"
+        state_dir.mkdir(parents=True)
+        state_file = state_dir / "autonomy.json"
         state_file.write_text("NOT JSON")
         shell = _make_shell(project_path=str(tmp_path))
         assistant = ForgeAssistant(shell)
         assert assistant.read_autonomy_level() == 2
 
     def test_set_level_creates_file(self, tmp_path):
-        """set_autonomy_level should create the state file."""
+        """set_autonomy_level should create the state file at canonical path."""
         shell = _make_shell(project_path=str(tmp_path))
         assistant = ForgeAssistant(shell)
         result = assistant.set_autonomy_level(3)
         assert result is True
-        state_file = tmp_path / ".forge" / "autonomy.json"
+        # Canonical path is .forge/state/autonomy.json
+        state_file = tmp_path / ".forge" / "state" / "autonomy.json"
         assert state_file.exists()
         data = json.loads(state_file.read_text())
         assert data["level"] == 3
@@ -601,9 +602,9 @@ class TestFormationExplanations:
 class TestModuleConstants:
     """Validate module-level constants are correctly defined."""
 
-    def test_level_names_has_five_entries(self):
-        """_LEVEL_NAMES should have at least 5 entries (A0-A4)."""
-        assert len(_LEVEL_NAMES) >= 5
+    def test_level_names_has_six_entries(self):
+        """_LEVEL_NAMES should have 6 entries (A0-A5)."""
+        assert len(_LEVEL_NAMES) >= 6
 
     def test_level_descriptions_match_names(self):
         """Every level in _LEVEL_NAMES should have a description."""
@@ -626,3 +627,29 @@ class TestModuleConstants:
         for name, desc in _FORMATION_DESCRIPTIONS.items():
             assert isinstance(desc, str)
             assert len(desc) > 20, f"Formation '{name}' description too short"
+
+    def test_formation_descriptions_match_formations_registry(self):
+        """All formation description keys must exist in formations.FORMATIONS."""
+        from formations import FORMATIONS
+        for name in _FORMATION_DESCRIPTIONS:
+            assert name in FORMATIONS, (
+                f"_FORMATION_DESCRIPTIONS has '{name}' but it's not in FORMATIONS. "
+                f"Valid names: {list(FORMATIONS.keys())}"
+            )
+
+    def test_formation_recommendations_use_valid_names(self):
+        """All formation names returned by get_formation_recommendation must exist in FORMATIONS."""
+        from formations import FORMATIONS
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        test_goals = [
+            "a simple CLI tool", "debug the login bug", "audit auth vulnerability",
+            "a REST API for users", "full-stack app with Flask backend and React UI",
+            "something vague", "optimize database performance",
+        ]
+        for goal in test_goals:
+            name, _ = assistant.get_formation_recommendation(goal)
+            assert name in FORMATIONS, (
+                f"Recommendation for '{goal}' returned '{name}' which is not in FORMATIONS. "
+                f"Valid: {list(FORMATIONS.keys())}"
+            )

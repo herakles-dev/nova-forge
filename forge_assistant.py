@@ -5,7 +5,7 @@ provides contextual hints, and adapts verbosity to skill level.
 
 Usage:
     assistant = ForgeAssistant(shell)
-    skill = await assistant.detect_skill_level()
+    skill = assistant.detect_skill_level()
     hint = assistant.contextual_hint("after_plan")
     console.print(assistant.welcome_message())
 """
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     pass  # ForgeShell imported lazily to avoid circular imports
 
 # ── Autonomy level metadata ───────────────────────────────────────────────────
-
-_LEVEL_NAMES = {0: "Manual", 1: "Guided", 2: "Supervised", 3: "Trusted", 4: "Autonomous"}
+# Import canonical level names from forge_guards (single source of truth)
+from forge_guards import _LEVEL_NAMES  # {0: "Manual", ..., 5: "Unattended"}
 
 _LEVEL_DESCRIPTIONS = {
     0: (
@@ -51,8 +51,14 @@ _LEVEL_DESCRIPTIONS = {
     4: (
         "Autonomous — Full autopilot. I do everything without asking,\n"
         "  including destructive operations.\n"
-        "  Best for: CI pipelines, expert users, throwaway environments.\n"
+        "  Best for: expert users, throwaway environments.\n"
         "  Warning: no guardrails."
+    ),
+    5: (
+        "Unattended — Like Autonomous, but optimized for CI/CD and\n"
+        "  background execution. Full audit logging, no interactive prompts.\n"
+        "  Best for: automated pipelines, overnight batch builds.\n"
+        "  Warning: no guardrails, enhanced logging."
     ),
 }
 
@@ -77,10 +83,17 @@ _LEVEL_CAPABILITIES = {
         "can": ["everything — no interruptions"],
         "asks": [],
     },
+    5: {
+        "can": ["everything — no interruptions", "enhanced audit logging"],
+        "asks": [],
+    },
 }
 
 # ── Formation descriptions (human-friendly) ──────────────────────────────────
 
+# Formation names must match keys in formations.FORMATIONS exactly:
+# single-file, lightweight-feature, feature-impl, new-project,
+# bug-investigation, security-review, perf-optimization, code-review
 _FORMATION_DESCRIPTIONS = {
     "single-file": (
         "One agent works on a single file. Best for small, focused edits "
@@ -94,21 +107,21 @@ _FORMATION_DESCRIPTIONS = {
         "Backend and frontend agents work in parallel, then an integrator "
         "connects them. The standard formation for most projects."
     ),
-    "full-stack": (
+    "new-project": (
         "Architect designs the structure first, then backend/frontend build "
         "in parallel, followed by integration and testing. Best for new apps."
     ),
-    "solo": (
-        "Single agent does everything. Best for simple scripts, small CLIs, "
-        "or when you want one consistent voice in the code."
-    ),
-    "debug-trace": (
+    "bug-investigation": (
         "Three investigator agents hunt the bug from different angles: "
         "code trace, logs/metrics, and minimal reproduction."
     ),
-    "security-audit": (
+    "security-review": (
         "Threat modeler + scanner + fixer pipeline. Good for reviewing "
         "auth flows, API security, and dependency vulnerabilities."
+    ),
+    "perf-optimization": (
+        "Performance profiling + optimization pipeline. Identifies bottlenecks, "
+        "proposes fixes, and benchmarks the improvements."
     ),
     "code-review": (
         "Three reviewers check security, performance, and test coverage "
@@ -205,11 +218,14 @@ class ForgeAssistant:
         if project_path:
             spec = Path(project_path) / "spec.md"
             if spec.exists():
-                lines = len(spec.read_text().splitlines())
-                if lines > 100:
-                    signals += 1
-                if lines > 200:
-                    signals += 1
+                try:
+                    lines = len(spec.read_text(encoding="utf-8", errors="replace").splitlines())
+                    if lines > 100:
+                        signals += 1
+                    if lines > 200:
+                        signals += 1
+                except OSError:
+                    pass
 
         # Signal 4: multiple recent projects (power user)
         recent = getattr(shell, "state", {}).get("recent_projects", [])
@@ -261,31 +277,37 @@ class ForgeAssistant:
         """Recommend formation based on project description keywords.
 
         Returns (formation_name: str, reason: str).
+        Formation names match keys in formations.FORMATIONS exactly.
         """
         lower = goal.lower()
 
-        # Debug / bug hunt
-        if any(kw in lower for kw in ["debug", "bug", "fix", "trace", "investigate"]):
-            return ("debug-trace", "Debug-trace formation sends three investigators after the bug.")
+        # Security — check before debug to avoid "fix a security bug" matching debug
+        if any(kw in lower for kw in ["security", "audit", "vulnerability", "penetration"]):
+            return ("security-review", "Security-review formation: threat model + scanner + fixer pipeline.")
 
-        # Security
-        if any(kw in lower for kw in ["security", "auth", "audit", "vulnerability", "penetration"]):
-            return ("security-audit", "Security-audit formation: threat model + scanner + fixer pipeline.")
+        # Debug / bug hunt — "fix" only matches with debug-adjacent words
+        if any(kw in lower for kw in ["debug", "bug", "trace", "investigate"]):
+            return ("bug-investigation", "Bug-investigation formation sends three investigators after the bug.")
+        if "fix" in lower and any(kw in lower for kw in ["error", "crash", "broken", "failing"]):
+            return ("bug-investigation", "Bug-investigation formation: three angles on the problem.")
 
-        # Simple script or CLI
-        word_count = len(goal.split())
-        if word_count <= 6 and any(kw in lower for kw in ["script", "cli", "tool", "utility"]):
-            return ("solo", "Solo formation: single agent, no coordination overhead.")
+        # Performance
+        if any(kw in lower for kw in ["performance", "optimize", "slow", "bottleneck", "profil"]):
+            return ("perf-optimization", "Perf-optimization formation: profile, fix, benchmark.")
+
+        # Simple script or CLI — relaxed word count gate
+        if any(kw in lower for kw in ["script", "cli tool", "small utility", "simple tool"]):
+            return ("single-file", "Single-file formation: one agent, no coordination overhead.")
 
         # Large full-stack project — requires BOTH backend AND frontend keywords
         has_backend = any(kw in lower for kw in ["backend", "server", "flask", "fastapi", "django", "express"])
         has_frontend = any(kw in lower for kw in ["ui", "frontend", "dashboard", "website", "react", "html", "vue", "svelte"])
         if has_backend and has_frontend:
-            return ("full-stack", "Full-stack formation: architect first, then parallel backend/frontend teams.")
+            return ("new-project", "New-project formation: architect first, then parallel backend/frontend teams.")
 
         # Explicit full-stack description
         if "full-stack" in lower or "full stack" in lower:
-            return ("full-stack", "Full-stack formation: architect first, then parallel backend/frontend teams.")
+            return ("new-project", "New-project formation: architect first, then parallel backend/frontend teams.")
 
         # Backend API or service (single-layer)
         if any(kw in lower for kw in ["api", "rest", "service", "endpoint", "microservice", "backend", "database"]):
@@ -299,24 +321,21 @@ class ForgeAssistant:
 
         Returns (model_alias: str, reason: str).
         """
-        # Check what's available
+        # Use forge_cli's provider detection if available, else check env directly
         available: list[str] = []
         try:
-            from config import MODEL_ALIASES
-
-            provider_creds = {
-                "bedrock": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-                "openrouter": ["OPENROUTER_API_KEY"],
-                "anthropic": ["ANTHROPIC_API_KEY"],
-            }
-            provider_model_map = {
-                "bedrock": ["nova-lite", "nova-pro", "nova-premier"],
-                "openrouter": ["gemini-flash", "gemini-pro"],
-                "anthropic": ["claude-sonnet", "claude-haiku"],
-            }
-            for prov, env_vars in provider_creds.items():
+            from config import MODEL_ALIASES, get_provider
+            for alias, full_id in MODEL_ALIASES.items():
+                provider = get_provider(full_id)
+                # Map provider to required env vars
+                env_map = {
+                    "bedrock": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+                    "openai": ["OPENROUTER_API_KEY"],
+                    "anthropic": ["ANTHROPIC_API_KEY"],
+                }
+                env_vars = env_map.get(provider, [])
                 if all(os.environ.get(v) for v in env_vars):
-                    available.extend(provider_model_map.get(prov, []))
+                    available.append(alias)
         except ImportError:
             pass
 
@@ -348,10 +367,9 @@ class ForgeAssistant:
         if hint is None:
             return None
 
-        # Beginners get more hints; experts get fewer
-        if self.skill_level == "expert" and context not in ("after_build_fail", "returning_expert"):
-            # Experts: skip most tips except actionable ones
-            if context not in ("after_build_fail", "after_preview"):
+        # Beginners get more hints; experts only see actionable ones
+        if self.skill_level == "expert":
+            if context not in ("after_build_fail", "returning_expert", "after_preview"):
                 return None
 
         self.tips_shown.add(context)
@@ -367,21 +385,21 @@ class ForgeAssistant:
         return f"A{level} ({name}): {_LEVEL_DESCRIPTIONS[level]}"
 
     def explain_all_autonomy_levels(self) -> str:
-        """Return a multi-line explanation of all 5 autonomy levels."""
+        """Return a multi-line explanation of all autonomy levels (A0-A5)."""
         lines = []
-        for lvl in range(5):
+        for lvl in sorted(_LEVEL_NAMES.keys()):
             name = _LEVEL_NAMES[lvl]
-            desc = _LEVEL_DESCRIPTIONS[lvl].split("\n")[0]
+            desc = _LEVEL_DESCRIPTIONS.get(lvl, "").split("\n")[0]
             lines.append(f"  A{lvl} {name:12s} — {desc}")
         return "\n".join(lines)
 
     def format_autonomy_bar(self, level: int) -> str:
         """Return a visual autonomy level bar string (Rich-formatted).
 
-        Example: 'Autonomy: [██████░░░░] A2 Supervised'
+        Example: 'Autonomy: [██░░░] A2 Supervised'
         """
-        total = 4
-        filled = level
+        total = 5  # A0 through A5
+        filled = min(level, total)
         empty = total - filled
         bar = "█" * filled + "░" * empty
         name = _LEVEL_NAMES.get(level, str(level))
@@ -474,16 +492,26 @@ class ForgeAssistant:
 
     # ── Autonomy state reading ────────────────────────────────────────────────
 
-    def read_autonomy_level(self) -> int:
-        """Read current autonomy level from the state file directly.
-
-        Returns the level integer (0-4), defaults to 2 if not found.
-        """
+    def _get_autonomy_file(self) -> Path | None:
+        """Get the correct autonomy state file path via ForgeProject."""
         project_path = getattr(self.shell, "project_path", None)
         if project_path is None:
-            return 2
-        state_file = Path(project_path) / ".forge" / "autonomy.json"
-        if not state_file.exists():
+            return None
+        try:
+            from config import ForgeProject
+            fp = ForgeProject(Path(project_path))
+            return fp.autonomy_file  # .forge/state/autonomy.json
+        except Exception:
+            # Fallback to known canonical path
+            return Path(project_path) / ".forge" / "state" / "autonomy.json"
+
+    def read_autonomy_level(self) -> int:
+        """Read current autonomy level from the state file.
+
+        Returns the level integer (0-5), defaults to 2 if not found.
+        """
+        state_file = self._get_autonomy_file()
+        if state_file is None or not state_file.exists():
             return 2
         try:
             data = json.loads(state_file.read_text())
@@ -491,23 +519,21 @@ class ForgeAssistant:
         except (json.JSONDecodeError, OSError, ValueError):
             return 2
 
-    def set_autonomy_level(self, level: int) -> bool:
-        """Set autonomy level by writing to the project state file via AutonomyManager.
+    def set_autonomy_level(self, level: int, reason: str = "user request") -> bool:
+        """Set autonomy level via AutonomyManager's public API.
 
-        Returns True on success.
+        Level is clamped to [0, 5]. Returns True on success.
         """
-        project_path = getattr(self.shell, "project_path", None)
-        if project_path is None:
+        state_file = self._get_autonomy_file()
+        if state_file is None:
             return False
         try:
             from forge_guards import AutonomyManager
-            state_file = Path(project_path) / ".forge" / "autonomy.json"
             state_file.parent.mkdir(parents=True, exist_ok=True)
             mgr = AutonomyManager(state_file)
-            # Force-set by writing directly to _state and saving
-            mgr._state["level"] = level
-            mgr._state["name"] = _LEVEL_NAMES.get(level, str(level))
-            mgr._save()
+            mgr.set_level(level, reason=reason)
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to set autonomy level: %s", e)
             return False
