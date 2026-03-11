@@ -558,3 +558,73 @@ class ChatDisplay:
                 file_parts.append(f"[file.edit]~{_short_path(f, 30)}[/]")
             if file_parts:
                 console.print(f"  {' '.join(file_parts)}")
+
+
+# ── Assistant display helpers ────────────────────────────────────────────────
+
+def display_autonomy_panel(level: int, skill_level: str = "intermediate") -> None:
+    """Print a Rich panel showing the current autonomy level with capabilities.
+
+    Verbosity adapts to skill_level: beginners get full capability lists,
+    experts get a compact summary.
+    """
+    from rich.columns import Columns
+    from rich.text import Text
+
+    _level_names = {0: "Manual", 1: "Guided", 2: "Supervised", 3: "Trusted", 4: "Autonomous"}
+    _caps = {
+        0: ([], ["read files", "write files", "run commands", "all operations"]),
+        1: (["read files freely"], ["write files", "run commands", "destructive ops"]),
+        2: (["read files freely", "write files freely", "run safe commands"],
+            ["destructive commands", "system-level operations"]),
+        3: (["read files freely", "write files freely", "run most commands"],
+            ["permanent data deletion"]),
+        4: (["everything — no interruptions"], []),
+    }
+
+    name = _level_names.get(level, str(level))
+    can_do, asks_about = _caps.get(level, ([], []))
+
+    # Visual bar
+    filled = level
+    empty = 4 - filled
+    bar = "[cyan]" + "█" * filled + "[/][dim]" + "░" * empty + "[/]"
+
+    lines: list[str] = [
+        f"   Current: [bold]A{level} ({name})[/]",
+        f"   {bar} {level}/4",
+        "",
+    ]
+
+    if skill_level != "expert" or can_do or asks_about:
+        for cap in can_do:
+            lines.append(f"   [success]✓[/] {cap}")
+        for ask in asks_about:
+            lines.append(f"   [muted]✗[/] {ask} [dim](asks first)[/]")
+        lines.append("")
+
+    lines.append("   [dim]Set: /autonomy 0-4   Explain: /autonomy ?[/]")
+
+    console.print(Panel(
+        "\n".join(lines),
+        title="[bold] Autonomy Level [/]",
+        border_style="cyan",
+        padding=(0, 1),
+    ))
+
+
+def display_skill_detection(level: str) -> None:
+    """Show the detected (or chosen) skill level with a brief description."""
+    descriptions = {
+        "beginner":     "new to coding or Nova Forge",
+        "intermediate": "comfortable with code and CLIs",
+        "expert":       "experienced developer — minimal hints",
+    }
+    desc = descriptions.get(level, level)
+    icon = {"beginner": "seedling", "intermediate": "wrench", "expert": "star"}.get(level, "")
+    console.print(f"  [muted]Skill level:[/] [bold]{level.capitalize()}[/] [dim]— {desc}[/]")
+
+
+def display_assistant_hint(hint: str) -> None:
+    """Print a contextual hint in styled italic dim cyan with a leading icon."""
+    console.print(f"  [hint]  {hint}[/]")

@@ -29,6 +29,7 @@ class ModelCapability:
     context_window: int             # tokens
     strengths: list[str]            # ["reasoning", "speed", "code"]
     escalation_target: str | None   # alias of next-tier model, or None
+    beginner_description: str = ""  # Human-friendly description for beginners
 
 
 # ── Model registry ───────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=32_000,
         strengths=["speed", "low-cost", "reasoning"],
         escalation_target="nova-pro",
+        beginner_description="Fast and affordable — great for learning and quick tasks. Smaller context window means it works best with focused, single-file tasks.",
     ),
     "nova-pro": ModelCapability(
         alias="nova-pro",
@@ -53,6 +55,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=300_000,
         strengths=["reasoning", "code", "analysis"],
         escalation_target="nova-premier",
+        beginner_description="Strong all-rounder — handles complex coding tasks and can read large codebases. Good balance of capability and cost.",
     ),
     "nova-premier": ModelCapability(
         alias="nova-premier",
@@ -63,6 +66,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=1_000_000,
         strengths=["deep-reasoning", "code", "long-context"],
         escalation_target=None,
+        beginner_description="Most powerful Nova model — best for complex multi-file projects and deep reasoning. Higher cost but top-tier results.",
     ),
     "gemini-flash": ModelCapability(
         alias="gemini-flash",
@@ -73,6 +77,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=1_000_000,
         strengths=["speed", "code", "multimodal"],
         escalation_target="gemini-pro",
+        beginner_description="Lightning fast with a huge context window — great for coding tasks. Can process images too. Best value for code generation.",
     ),
     "gemini-pro": ModelCapability(
         alias="gemini-pro",
@@ -83,6 +88,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=1_000_000,
         strengths=["deep-reasoning", "code", "analysis", "long-context"],
         escalation_target=None,
+        beginner_description="Top-tier reasoning and coding — handles the most complex architectural decisions and multi-file refactors.",
     ),
     "claude-sonnet": ModelCapability(
         alias="claude-sonnet",
@@ -93,6 +99,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=200_000,
         strengths=["code", "reasoning", "instruction-following"],
         escalation_target=None,
+        beginner_description="Excellent at following instructions precisely — great for code that needs to match exact specifications. Premium quality.",
     ),
     "claude-haiku": ModelCapability(
         alias="claude-haiku",
@@ -103,6 +110,7 @@ MODEL_CAPABILITIES: dict[str, ModelCapability] = {
         context_window=200_000,
         strengths=["speed", "low-cost", "code"],
         escalation_target="claude-sonnet",
+        beginner_description="Fast and affordable Claude model — good for straightforward coding tasks where speed matters more than deep reasoning.",
     ),
 }
 

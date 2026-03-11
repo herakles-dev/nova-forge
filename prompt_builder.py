@@ -158,6 +158,48 @@ _SECTION_CODE_QUALITY = """\
 - Security basics: parameterized SQL queries (never f-strings), escape HTML output, validate user input.\
 """
 
+# ── Autonomy-aware prompt sections ───────────────────────────────────────────
+
+_SECTION_AUTONOMY_GUIDANCE: dict[int, str] = {
+    0: (
+        "## AUTONOMY: MANUAL\n"
+        "You MUST describe every action you want to take BEFORE using any tool. "
+        "Wait for explicit approval. Do not call any tool without the user saying 'yes' or 'go ahead'. "
+        "Explain your reasoning at every step so the user can learn what you are doing and why."
+    ),
+    1: (
+        "## AUTONOMY: GUIDED\n"
+        "You may read files freely. Before writing or running commands, explain what you plan to do and why. "
+        "Keep your explanations concise but clear. The user is learning, so name the concepts involved. "
+        "Do not proceed with writes or commands until the user acknowledges."
+    ),
+    2: (
+        "## AUTONOMY: SUPERVISED\n"
+        "You may read and write files freely. For bash commands, prefer safe operations. "
+        "Ask before destructive commands (rm -rf, git force push, database drops). "
+        "Proceed efficiently for routine operations — the user trusts you with standard development tasks."
+    ),
+    3: (
+        "## AUTONOMY: TRUSTED\n"
+        "You have broad permissions. Proceed efficiently. Only pause for irreversible system operations "
+        "(shutdown, reboot, raw device writes). Handle risky commands like Docker management and "
+        "database operations without asking. Maximize throughput."
+    ),
+    4: (
+        "## AUTONOMY: AUTONOMOUS\n"
+        "You have full permissions. Maximize efficiency. Log your reasoning but don't wait for approval. "
+        "Execute all operations including high-risk commands without pausing. "
+        "The user trusts you completely for this workflow."
+    ),
+    5: (
+        "## AUTONOMY: UNATTENDED\n"
+        "Full permissions, unattended mode. Log everything. No interactive prompts. "
+        "Write detailed audit entries for every significant action. "
+        "Optimize for batch/CI execution — never block waiting for user input. "
+        "If you encounter an ambiguous situation, choose the safer option and log the decision."
+    ),
+}
+
 # Role-specific behavioral profiles injected after the core sections.
 ROLE_PROFILES: dict[str, str] = {
     "builder": (
@@ -394,6 +436,7 @@ class PromptBuilder:
         index_context: str = "",
         max_context_chars: int = 8_000,
         model_id: str = "",
+        autonomy_level: int | None = None,
     ) -> str:
         """Build a V11-grade system prompt for a build-time agent.
 
@@ -407,6 +450,9 @@ class PromptBuilder:
             memory_context:   Cross-session memory from FORGE_MEMORY.md.
             index_context:    Project file/structure index from the session scanner.
             max_context_chars: Max chars allowed for each context block individually.
+            model_id:         Full model ID for identity hint (optional).
+            autonomy_level:   Current autonomy level (0-5). If provided, injects
+                              autonomy-aware behavioral guidance into the prompt.
 
         Returns:
             A complete system prompt string (typically 80+ lines for "builder").
@@ -441,6 +487,10 @@ class PromptBuilder:
                     f"## Role: {role}\n"
                     "Complete assigned tasks precisely and report results clearly."
                 )
+
+        # Autonomy-aware guidance section
+        if autonomy_level is not None and autonomy_level in _SECTION_AUTONOMY_GUIDANCE:
+            sections.append(_SECTION_AUTONOMY_GUIDANCE[autonomy_level])
 
         # Optional context blocks — each truncated independently
         if project_context:
@@ -483,6 +533,7 @@ class PromptBuilder:
         wave_info: str = "",
         max_tokens: int = 32_000,
         model_id: str = "",
+        autonomy_level: int | None = None,
     ) -> str:
         """Build a fully enriched system prompt with dynamic environment context.
 
@@ -490,10 +541,12 @@ class PromptBuilder:
         dynamically gathered environment context, respecting token budgets.
 
         Args:
-            role:         Role name for the agent.
-            task_context: Optional free-form build context string.
-            wave_info:    Optional wave/phase description.
-            max_tokens:   Context-window size; system prompt is capped at 12.5%.
+            role:            Role name for the agent.
+            task_context:    Optional free-form build context string.
+            wave_info:       Optional wave/phase description.
+            max_tokens:      Context-window size; system prompt is capped at 12.5%.
+            model_id:        Full model ID for identity hint (optional).
+            autonomy_level:  Current autonomy level (0-5) for prompt injection.
 
         Returns:
             A single enriched system-prompt string, truncated to budget.
@@ -510,6 +563,7 @@ class PromptBuilder:
             project_context=env.get("forge_md", ""),
             memory_context=env.get("memory", ""),
             index_context=env.get("project_index", ""),
+            autonomy_level=autonomy_level,
         )
 
         # Append lightweight environment section

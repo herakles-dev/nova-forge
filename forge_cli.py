@@ -38,6 +38,7 @@ from rich.rule import Rule
 
 from forge_prompt import ask_select, ask_confirm, ask_text
 from questionary import Choice
+from forge_assistant import ForgeAssistant
 
 # ── Setup ────────────────────────────────────────────────────────────────────
 
@@ -274,6 +275,13 @@ TIPS = [
 ]
 
 HELP_TEXT = """
+[bold bright_white]Getting Started[/]
+  [accent]/guide[/]              Smart setup wizard — recommends formation, autonomy, model
+  [accent]/interview[/]          5-step guided project setup (advanced)
+  [accent]/autonomy[/]           View or change how much Nova asks for approval
+  [accent]/autonomy ?[/]         Explain all 5 autonomy levels
+  [accent]/autonomy[/] [muted]0-4[/]       Set level  [muted](0=Manual · 2=Supervised · 4=Autonomous)[/]
+
 [bold bright_white]Build[/]
   [accent]/plan[/] [muted]<goal>[/]        Plan a project from a description
   [accent]/build[/]              Execute the plan — Nova writes all the code
@@ -320,6 +328,7 @@ class ForgeShell:
         self.session_builds = 0
         self._chat_history: Any = None    # Lazy-loaded ChatHistory
         self._preview_mgr: Any = None     # PreviewManager instance
+        self.assistant = ForgeAssistant(self)  # Smart assistant layer
 
         # Apply model preset (must happen before model resolution so formations are patched)
         preset_name = self.config.get("model_preset", "nova")
@@ -384,9 +393,12 @@ class ForgeShell:
 
         while True:
             try:
+                # Show autonomy level in prompt (e.g. "nova [A2] > ")
+                autonomy_lvl = self.assistant.read_autonomy_level()
+                prompt_str = HTML(f"<prompt>nova [A{autonomy_lvl}] &gt; </prompt>")
                 user_input = await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: session.prompt(HTML("<prompt>nova > </prompt>")),
+                    lambda: session.prompt(prompt_str),
                 )
             except (EOFError, KeyboardInterrupt):
                 self._goodbye()
@@ -408,7 +420,34 @@ class ForgeShell:
     # ── First-run onboarding ─────────────────────────────────────────────
 
     async def _onboard_first_run(self) -> None:
-        console.print(WELCOME_FIRST_RUN)
+        # Ask skill level before welcoming, so we can adapt verbosity
+        skill_choice = await ask_select(
+            "How would you describe your experience level?",
+            [
+                Choice(title="New to coding (or new to Nova Forge)", value="beginner"),
+                Choice(title="Comfortable with code and CLIs", value="intermediate"),
+                Choice(title="Experienced developer — keep it brief", value="expert"),
+            ],
+            default="beginner",
+        )
+        if skill_choice:
+            self.assistant.set_skill_level(skill_choice)
+        else:
+            self.assistant.detect_skill_level()
+
+        # Show skill-adaptive welcome
+        console.print()
+        console.print(self.assistant.welcome_message())
+        console.print()
+
+        # Recommend autonomy level based on skill
+        rec_level, rec_reason = self.assistant.get_autonomy_recommendation()
+        console.print(f"  [step]Recommended autonomy:[/] A{rec_level} ({rec_reason})")
+        console.print(f"  [hint]You can change this anytime with /autonomy[/]")
+        console.print()
+
+        # Apply recommended autonomy
+        self.assistant.set_autonomy_level(rec_level)
 
         # Mark first run complete
         self.state["first_run"] = False
@@ -435,14 +474,31 @@ class ForgeShell:
 
     async def _onboard_returning(self) -> None:
         builds = self.state.get("builds_completed", 0)
+
+        # Detect skill level from history
+        self.assistant.detect_skill_level()
+
         console.print(WELCOME_RETURNING.format(version=VERSION))
         if builds > 0:
             console.print(f"  [muted]{builds} project{'s' if builds != 1 else ''} built so far[/]")
+
+        # Show autonomy level
+        autonomy_lvl = self.assistant.read_autonomy_level()
+        autonomy_bar = self.assistant.format_autonomy_bar(autonomy_lvl)
+        console.print(f"  [muted]Autonomy:[/] {autonomy_bar}  [dim](/autonomy to change)[/]")
+
         from forge_models import get_active_preset, MODEL_PRESETS
         active = get_active_preset()
         if active:
             desc = MODEL_PRESETS[active]["description"]
             console.print(f"  [nova]Preset:[/] {active} [muted]— {desc}[/]")
+
+        # Show contextual hint for returning expert
+        if self.assistant.skill_level == "expert":
+            hint = self.assistant.contextual_hint("returning_expert")
+            if hint:
+                console.print(f"  [hint]{hint}[/]")
+
         console.print()
 
         # Auto-resume: find the most recent project with pending/failed work
@@ -585,6 +641,22 @@ class ForgeShell:
         if not self._has_tasks():
             console.print("  [warning]Planning didn't produce tasks. Try a more specific description.[/]")
             return
+
+        # Post-plan hint from assistant
+        from forge_display import display_assistant_hint
+        summary_after_plan = self._get_task_summary()
+        if summary_after_plan:
+            task_count = summary_after_plan["total"]
+            try:
+                waves = []
+                from forge_tasks import TaskStore
+                from config import ForgeProject as _FP
+                _store = TaskStore(_FP(root=self.project_path).tasks_file)
+                waves = _store.compute_waves()
+            except Exception:
+                waves = []
+            guidance = self.assistant.post_plan_guidance(task_count, len(waves))
+            console.print(f"  [hint]{guidance}[/]")
 
         console.print()
         console.print(Rule("[step] Step 2: Build [/]", style="cyan"))
@@ -891,6 +963,10 @@ class ForgeShell:
                 self._cmd_deploy(arg)
             case "/interview":
                 await self._cmd_interview()
+            case "/autonomy":
+                await self._cmd_autonomy(arg)
+            case "/guide":
+                await self._cmd_guide(arg)
             case _:
                 console.print(f"  [warning]Unknown command:[/] {cmd}")
                 console.print(f"  [hint]Type /help for commands, or just describe what you want.[/]")
@@ -2131,6 +2207,11 @@ class ForgeShell:
         console.print()
         console.print(f"  [bold]{self.project_path.name}[/]")
         console.print(f"  {bar} {pct:.0f}%")
+
+        # Show autonomy level
+        autonomy_lvl = self.assistant.read_autonomy_level()
+        autonomy_bar = self.assistant.format_autonomy_bar(autonomy_lvl)
+        console.print(f"  [muted]Autonomy:[/] {autonomy_bar}  [dim](/autonomy to change)[/]")
         console.print()
 
         parts = []
@@ -2409,6 +2490,148 @@ class ForgeShell:
         console.print(f"    [accent]forge deploy --domain yourapp.example.com[/]")
         console.print()
         console.print("  [hint]Or try /preview for a quick shareable URL.[/]")
+
+    # ── /autonomy ────────────────────────────────────────────────────────
+
+    async def _cmd_autonomy(self, arg: str) -> None:
+        """View, explain, or change the autonomy level (A0-A4)."""
+        from forge_display import display_autonomy_panel
+
+        arg = arg.strip()
+
+        # /autonomy ? or /autonomy explain
+        if arg in ("?", "explain", "help"):
+            console.print()
+            console.print(Panel(
+                self.assistant.explain_all_autonomy_levels(),
+                title="[bold] All Autonomy Levels [/]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+            console.print()
+            console.print("  [hint]Set with: /autonomy 0  through  /autonomy 4[/]")
+            return
+
+        # /autonomy <number>
+        if arg and arg.isdigit():
+            new_level = int(arg)
+            if new_level not in range(5):
+                console.print(f"  [error]Level must be 0-4[/]")
+                return
+
+            if self.assistant.set_autonomy_level(new_level):
+                console.print()
+                console.print(f"  [success]Autonomy set to A{new_level}[/]")
+                console.print()
+                explanation = self.assistant.explain_autonomy(new_level)
+                console.print(f"  {explanation}")
+                console.print()
+
+                # For beginners: show a note about what changes
+                if self.assistant.skill_level == "beginner" and new_level >= 3:
+                    console.print(
+                        "  [warning]Note:[/] At A3+, Nova handles most things without asking.\n"
+                        "  Lower back to A2 with [accent]/autonomy 2[/] if you want more control."
+                    )
+                    console.print()
+            else:
+                console.print("  [error]Failed to set autonomy level.[/]")
+            return
+
+        # /autonomy (no argument) → show current state
+        current = self.assistant.read_autonomy_level()
+        console.print()
+        display_autonomy_panel(current, self.assistant.skill_level)
+        console.print()
+
+    # ── /guide ────────────────────────────────────────────────────────────
+
+    async def _cmd_guide(self, arg: str) -> None:
+        """Smart project setup wizard — conversational alternative to /interview."""
+        console.print()
+        console.print(Panel(
+            "Answer a few questions and Nova will set up the optimal configuration.\n"
+            "  [muted]Press Enter to accept suggestions · Ctrl-C to cancel[/]",
+            title="[brand] Project Guide [/]",
+            border_style="bright_magenta",
+            padding=(0, 2),
+        ))
+        console.print()
+
+        # Step 1: skill level check
+        if not self.assistant._skill_detected:
+            skill_choice = await ask_select(
+                "What's your experience level?",
+                [
+                    Choice(title="New to coding or Nova Forge", value="beginner"),
+                    Choice(title="Comfortable with code and CLIs", value="intermediate"),
+                    Choice(title="Experienced developer", value="expert"),
+                ],
+                default="intermediate",
+            )
+            if skill_choice:
+                self.assistant.set_skill_level(skill_choice)
+            else:
+                console.print("  [muted]Cancelled.[/]")
+                return
+
+        from forge_display import display_skill_detection, display_assistant_hint
+        display_skill_detection(self.assistant.skill_level)
+        console.print()
+
+        # Step 2: What to build
+        goal = await ask_text(
+            "What do you want to build?",
+            instruction='e.g. "a REST API for recipes" or "a habit tracker with SQLite"',
+        )
+        if not goal:
+            console.print("  [muted]Cancelled.[/]")
+            return
+        goal = goal.strip()
+
+        # Step 3: Formation recommendation
+        rec_formation, rec_reason = self.assistant.get_formation_recommendation(goal)
+        console.print()
+        console.print(f"  [step]Recommended formation:[/] [accent]{rec_formation}[/]")
+        console.print(f"  [muted]{rec_reason}[/]")
+        if self.assistant.skill_level != "expert":
+            console.print(f"  [hint]{self.assistant.explain_formation(rec_formation)}[/]")
+        console.print()
+
+        # Step 4: Autonomy recommendation
+        rec_level, rec_aut_reason = self.assistant.get_autonomy_recommendation()
+        current_level = self.assistant.read_autonomy_level()
+        console.print(f"  [step]Autonomy recommendation:[/] A{rec_level} — {rec_aut_reason}")
+        if self.assistant.skill_level == "beginner":
+            console.print(f"  [hint]Type /autonomy to see what each level means[/]")
+        console.print()
+
+        # Confirm
+        from forge_models import get_active_preset
+        active_model = next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), "nova-lite")
+        console.print(f"  [step]Summary:[/]")
+        console.print(f"    Goal:       {goal}")
+        console.print(f"    Formation:  {rec_formation}")
+        console.print(f"    Autonomy:   A{rec_level}")
+        console.print(f"    Model:      {active_model}")
+        console.print()
+
+        proceed = await ask_confirm("Apply these settings and start planning?")
+        if not proceed:
+            console.print("  [muted]Cancelled — your settings are unchanged.[/]")
+            return
+
+        # Apply autonomy
+        self.assistant.set_autonomy_level(rec_level)
+        console.print(f"  [success]Autonomy set to A{rec_level}[/]")
+
+        # Show hint about formation
+        hint = self.assistant.contextual_hint("formation_intro")
+        if hint:
+            display_assistant_hint(hint)
+
+        console.print()
+        await self._guided_build(goal)
 
     # ── /interview ─────────────────────────────────────────────────────
 

@@ -4,11 +4,15 @@ SyntaxVerifier, and AutonomyManager.
 Ports V11's hook-based security model (common.sh) into pure Python with
 enhancements: interpreter-wrapping detection, sensitive-file reads, 1-hour
 cooldown on re-escalation, and persistent error_history.
+
+V9 additions: A0-A5 autonomy levels (A5 = Unattended), rich AutonomyLevel
+descriptors, skill-level-aware recommendations, and public set_level/get_level_info API.
 """
 
 import ast
 import fnmatch
 import json
+import logging
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -20,6 +24,8 @@ from typing import Optional
 from filelock import FileLock
 
 from config import ForgeProject, HERCULES_ROOT  # noqa: F401 — re-exported for callers
+
+logger = logging.getLogger(__name__)
 
 
 # ── RiskLevel ─────────────────────────────────────────────────────────────────
@@ -479,6 +485,111 @@ class SyntaxVerifier:
             return SyntaxResult(valid=False, error=str(exc), language="yaml")
 
 
+# ── AutonomyLevel descriptors ────────────────────────────────────────────────
+
+@dataclass
+class AutonomyLevel:
+    """Rich descriptor for an autonomy level."""
+    id: int
+    name: str
+    short: str           # 1-line description
+    description: str     # Paragraph for beginners
+    capabilities: list[str]   # What's allowed
+    restrictions: list[str]   # What's blocked
+    recommended_for: str      # Who should use this
+    risk_threshold: str       # "none", "low", "medium", "high", "all"
+
+
+AUTONOMY_LEVELS: dict[int, AutonomyLevel] = {
+    0: AutonomyLevel(
+        id=0, name="Manual", short="Ask permission for everything",
+        description=(
+            "Nova will ask your permission before every single action — reading files, "
+            "writing code, running commands. This is the safest mode but also the slowest. "
+            "Great for learning what Nova does step-by-step."
+        ),
+        capabilities=["Nothing automatic — all actions require your approval"],
+        restrictions=["All file reads", "All file writes", "All commands", "All deployments"],
+        recommended_for="First-time users who want to understand every step",
+        risk_threshold="none",
+    ),
+    1: AutonomyLevel(
+        id=1, name="Guided", short="Read freely, ask before writing",
+        description=(
+            "Nova can read and explore your project freely, but will ask before making "
+            "any changes. You'll see what it wants to do before it does it."
+        ),
+        capabilities=["Read any file", "List directories", "Search code"],
+        restrictions=["Write/edit files (asks first)", "Run commands (asks first)", "Deployments"],
+        recommended_for="Beginners learning to code, or exploring a new codebase",
+        risk_threshold="low",
+    ),
+    2: AutonomyLevel(
+        id=2, name="Supervised", short="Read and write freely, ask for risky commands",
+        description=(
+            "Nova can read and write files on its own, run safe commands, but will ask "
+            "before doing anything destructive or risky. This is the recommended default "
+            "for most users."
+        ),
+        capabilities=[
+            "Read any file", "Write/edit files", "Run safe commands (ls, cat, python)",
+            "Install packages",
+        ],
+        restrictions=["Destructive commands (rm -rf, git force push)", "System changes", "Deployments"],
+        recommended_for="Most users — good balance of speed and safety",
+        risk_threshold="medium",
+    ),
+    3: AutonomyLevel(
+        id=3, name="Trusted", short="Handle most things independently",
+        description=(
+            "Nova handles nearly everything on its own, including risky operations like "
+            "database changes and deployments. It only asks for truly dangerous "
+            "system-level operations."
+        ),
+        capabilities=[
+            "All file operations", "All commands including risky ones",
+            "Database operations", "Docker management",
+        ],
+        restrictions=[
+            "System shutdown/reboot", "Recursive force delete outside project",
+            "Raw device writes",
+        ],
+        recommended_for="Experienced developers who trust Nova and want speed",
+        risk_threshold="high",
+    ),
+    4: AutonomyLevel(
+        id=4, name="Autonomous", short="Full autopilot — no questions asked",
+        description=(
+            "Nova does everything without asking. Use this when you want maximum speed "
+            "and trust Nova completely. Previously approved high-risk commands are "
+            "remembered."
+        ),
+        capabilities=[
+            "Everything — no restrictions",
+            "High-risk commands auto-approved if previously used",
+        ],
+        restrictions=["None — all operations permitted"],
+        recommended_for="Expert developers running known, trusted workflows",
+        risk_threshold="all",
+    ),
+    5: AutonomyLevel(
+        id=5, name="Unattended", short="Background execution with logging",
+        description=(
+            "Like Autonomous, but optimized for unattended/CI execution. All actions "
+            "are logged, no interactive prompts, and a full audit trail is generated. "
+            "Use for automated pipelines."
+        ),
+        capabilities=[
+            "Everything from A4", "Enhanced audit logging",
+            "No interactive prompts", "CI/CD friendly",
+        ],
+        restrictions=["None — all operations permitted with full logging"],
+        recommended_for="CI/CD pipelines, automated builds, overnight batch runs",
+        risk_threshold="all",
+    ),
+}
+
+
 # ── AutonomyManager ───────────────────────────────────────────────────────────
 
 @dataclass
@@ -488,10 +599,14 @@ class AutonomyResult:
 
 
 # Escalation thresholds (V11: A0→A1 at 5, A1→A2 at 10, A2→A3 at 25).
+# A3→A4 and A4→A5 require explicit grant, never automatic.
 _ESCALATION_THRESHOLDS = {0: 5, 1: 10, 2: 25}
 
-# Level names matching V11.
-_LEVEL_NAMES = {0: "Manual", 1: "Guided", 2: "Supervised", 3: "Trusted", 4: "Autonomous"}
+# Level names matching V11, extended with A5.
+_LEVEL_NAMES = {
+    0: "Manual", 1: "Guided", 2: "Supervised",
+    3: "Trusted", 4: "Autonomous", 5: "Unattended",
+}
 
 # Extension → category mapping (V11 common.sh:295-308).
 _EXT_TO_CATEGORY: dict[str, str] = {
@@ -529,7 +644,11 @@ def _parse_iso(s: str) -> Optional[datetime]:
 
 
 class AutonomyManager:
-    """Full A0-A4 port of v11_check_autonomy and v11_check_risk (common.sh:221-322).
+    """Full A0-A5 autonomy system — evolved from V11's A0-A4.
+
+    A5 (Unattended) extends A4 with enhanced audit logging and no interactive
+    prompts, designed for CI/CD pipelines. A5 can never be reached by automatic
+    escalation; it must be set explicitly via ``set_level(5)``.
 
     State is persisted to *autonomy_file* (JSON) with file locking.
     The file path is fixed at init time — agents cannot redirect writes.
@@ -545,8 +664,53 @@ class AutonomyManager:
 
     @property
     def current_level(self) -> int:
-        """Return the current autonomy level (0-4)."""
+        """Return the current autonomy level (0-5)."""
         return int(self._state.get("level", 0))
+
+    def get_level_info(self) -> AutonomyLevel:
+        """Return the AutonomyLevel descriptor for the current level."""
+        level = self.current_level
+        return AUTONOMY_LEVELS.get(level, AUTONOMY_LEVELS[2])
+
+    def set_level(self, level: int, reason: str = "") -> None:
+        """Set autonomy level explicitly (user-initiated).
+
+        This is the only way to reach A4 or A5 — automatic escalation
+        stops at A3.
+        """
+        level = max(0, min(5, level))
+        old = self.current_level
+        self._state["level"] = level
+        self._state["name"] = _LEVEL_NAMES.get(level, str(level))
+        if reason:
+            self._state["set_reason"] = reason
+        self._state["last_escalation"] = _iso(_utcnow())
+        logger.info("Autonomy level changed: A%d → A%d (reason: %s)", old, level, reason or "explicit")
+        self._save()
+
+    @staticmethod
+    def recommend_level(skill: str, risk: str = "low") -> int:
+        """Recommend autonomy level based on user skill and project risk.
+
+        Args:
+            skill: "beginner", "intermediate", "expert", or "ci"
+            risk:  "low", "medium", "high" (project risk level)
+
+        Returns:
+            Recommended autonomy level (0-5).
+        """
+        skill = skill.lower().strip()
+        risk = risk.lower().strip()
+        if skill in ("ci", "unattended", "pipeline"):
+            return 5
+        if skill == "beginner":
+            return 1
+        if skill == "intermediate":
+            return 2
+        if skill == "expert":
+            return 3
+        # Unknown skill — default to A2 (Supervised)
+        return 2
 
     def check_permission(self, risk: RiskLevel) -> bool:
         """Check if the current autonomy level permits an operation of *risk*.
@@ -555,15 +719,16 @@ class AutonomyManager:
         tool execution when file/command context is not yet needed for the
         permission decision.
 
-        A0 (Manual)    — nothing allowed automatically.
-        A1 (Guided)    — only LOW risk allowed.
-        A2 (Supervised)— LOW and MEDIUM allowed; HIGH blocked.
-        A3 (Trusted)   — LOW and MEDIUM and HIGH allowed.
-        A4 (Autonomous)— everything allowed (includes any future CRITICAL level).
+        A0 (Manual)     — nothing allowed automatically.
+        A1 (Guided)     — only LOW risk allowed.
+        A2 (Supervised) — LOW and MEDIUM allowed; HIGH blocked.
+        A3 (Trusted)    — LOW and MEDIUM and HIGH allowed.
+        A4 (Autonomous) — everything allowed (includes any future CRITICAL level).
+        A5 (Unattended) — same as A4, with enhanced logging.
         """
         level = self.current_level
         if level >= 4:
-            # A4: Autonomous — everything allowed.
+            # A4/A5: Autonomous/Unattended — everything allowed.
             return True
         if level >= 3:
             # A3: Trusted — allow LOW, MEDIUM, HIGH; block only hypothetical CRITICAL.
@@ -616,20 +781,26 @@ class AutonomyManager:
     ) -> AutonomyResult:
         """Decide whether the action is allowed under the current autonomy level."""
         level: int = self._state.get("level", 0)
+        level_name = _LEVEL_NAMES.get(level, str(level))
 
         # Always block HIGH at A0-A3.
         if risk_level == RiskLevel.HIGH:
             if level < 4:
                 return AutonomyResult(
                     allowed=False,
-                    reason=f"HIGH risk blocked at autonomy level A{level} ({_LEVEL_NAMES[level]}). "
+                    reason=f"HIGH risk blocked at autonomy level A{level} ({level_name}). "
                            "Explicit user approval required.",
                 )
-            # A4: HIGH allowed only if command is in high_risk_history.
-            return self._check_a4_high(command)
+            # A4/A5: HIGH allowed only if command is in high_risk_history.
+            result = self._check_a4_high(command)
+            if level == 5 and result.allowed:
+                logger.info("[A5 AUDIT] HIGH-risk command auto-approved: %s", command[:120])
+            return result
 
         # Low risk is always allowed.
         if risk_level == RiskLevel.LOW:
+            if level == 5:
+                logger.debug("[A5 AUDIT] LOW-risk auto-approved: %s %s", tool_name, file_path or command)
             return AutonomyResult(allowed=True, reason="LOW risk — always allowed.")
 
         # Medium risk — level-dependent.
@@ -640,9 +811,11 @@ class AutonomyManager:
             )
 
         if level >= 3:
+            if level == 5:
+                logger.info("[A5 AUDIT] MEDIUM-risk auto-approved: %s %s", tool_name, file_path or command)
             return AutonomyResult(
                 allowed=True,
-                reason=f"A{level} ({_LEVEL_NAMES[level]}): all MEDIUM risk auto-approved.",
+                reason=f"A{level} ({level_name}): all MEDIUM risk auto-approved.",
             )
 
         if level >= 2:
@@ -657,7 +830,7 @@ class AutonomyManager:
 
         return AutonomyResult(
             allowed=False,
-            reason=f"A{level} ({_LEVEL_NAMES[level]}): no matching grant or approved category.",
+            reason=f"A{level} ({level_name}): no matching grant or approved category.",
         )
 
     def track(
@@ -763,11 +936,15 @@ class AutonomyManager:
         return AutonomyResult(allowed=False, reason=f"Category '{category}' not approved.")
 
     def _maybe_escalate(self, now: datetime) -> None:
-        """Promote autonomy level if success threshold is met."""
+        """Promote autonomy level if success threshold is met.
+
+        Automatic escalation only goes up to A3. A3→A4 and A4→A5 require
+        explicit user action via set_level().
+        """
         level: int = self._state.get("level", 0)
         if level >= 4:
             return
-        # A3→A4 requires explicit grant, not automatic.
+        # A3→A4 and A4→A5 require explicit grant, not automatic.
         if level >= 3:
             return
         threshold = _ESCALATION_THRESHOLDS.get(level)
@@ -786,7 +963,11 @@ class AutonomyManager:
         self._state["last_escalation"] = _iso(now)
 
     def _maybe_deescalate(self, now: datetime) -> None:
-        """Drop autonomy level on error; crash to A0 on rapid errors."""
+        """Drop autonomy level on error; crash to A0 on rapid errors.
+
+        A5 (Unattended) de-escalates to A4 on single error (stays in auto-
+        pilot territory). Rapid errors (5+ in 10 min) still crash to A0.
+        """
         level: int = self._state.get("level", 0)
         if level == 0:
             return
@@ -803,6 +984,8 @@ class AutonomyManager:
             self._state["level"] = 0
             self._state["name"] = _LEVEL_NAMES[0]
             self._state["last_escalation"] = _iso(now)
+            if level == 5:
+                logger.warning("[A5 AUDIT] Rapid de-escalation from A5 to A0 due to %d errors", len(recent_errors))
             return
 
         # Single error → drop 1 level.

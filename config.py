@@ -1,9 +1,13 @@
-"""Nova Forge configuration — paths, model configs, project detection."""
+"""Nova Forge configuration — paths, model configs, project detection, user profiles."""
 
+import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ── Directory constants ──────────────────────────────────────────────
@@ -206,6 +210,43 @@ def is_metadata_file(path: str | Path) -> bool:
         if part in METADATA_DIRS:
             return True
     return False
+
+
+# ── Global user profile ──────────────────────────────────────────────
+
+GLOBAL_FORGE_DIR = Path.home() / ".forge"
+GLOBAL_PROFILE_PATH = GLOBAL_FORGE_DIR / "profile.json"
+
+
+def load_global_profile() -> dict:
+    """Load the global user profile (skill level, preferences).
+
+    Returns an empty dict if the file does not exist or is malformed.
+    The global profile lives at ~/.forge/profile.json and provides
+    defaults that any project can inherit.
+    """
+    if not GLOBAL_PROFILE_PATH.exists():
+        return {}
+    try:
+        return json.loads(GLOBAL_PROFILE_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to load global profile: %s", exc)
+        return {}
+
+
+def save_global_profile(profile: dict) -> None:
+    """Save global user profile to ~/.forge/profile.json.
+
+    Creates ~/.forge/ directory if it does not exist.
+    """
+    GLOBAL_FORGE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        GLOBAL_PROFILE_PATH.write_text(
+            json.dumps(profile, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("Failed to save global profile: %s", exc)
 
 
 # ── .forge/ directory initialization ─────────────────────────────────

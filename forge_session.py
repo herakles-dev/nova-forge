@@ -1,8 +1,12 @@
 """Nova Forge Session Manager — session lifecycle, state persistence, handoff.
 
 Manages the session directory (.forge/), task state snapshots, formation
-registries, autonomy state, and handoff context generation. Provides the
-persistence layer that survives across agent invocations and context clears.
+registries, autonomy state, user profiles, and handoff context generation.
+Provides the persistence layer that survives across agent invocations and
+context clears.
+
+V9 additions: UserProfile dataclass for skill-level-aware defaults, profile
+persistence, and experience-based skill progression.
 
 Usage::
 
@@ -12,6 +16,7 @@ Usage::
     sm.init()                          # Create .forge/ structure
     sm.save_autonomy(level=2, ...)     # Persist autonomy state
     sm.save_formation_registry(...)    # Persist formation
+    profile = sm.load_profile()        # Load user profile
     context = sm.handoff()             # Generate continuation context
     report = sm.status()               # Get progress report
 """
@@ -126,6 +131,48 @@ class FormationState:
         )
 
 
+@dataclass
+class UserProfile:
+    """Persistent user preferences that affect session behavior.
+
+    Tracks skill level, preferred settings, and build experience.
+    Stored in .forge/profile.json (project-level) or ~/.forge/profile.json (global).
+    """
+    skill_level: str = "beginner"        # beginner, intermediate, expert
+    preferred_autonomy: int = 2          # Default A2 (Supervised)
+    preferred_model: str = "nova-lite"
+    preferred_formation: str = "auto"
+    builds_completed: int = 0
+    builds_failed: int = 0
+    verbosity: str = "normal"            # minimal, normal, verbose
+    show_explanations: bool = True       # Show beginner-friendly explanations
+
+    def to_dict(self) -> dict:
+        return {
+            "skill_level": self.skill_level,
+            "preferred_autonomy": self.preferred_autonomy,
+            "preferred_model": self.preferred_model,
+            "preferred_formation": self.preferred_formation,
+            "builds_completed": self.builds_completed,
+            "builds_failed": self.builds_failed,
+            "verbosity": self.verbosity,
+            "show_explanations": self.show_explanations,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "UserProfile":
+        return cls(
+            skill_level=d.get("skill_level", "beginner"),
+            preferred_autonomy=d.get("preferred_autonomy", 2),
+            preferred_model=d.get("preferred_model", "nova-lite"),
+            preferred_formation=d.get("preferred_formation", "auto"),
+            builds_completed=d.get("builds_completed", 0),
+            builds_failed=d.get("builds_failed", 0),
+            verbosity=d.get("verbosity", "normal"),
+            show_explanations=d.get("show_explanations", True),
+        )
+
+
 # ── SessionManager ──────────────────────────────────────────────────────────
 
 class SessionManager:
@@ -204,6 +251,78 @@ class SessionManager:
             self.project.autonomy_file.write_text(
                 json.dumps(state.to_dict(), indent=2) + "\n"
             )
+
+    # ── User Profile ────────────────────────────────────────────────────────
+
+    def save_profile(self, profile: UserProfile) -> None:
+        """Save user profile to .forge/profile.json."""
+        self.project.state_dir.mkdir(parents=True, exist_ok=True)
+        profile_file = self.project.state_dir / "profile.json"
+        lock = FileLock(str(profile_file) + ".lock", timeout=2)
+        with lock:
+            profile_file.write_text(
+                json.dumps(profile.to_dict(), indent=2) + "\n"
+            )
+
+    def load_profile(self) -> UserProfile:
+        """Load user profile from .forge/profile.json.
+
+        Falls back to global profile (~/.forge/profile.json) if project-level
+        profile does not exist, then to defaults.
+        """
+        # Project-level profile
+        profile_file = self.project.state_dir / "profile.json"
+        if profile_file.exists():
+            try:
+                data = json.loads(profile_file.read_text())
+                return UserProfile.from_dict(data)
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Failed to load project profile: %s", exc)
+
+        # Global profile fallback
+        try:
+            from config import load_global_profile
+            global_data = load_global_profile()
+            if global_data:
+                return UserProfile.from_dict(global_data)
+        except Exception:
+            pass
+
+        return UserProfile()
+
+    def update_profile_after_build(
+        self,
+        profile: UserProfile,
+        passed: int,
+        failed: int,
+    ) -> UserProfile:
+        """Update profile after a build — track experience, potentially upgrade skill level.
+
+        Progression rules:
+        - After 3 successful builds (0 failures): beginner -> intermediate
+        - After 10 successful builds (0 failures): intermediate -> expert
+        - Failures do not reset progress but do not count toward thresholds.
+
+        Returns the updated profile (also saves it).
+        """
+        if passed > 0 and failed == 0:
+            profile.builds_completed += 1
+        elif failed > 0:
+            profile.builds_failed += 1
+
+        # Skill progression
+        old_skill = profile.skill_level
+        if profile.skill_level == "beginner" and profile.builds_completed >= 3:
+            profile.skill_level = "intermediate"
+            profile.preferred_autonomy = max(profile.preferred_autonomy, 2)
+            logger.info("Skill level upgraded: beginner -> intermediate (after %d builds)", profile.builds_completed)
+        elif profile.skill_level == "intermediate" and profile.builds_completed >= 10:
+            profile.skill_level = "expert"
+            profile.preferred_autonomy = max(profile.preferred_autonomy, 3)
+            logger.info("Skill level upgraded: intermediate -> expert (after %d builds)", profile.builds_completed)
+
+        self.save_profile(profile)
+        return profile
 
     # ── Formation Registry ───────────────────────────────────────────────────
 
@@ -330,6 +449,18 @@ class SessionManager:
                     )
             except (json.JSONDecodeError, OSError):
                 pass
+
+        # Include user profile if available
+        profile = self.load_profile()
+        if profile.skill_level != "beginner" or profile.builds_completed > 0:
+            lines.extend([
+                "",
+                "## User Profile",
+                f"- Skill Level: {profile.skill_level}",
+                f"- Builds Completed: {profile.builds_completed}",
+                f"- Preferred Autonomy: A{profile.preferred_autonomy}",
+                f"- Verbosity: {profile.verbosity}",
+            ])
 
         lines.extend([
             "",

@@ -8,7 +8,7 @@
 - **CLI**: Click (forge.py) + custom interactive shell (forge_cli.py)
 - **LLM Providers**: AWS Bedrock (Nova), OpenRouter (Gemini), Anthropic (Claude)
 - **UI**: Rich (live progress, tables, panels, spinners)
-- **Testing**: pytest (768 tests in 35 test files)
+- **Testing**: pytest (871 tests in 37 test files)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
 - **Dependencies**: boto3, openai, anthropic, flask, rich, click, pyyaml, jsonschema, pydantic
 
@@ -49,7 +49,7 @@ User Goal -> Interview (scope, stack, risk)
           -> ForgeDeployer (Docker + nginx) -> Live URL
 ```
 
-## Module Map (34 files, 19,866 LOC)
+## Module Map (35 files, 21,082 LOC)
 
 ### Core Modules
 
@@ -60,8 +60,8 @@ User Goal -> Interview (scope, stack, risk)
 | forge_hooks_impl.py | 1057 | 12 hook implementations |
 | model_router.py | 902 | 3 provider adapters (Bedrock, OpenAI, Anthropic) + JSON recovery |
 | forge_pipeline.py | 848 | WaveExecutor + ArtifactManager + GateReviewer |
-| forge_guards.py | 846 | RiskClassifier + PathSandbox + AutonomyManager |
-| prompt_builder.py | 798 | 7-section prompt + slim variants for 32K models |
+| forge_guards.py | 1029 | RiskClassifier + PathSandbox + AutonomyManager (A0-A5) |
+| prompt_builder.py | 852 | 7-section prompt + slim variants + autonomy-aware prompts |
 | forge.py | 740 | Click CLI commands (14 commands) |
 | forge_orchestrator.py | 670 | Plan/build/deploy orchestration |
 | formations.py | 656 | 8 formations + DAAO routing + 5 tool policies |
@@ -86,6 +86,7 @@ User Goal -> Interview (scope, stack, risk)
 | forge_comms.py | 196 | BuildContext, FileClaim, AgentAnnouncement |
 | forge_schema.py | 134 | 8 JSON schema validators |
 | forge_prompt.py | 106 | Prompt utilities |
+| forge_assistant.py | 513 | Smart session assistant — skill detection, recommendations |
 
 ### Benchmark & Demo Scripts
 
@@ -116,6 +117,20 @@ Provider detection from model ID prefix: `bedrock/` -> Bedrock Converse API, `op
 ### Bedrock Converse API
 Requires exact 1:1 toolUse/toolResult pairing per turn. The router handles this constraint.
 
+### Assistant Layer
+ForgeAssistant provides skill-level-aware guidance: detects beginner/intermediate/expert from usage signals (builds completed, recent projects, model config), recommends autonomy levels, formations, and models. Contextual hints are shown once per context and gated by skill level (experts see fewer tips). Integrated into ForgeShell for adaptive UX.
+
+### Autonomy System (A0-A5)
+Six-level trust system controlling what Nova can do without asking:
+- A0 Manual: ask for everything
+- A1 Guided: read freely, ask before writing
+- A2 Supervised: read/write freely, ask for risky commands (default)
+- A3 Trusted: handle most things independently
+- A4 Autonomous: full autopilot
+- A5 Unattended: background/CI execution with audit logging
+
+Auto-escalation stops at A3 (A4+ requires explicit `set_level()`). De-escalation: single error drops 1 level, 5+ errors in 10 minutes crashes to A0. 1-hour cooldown prevents rapid re-escalation.
+
 ## File Layout
 
 ```
@@ -125,11 +140,12 @@ nova-forge/
 ├── forge.py               # Click CLI (14 commands)
 ├── forge_cli.py           # Interactive shell (main file)
 ├── forge_agent.py         # Core agent loop + 12 tools
+├── forge_assistant.py     # Smart session assistant (skill, recommendations)
 ├── forge_comms.py         # BuildContext, FileClaim, announcements
 ├── forge_compliance.py    # 10-gate compliance checker
 ├── forge_deployer.py      # Docker + nginx + SSL deployment
 ├── forge_display.py       # Rich live UI
-├── forge_guards.py        # Security (risk, sandbox, autonomy)
+├── forge_guards.py        # Security (risk, sandbox, autonomy A0-A5)
 ├── forge_hooks.py         # Hook system (V11 compatible)
 ├── forge_hooks_impl.py    # 12 hook implementations
 ├── forge_index.py         # ProjectIndex, exports, dependencies
@@ -159,7 +175,7 @@ nova-forge/
 ├── agents/                # 20 YAML agent definitions
 ├── schemas/               # 8 JSON schemas
 ├── templates/             # 4 app skeletons (flask-api, streamlit-dash, static-site, nova-chat)
-├── tests/unit/            # 768 tests (35 test files)
+├── tests/unit/            # 871 tests (37 test files)
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
