@@ -8,3 +8,4 @@ flask-cors>=4.0
 gunicorn>=21.0
 pyyaml>=6.0
 jsonschema>=4.20
+questionary>=2.1.0,<3.0

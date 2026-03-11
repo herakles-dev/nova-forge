@@ -31,7 +31,7 @@ from rich.text import Text
 from rich.theme import Theme
 from rich import box
 
-from forge_agent import AgentEvent
+from forge_agent import AgentEvent, AgentResult
 
 # ── Theme (shared with forge_cli.py) ────────────────────────────────────────
 
@@ -297,6 +297,15 @@ class BuildDisplay:
                     f"{_format_tokens(event.tokens_in)} -> {_format_tokens(event.tokens_out)} tokens[/]"
                 )
 
+        elif event.kind == "file_claimed":
+            if self.verbose:
+                console.print(f"    [accent]claim[/] {event.file_path}")
+        elif event.kind == "file_conflict":
+            console.print(f"    [warning]CONFLICT[/] {event.file_path} — {event.error}")
+        elif event.kind == "announcement":
+            if self.verbose:
+                detail = event.tool_args.get("detail", "")
+                console.print(f"    [info]announce[/] {detail}")
         elif event.kind == "error":
             trace.error = event.error
 
@@ -460,3 +469,92 @@ class BuildDisplay:
             table.add_row("Preview", f"[accent]{preview_url}[/]")
 
         console.print(table)
+
+
+# ── Chat display ─────────────────────────────────────────────────────────────
+
+class ChatDisplay:
+    """Real-time display for chat agent — shows tool calls and streams text."""
+
+    def __init__(self):
+        self.tool_calls = 0
+        self.files_written: list[str] = []
+        self.files_edited: list[str] = []
+        self.files_read: list[str] = []
+        self._progress: Progress | None = None
+        self._task_id: TaskID | None = None
+        self._start_time = time.monotonic()
+
+    def on_event(self, event: AgentEvent) -> None:
+        """Callback for ForgeAgent events — updates the live spinner."""
+        if event.kind == "tool_start":
+            self.tool_calls += 1
+            verb = TOOL_VERBS.get(event.tool_name, event.tool_name)
+            target = _short_path(event.file_path, 35)
+
+            if event.tool_name == "bash":
+                cmd = event.tool_args.get("command", "")[:40]
+                desc = f"[tool]{verb}[/] [muted]{cmd}[/]"
+            elif target:
+                desc = f"[tool]{verb}[/] [muted]{target}[/]"
+            else:
+                desc = f"[tool]{verb}...[/]"
+
+            if self._progress and self._task_id is not None:
+                self._progress.update(self._task_id, description=desc)
+
+        elif event.kind == "tool_end":
+            if event.file_action == "write" and event.file_path:
+                if event.file_path not in self.files_written:
+                    self.files_written.append(event.file_path)
+            elif event.file_action == "edit" and event.file_path:
+                if event.file_path not in self.files_edited:
+                    self.files_edited.append(event.file_path)
+            elif event.file_action == "read" and event.file_path:
+                if event.file_path not in self.files_read:
+                    self.files_read.append(event.file_path)
+
+        elif event.kind == "turn_start":
+            if self._progress and self._task_id is not None:
+                self._progress.update(
+                    self._task_id,
+                    description=f"[nova]Nova[/] [muted]turn {event.turn}...[/]",
+                )
+
+    def create_progress(self) -> Progress:
+        """Create and return the Progress instance for use as context manager."""
+        self._progress = Progress(
+            SpinnerColumn("dots"),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        )
+        self._task_id = self._progress.add_task(
+            "[nova]Nova[/] is thinking...", total=None,
+        )
+        return self._progress
+
+    def print_footer(self, result: AgentResult) -> None:
+        """Print a one-line summary after chat agent completes."""
+        dur = time.monotonic() - self._start_time
+        parts = []
+        if result.turns:
+            parts.append(f"{result.turns} turns")
+        if self.tool_calls:
+            parts.append(f"{self.tool_calls} tool calls")
+        files_modified = len(set(self.files_written + self.files_edited))
+        if files_modified:
+            parts.append(f"{files_modified} files modified")
+        parts.append(f"{dur:.1f}s")
+        console.print(f"  [muted]({' · '.join(parts)})[/]")
+
+        # Show files created/edited
+        if self.files_written or self.files_edited:
+            file_parts = []
+            for f in self.files_written[:5]:
+                file_parts.append(f"[file.write]+{_short_path(f, 30)}[/]")
+            for f in self.files_edited[:5]:
+                file_parts.append(f"[file.edit]~{_short_path(f, 30)}[/]")
+            if file_parts:
+                console.print(f"  {' '.join(file_parts)}")

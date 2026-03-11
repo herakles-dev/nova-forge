@@ -67,6 +67,8 @@ _SECTION_TOOL_RULES = """\
 - For bulk renaming, use search_replace_all instead of multiple edit_file calls.
 - When bash fails, check the exit code and stderr before retrying with a different approach.
 - Chain tool calls efficiently: read → understand → plan → act → verify.
+- CRITICAL: You MUST call write_file to create files. Do NOT describe file contents in text — use the write_file tool with the full content. A task is NOT complete until all required files are written to disk via write_file.
+- For large files (>150 lines): use write_file for the first ~100 lines, then append_file to add remaining sections. Each append adds to the end. Never leave files incomplete.
 - Do not repeat the same failing tool call more than twice. Try a different approach instead.
 - Prefer targeted reads (specific line ranges) over reading entire large files.
 - Use grep to locate symbols before reading the surrounding context.
@@ -158,6 +160,29 @@ ROLE_PROFILES: dict[str, str] = {
         "Read existing code, understand patterns, then extend consistently.\n"
         "Preserve existing style, naming conventions, and architecture decisions.\n"
         "When in doubt about design, follow the pattern already established in the codebase."
+    ),
+    "chat": (
+        "## Role: Interactive Coding Assistant\n"
+        "You are chatting with a developer in a live REPL session.\n"
+        "You have full tool access to explore and modify the project.\n"
+        "\n"
+        "### Workflow\n"
+        "1. EXPLORE FIRST: Use glob_files and read_file to discover the project structure.\n"
+        "   Never ask 'which file?' — find it yourself.\n"
+        "2. EDIT EXISTING FILES: Use edit_file for targeted changes to existing code.\n"
+        "   Never use write_file to overwrite a file you haven't read. Never create\n"
+        "   duplicates of existing files.\n"
+        "3. RESPECT STRUCTURE: If the project has frontend/, backend/ directories,\n"
+        "   work within that structure. Don't create root-level files that conflict.\n"
+        "4. ACT, DON'T ADVISE: Make actual code changes. Don't describe what you would do.\n"
+        "5. VERIFY: Read back files after editing to confirm changes applied.\n"
+        "6. SUMMARIZE: After changes, list which files you modified and what changed.\n"
+        "\n"
+        "### Context Awareness\n"
+        "- Recent conversation history is provided. Reference it for continuity.\n"
+        "- Task state shows what was built. Read those files before modifying.\n"
+        "- If a preview URL is active, mention it after UI changes.\n"
+        "- Match the existing code style, framework, and conventions.\n"
     ),
 }
 
@@ -321,6 +346,7 @@ class PromptBuilder:
         memory_context: str = "",
         index_context: str = "",
         max_context_chars: int = 8_000,
+        model_id: str = "",
     ) -> str:
         """Build a V11-grade system prompt for a build-time agent.
 
@@ -374,6 +400,19 @@ class PromptBuilder:
             )
             sections.append(f"## Project Structure\n{truncated}")
 
+        # Model identity hint
+        if model_id:
+            try:
+                from forge_models import get_capability
+                cap = get_capability(model_id)
+                if cap:
+                    sections.append(
+                        f"You are {cap.alias} ({cap.context_window // 1000}K context). "
+                        f"Strengths: {', '.join(cap.strengths)}. Be efficient with tool calls."
+                    )
+            except Exception:
+                pass
+
         return "\n\n".join(sections)
 
     def build_enriched_system_prompt(
@@ -382,6 +421,7 @@ class PromptBuilder:
         task_context: str = "",
         wave_info: str = "",
         max_tokens: int = 32_000,
+        model_id: str = "",
     ) -> str:
         """Build a fully enriched system prompt with dynamic environment context.
 
@@ -427,6 +467,17 @@ class PromptBuilder:
                 f"- {s}" for s in extra_sections
             )
             base += "\n" + env_block
+
+        # Model identity hint
+        if model_id:
+            try:
+                from forge_models import get_capability
+                cap = get_capability(model_id)
+                if cap:
+                    base += f"\n\nYou are {cap.alias} ({cap.context_window // 1000}K context). "
+                    base += f"Strengths: {', '.join(cap.strengths)}. Be efficient with tool calls."
+            except Exception:
+                pass
 
         # Truncate to budget
         if len(base) > max_chars:

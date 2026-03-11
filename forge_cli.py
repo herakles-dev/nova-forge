@@ -36,6 +36,9 @@ from rich import box
 from rich.columns import Columns
 from rich.rule import Rule
 
+from forge_prompt import ask_select, ask_confirm, ask_text
+from questionary import Choice
+
 # ── Setup ────────────────────────────────────────────────────────────────────
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -89,8 +92,9 @@ HISTORY_FILE = Path.home() / ".forge_history"
 # Default config
 DEFAULT_CONFIG: dict[str, Any] = {
     "default_model": "nova-lite",
+    "model_preset": "nova",     # "nova" = AWS-only, "mixed" = best-per-task, "premium" = Nova Pro
     "project_dir": str(Path.home() / "projects"),
-    "max_turns": 15,
+    "max_turns": 50,
     "temperature": 0.3,
     "auto_build": True,         # Auto-confirm builds in guided flow
     "show_tips": True,
@@ -314,8 +318,18 @@ class ForgeShell:
         self.project_path = Path(project_path).resolve()
         self.state = _load_state()
         self.session_builds = 0
+        self._chat_history: Any = None    # Lazy-loaded ChatHistory
+        self._preview_mgr: Any = None     # PreviewManager instance
 
-        # Resolve model: CLI flag > saved config > hardcoded default
+        # Apply model preset (must happen before model resolution so formations are patched)
+        preset_name = self.config.get("model_preset", "nova")
+        try:
+            from forge_models import apply_preset
+            apply_preset(preset_name)
+        except (KeyError, ImportError):
+            preset_name = ""
+
+        # Resolve model: CLI flag > saved config > preset default > hardcoded default
         if default_model:
             self.model = resolve_model(default_model)
         elif self.config.get("default_model"):
@@ -329,6 +343,13 @@ class ForgeShell:
         forge_dir = self.project_path / ".forge"
         if not forge_dir.exists():
             init_forge_dir(self.project_path)
+
+    @property
+    def chat_history(self):
+        if self._chat_history is None:
+            from forge_memory import ChatHistory
+            self._chat_history = ChatHistory(self.project_path)
+        return self._chat_history
 
     # ── Main entry ────────────────────────────────────────────────────────
 
@@ -401,15 +422,8 @@ class ForgeShell:
         console.print(f"  [hint]Try something like: \"{idea}\"[/]")
         console.print()
 
-        session = PromptSession(style=PT_STYLE)
-        try:
-            goal = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.prompt(
-                    HTML("<prompt>What do you want to build? </prompt>"),
-                ),
-            )
-        except (EOFError, KeyboardInterrupt):
+        goal = await ask_text("What do you want to build?")
+        if goal is None:
             self._goodbye()
             return
 
@@ -424,6 +438,11 @@ class ForgeShell:
         console.print(WELCOME_RETURNING.format(version=VERSION))
         if builds > 0:
             console.print(f"  [muted]{builds} project{'s' if builds != 1 else ''} built so far[/]")
+        from forge_models import get_active_preset, MODEL_PRESETS
+        active = get_active_preset()
+        if active:
+            desc = MODEL_PRESETS[active]["description"]
+            console.print(f"  [nova]Preset:[/] {active} [muted]— {desc}[/]")
         console.print()
 
         # Auto-resume: find the most recent project with pending/failed work
@@ -571,19 +590,7 @@ class ForgeShell:
         console.print(Rule("[step] Step 2: Build [/]", style="cyan"))
         console.print()
 
-        session = PromptSession(style=PT_STYLE)
-        try:
-            confirm = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.prompt(
-                    HTML("<prompt>Ready to build? (Y/n) </prompt>"),
-                ),
-            )
-        except (EOFError, KeyboardInterrupt):
-            console.print("  [muted]Build cancelled.[/]")
-            return
-
-        if confirm.strip().lower() in ("n", "no"):
+        if not await ask_confirm("Ready to build?"):
             console.print("  [muted]No problem. You can edit the plan and run /build when ready.[/]")
             return
 
@@ -744,33 +751,17 @@ class ForgeShell:
         console.print("  [step]To get started, set up at least one provider:[/]")
         console.print()
 
-        for i, name in enumerate(unconfigured, 1):
-            info = PROVIDER_CREDS[name]
-            console.print(f"  [accent]{i}.[/] {info['display']}")
-            for var in info["env_vars"]:
-                console.print(f"     [muted]{var}[/]")
-        console.print()
-
-        session = PromptSession(style=PT_STYLE)
-        try:
-            choice = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.prompt(
-                    HTML("<prompt>Set up which provider? (1/2/3 or Enter to skip) </prompt>"),
-                ),
-            )
-        except (EOFError, KeyboardInterrupt):
-            return
-
-        choice = choice.strip()
-        if not choice or not choice.isdigit():
+        provider_choices = [
+            Choice(title=PROVIDER_CREDS[name]["display"], value=name)
+            for name in unconfigured
+        ]
+        provider = await ask_select("Set up a provider", provider_choices)
+        if provider is None:
             console.print("  [muted]Skipped. You can run /login anytime.[/]")
             console.print()
             return
 
-        idx = int(choice) - 1
-        if 0 <= idx < len(unconfigured):
-            await self._login_provider(unconfigured[idx])
+        await self._login_provider(provider)
 
     async def _login_provider(self, provider: str) -> None:
         """Guide user through setting up a specific provider."""
@@ -779,20 +770,13 @@ class ForgeShell:
         console.print(f"  [step]Setting up {info['display']}[/]")
         console.print()
 
-        session = PromptSession(style=PT_STYLE)
         creds: dict[str, str] = {}
 
         for var in info["env_vars"]:
             current = os.environ.get(var, "")
-            hint = f" [muted](current: ...{current[-8:]})[/]" if current else ""
-            try:
-                val = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda v=var, h=hint: session.prompt(
-                        HTML(f"<prompt>  {v}{h}: </prompt>"),
-                    ),
-                )
-            except (EOFError, KeyboardInterrupt):
+            hint = f"current: ...{current[-8:]}" if current else None
+            val = await ask_text(f"  {var}", default=current, instruction=hint)
+            if val is None:
                 console.print("  [muted]Cancelled.[/]")
                 return
 
@@ -905,6 +889,8 @@ class ForgeShell:
                 self._cmd_preview(arg)
             case "/deploy":
                 self._cmd_deploy(arg)
+            case "/interview":
+                await self._cmd_interview()
             case _:
                 console.print(f"  [warning]Unknown command:[/] {cmd}")
                 console.print(f"  [hint]Type /help for commands, or just describe what you want.[/]")
@@ -1082,6 +1068,7 @@ class ForgeShell:
 
             config_descriptions = {
                 "default_model": ("Default AI model", DEFAULT_CONFIG["default_model"]),
+                "model_preset": ("Model preset (nova/mixed/premium)", DEFAULT_CONFIG["model_preset"]),
                 "project_dir": ("New project directory", DEFAULT_CONFIG["project_dir"]),
                 "max_turns": ("Max agent turns per task", DEFAULT_CONFIG["max_turns"]),
                 "temperature": ("Model temperature", DEFAULT_CONFIG["temperature"]),
@@ -1143,6 +1130,20 @@ class ForgeShell:
             parsed = val
 
         # Validate specific keys
+        if key == "model_preset":
+            from forge_models import MODEL_PRESETS, apply_preset
+            if val not in MODEL_PRESETS:
+                console.print(f"  [error]Unknown preset:[/] {val}")
+                for name, p in MODEL_PRESETS.items():
+                    console.print(f"    [accent]{name:10s}[/] {p['description']}")
+                return
+            desc = apply_preset(val)
+            parsed = val
+            # Also update default_model to match the preset
+            self.model = resolve_model(MODEL_PRESETS[val]["default_model"])
+            self.config["default_model"] = MODEL_PRESETS[val]["default_model"]
+            console.print(f"  [success]Preset applied:[/] {desc}")
+
         if key == "default_model":
             if val not in MODEL_ALIASES:
                 console.print(f"  [error]Unknown model:[/] {val}")
@@ -1187,35 +1188,19 @@ class ForgeShell:
         console.print("  [step]API Providers[/]")
         console.print()
 
-        choices = []
-        for i, (name, configured) in enumerate(providers.items(), 1):
-            info = PROVIDER_CREDS[name]
-            icon = "[success]ready[/]" if configured else "[warning]not set up[/]"
-            console.print(f"  [accent]{i}.[/] {info['display']:40s} {icon}")
-            choices.append(name)
-
-        console.print()
-
-        session = PromptSession(style=PT_STYLE)
-        try:
-            choice = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.prompt(
-                    HTML("<prompt>Set up which provider? (1/2/3 or name) </prompt>"),
-                ),
+        login_choices = [
+            Choice(
+                title=f"{info['display']:40s} ({'ready' if configured else 'not set up'})",
+                value=name,
             )
-        except (EOFError, KeyboardInterrupt):
+            for name, configured in providers.items()
+        ]
+        chosen = await ask_select("Set up which provider?", login_choices)
+        if chosen is None:
+            console.print("  [muted]Cancelled.[/]")
             return
 
-        choice = choice.strip()
-        if choice.isdigit():
-            idx = int(choice) - 1
-            if 0 <= idx < len(choices):
-                await self._login_provider(choices[idx])
-        elif choice in PROVIDER_CREDS:
-            await self._login_provider(choice)
-        else:
-            console.print("  [muted]Cancelled.[/]")
+        await self._login_provider(chosen)
 
     # ── /new ─────────────────────────────────────────────────────────────
 
@@ -1319,10 +1304,11 @@ class ForgeShell:
         wave_idx: int,
         formation: Any,
         semaphore: asyncio.Semaphore,
-    ) -> tuple[int, str, str, float, int, int]:
+        build_ctx: Any = None,
+    ) -> tuple[int, str, str, float, int, int, float, str]:
         """Execute a single task inside a semaphore-limited slot.
 
-        Returns (wave_idx, subject, status, duration_secs, tool_calls, files_count).
+        Returns (wave_idx, subject, status, duration_secs, tool_calls, files_count, cost, model_id).
         """
         from forge_agent import ForgeAgent, BUILT_IN_TOOLS
 
@@ -1336,8 +1322,13 @@ class ForgeShell:
                     role = None
 
             if role is not None:
-                task_model = resolve_model(role.model)
-                task_mc = get_model_config(task_model, max_tokens=4096)
+                # User's /model choice overrides formation defaults
+                task_model = self.model or resolve_model(role.model)
+                # Use max output tokens based on model capability
+                from config import get_context_window
+                ctx = get_context_window(task_model)
+                build_max_tokens = 5120 if ctx >= 200_000 else 4096
+                task_mc = get_model_config(task_model, max_tokens=build_max_tokens)
                 role_name = role.name
                 try:
                     from formations import TOOL_PROFILES
@@ -1352,16 +1343,31 @@ class ForgeShell:
                 except Exception:
                     task_tools = BUILT_IN_TOOLS
             else:
-                task_mc = get_model_config(self.model, max_tokens=4096)
+                from config import get_context_window
+                ctx = get_context_window(self.model)
+                build_max_tokens = 5120 if ctx >= 200_000 else 4096
+                task_mc = get_model_config(self.model, max_tokens=build_max_tokens)
                 role_name = "implementer"
                 task_tools = BUILT_IN_TOOLS
+
+            from forge_models import get_escalation_model
+            escalation = get_escalation_model(task_mc.model_id)
+
+            # Pre-claim files for this task so parallel agents can't steal ownership
+            task_files_meta = (task.metadata or {}).get("files", [])
+            if task_files_meta and build_ctx is not None:
+                agent_id = f"forge-{role_name}-{task.id}"
+                for tf in task_files_meta:
+                    build_ctx.claim_file(tf, agent_id)
 
             agent = ForgeAgent(
                 model_config=task_mc,
                 project_root=self.project_path,
                 tools=task_tools,
-                max_turns=15,
+                max_turns=self.config.get("max_turns", 30),
                 agent_id=f"forge-{role_name}-{task.id}",
+                escalation_model=escalation,
+                build_context=build_ctx,
             )
 
             spec_text = ""
@@ -1391,18 +1397,89 @@ class ForgeShell:
             task_files = (task.metadata or {}).get("files", [])
             if task_files:
                 ownership_hint = (
-                    f"\n\n## File Ownership\n"
-                    f"You are responsible for ONLY these files: {', '.join(task_files)}\n"
-                    f"Do NOT modify any other files. Other tasks own other files."
+                    f"\n\n## CRITICAL: File Ownership Boundaries\n"
+                    f"You may ONLY create/modify these files: {', '.join(task_files)}\n"
+                    f"NEVER write to files not in this list — they are owned by other agents "
+                    f"and your writes WILL BE REJECTED. Focus exclusively on your assigned files."
                 )
+
+            # Downstream awareness — tell agent who depends on their output
+            downstream = [t for t in all_tasks if task.id in (t.blocked_by or [])]
+            if downstream:
+                ownership_hint += "\n\n## Downstream Consumers\n"
+                ownership_hint += "These tasks depend on YOUR output — optimize for them:\n"
+                for dt in downstream:
+                    ownership_hint += f"- {dt.subject}: {(dt.description or '')[:80]}\n"
+
+            # Module dependency context from project index
+            try:
+                from forge_index import get_or_create_index
+                idx = get_or_create_index(self.project_path)
+                dep_context = idx.to_dependency_context(
+                    task_files if task_files else [],
+                    budget_chars=1500
+                )
+                if dep_context:
+                    context_hint += f"\n\n## Module Dependencies\n{dep_context}"
+            except Exception:
+                pass
+
+            # Build mandatory read instruction for tasks with dependencies
+            mandatory_reads = []
+            for dep_id in (task.blocked_by or []):
+                dep = store.get(dep_id)
+                if dep and dep.artifacts:
+                    for fpath in dep.artifacts.keys():
+                        short = self._shorten_path(fpath)
+                        if short.endswith(('.py', '.js', '.ts', '.jsx', '.tsx')):
+                            mandatory_reads.append(short)
+            mandatory_reads = list(dict.fromkeys(mandatory_reads))[:8]
+
+            read_instruction = ""
+            if mandatory_reads:
+                read_instruction = (
+                    f"\n\n## MANDATORY: Read Before Writing\n"
+                    f"Your task depends on these upstream files. You MUST call read_file on each one "
+                    f"BEFORE writing any code that imports from or interacts with them:\n"
+                    + ", ".join(mandatory_reads) + "\n"
+                    f"Do NOT assume what functions, classes, or APIs these files contain. "
+                    f"Read them and use their ACTUAL interface."
+                )
+
+            # Extract spec constraints (negations like "NOT SQLAlchemy", "do NOT use X")
+            spec_constraints = ""
+            if spec_text:
+                import re as _re
+                constraints = []
+                for m in _re.finditer(
+                    r'(?:NOT|not|never|NEVER|do not|Do not|don\'t|Don\'t|avoid|AVOID)\s+(?:use\s+)?(\S+(?:\s+\S+)?)',
+                    spec_text,
+                ):
+                    constraints.append(m.group(0).strip())
+                # Also extract explicit tech choices from task description
+                for m in _re.finditer(
+                    r'(?:NOT|not|never|NEVER|do not|Do not)\s+(?:use\s+)?(\S+(?:\s+\S+)?)',
+                    task.description or "",
+                ):
+                    constraints.append(m.group(0).strip())
+                if constraints:
+                    unique = list(dict.fromkeys(constraints))[:6]
+                    spec_constraints = (
+                        "\n\n## SPEC CONSTRAINTS — MUST FOLLOW\n"
+                        + "\n".join(f"- {c}" for c in unique)
+                    )
 
             prompt = (
                 f"## Project Spec\n{spec_text}\n\n"
                 f"## Your Task\n{task.subject}: {task.description}\n\n"
                 f"## Instructions\n"
-                f"Implement this task. Use write_file to create files. "
+                f"Implement this task COMPLETELY. Use write_file to create EVERY file listed in your task. "
+                f"For large files, use write_file for the first section then append_file for remaining sections. "
                 f"Read existing files first with read_file if you need context. "
-                f"Write complete, working code — not stubs or placeholders."
+                f"Write complete, working code — not stubs or placeholders. "
+                f"Do NOT create extra files beyond what is listed in your task's file list."
+                f"{spec_constraints}"
+                f"{read_instruction}"
                 f"{ownership_hint}"
                 f"{context_hint}"
             )
@@ -1413,26 +1490,72 @@ class ForgeShell:
             system_prompt = pb.build_system_prompt(
                 role="builder",
                 project_context=spec_text[:2000] if spec_text else "",
+                model_id=task_mc.model_id,
             )
 
             wave_start = time.time()
+            expected_files = (task.metadata or {}).get("files", [])
             try:
                 result = await agent.run(prompt=prompt, system=system_prompt)
                 duration = time.time() - wave_start
                 tc = result.tool_calls_made
                 fc = len(result.artifacts) if result.artifacts else 0
 
+                # Detect no-write completion: task expected to create files but wrote nothing
+                if expected_files and fc == 0 and not result.error:
+                    retry_prompt = (
+                        f"You completed the task description but did NOT use the write_file tool to create any files.\n"
+                        f"You MUST create the following files using the write_file tool: {', '.join(expected_files)}\n"
+                        f"Do NOT describe what to write — actually call write_file with the full file content.\n\n"
+                        f"Original task:\n{prompt}"
+                    )
+                    result = await agent.run(prompt=retry_prompt, system=system_prompt)
+                    duration = time.time() - wave_start
+                    tc += result.tool_calls_made
+                    fc = len(result.artifacts) if result.artifacts else 0
+
+                # Detect stub files: task wrote files but content is placeholder/skeleton
+                if expected_files and not result.error:
+                    stub_files = []
+                    min_size = {"py": 100, "js": 200, "html": 200, "css": 100}
+                    for fpath in expected_files:
+                        full = self.project_path / fpath
+                        if full.exists():
+                            size = full.stat().st_size
+                            ext = fpath.rsplit(".", 1)[-1] if "." in fpath else ""
+                            threshold = min_size.get(ext, 100)
+                            if size < threshold:
+                                stub_files.append(f"{fpath} ({size} bytes)")
+                    if stub_files:
+                        retry_prompt = (
+                            f"You wrote these files but they are STUBS or PLACEHOLDERS with almost no content:\n"
+                            f"{', '.join(stub_files)}\n\n"
+                            f"You MUST rewrite them with COMPLETE, FULLY FUNCTIONAL code. "
+                            f"For large files, use write_file for the initial section then append_file for remaining sections. "
+                            f"Do NOT write comments like 'implement here' or 'placeholder'. "
+                            f"Write the ACTUAL working implementation.\n\n"
+                            f"Original task:\n{prompt}"
+                        )
+                        result = await agent.run(prompt=retry_prompt, system=system_prompt)
+                        duration = time.time() - wave_start
+                        tc += result.tool_calls_made
+                        fc = max(fc, len(result.artifacts) if result.artifacts else 0)
+
+                from forge_models import estimate_cost
+                task_cost = estimate_cost(task_mc.model_id, result.tokens_in, result.tokens_out)
+                model_used = result.model_id or task_mc.model_id
+
                 if result.error:
-                    store.update(task.id, status="failed")
-                    return (wave_idx, task.subject, "fail", duration, tc, fc)
+                    store.update(task.id, status="failed", artifacts=result.artifacts)
+                    return (wave_idx, task.subject, "fail", duration, tc, fc, task_cost, model_used)
                 else:
                     store.update(task.id, status="completed", artifacts=result.artifacts)
-                    return (wave_idx, task.subject, "pass", duration, tc, fc)
+                    return (wave_idx, task.subject, "pass", duration, tc, fc, task_cost, model_used)
 
             except Exception:
                 duration = time.time() - wave_start
                 store.update(task.id, status="failed")
-                return (wave_idx, task.subject, "fail", duration, 0, 0)
+                return (wave_idx, task.subject, "fail", duration, 0, 0, 0.0, "")
 
     def _assign_formation_role(self, task: Any, formation: Any) -> Any:
         """Map a task to the best-matching formation role by keyword heuristics."""
@@ -1491,27 +1614,76 @@ class ForgeShell:
         return [self._shorten_path(p) for p in paths]
 
     def _extract_exports_from_files(self, file_paths: list) -> list:
-        """Extract function/class names and API endpoints from project files."""
+        """Extract function/class signatures and API endpoints using AST (with regex fallback)."""
+        import ast as _ast
         exports = []
         for rel_path in file_paths:
             full_path = self.project_path / rel_path
-            if not full_path.exists() or not full_path.suffix == '.py':
+            if not full_path.exists() or full_path.suffix != '.py':
                 continue
             try:
                 content = full_path.read_text(encoding="utf-8", errors="replace")
+                tree = _ast.parse(content)
+                for node in _ast.iter_child_nodes(tree):
+                    if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                        if not node.name.startswith('_'):
+                            args = ", ".join(a.arg for a in node.args.args if a.arg != 'self')
+                            exports.append(f"- `{rel_path}`: def {node.name}({args})")
+                    elif isinstance(node, _ast.ClassDef) and not node.name.startswith('_'):
+                        # Extract public methods
+                        methods = [
+                            n.name for n in _ast.iter_child_nodes(node)
+                            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                            and not n.name.startswith('_')
+                        ]
+                        base_str = ""
+                        if node.bases:
+                            base_str = "(" + ", ".join(
+                                getattr(b, 'id', getattr(b, 'attr', '?'))
+                                for b in node.bases
+                            ) + ")"
+                        method_str = f" [{', '.join(methods)}]" if methods else ""
+                        exports.append(f"- `{rel_path}`: class {node.name}{base_str}{method_str}")
+                # Also capture route decorators (not in AST node types directly)
                 for line in content.split('\n'):
                     stripped = line.strip()
-                    if stripped.startswith('def ') and not stripped.startswith('def _'):
-                        name = stripped.split('(')[0].replace('def ', '')
-                        exports.append(f"- `{rel_path}`: def {name}()")
-                    elif stripped.startswith('class '):
-                        name = stripped.split('(')[0].split(':')[0].replace('class ', '')
-                        exports.append(f"- `{rel_path}`: class {name}")
-                    elif '@app.route' in stripped or '@router.' in stripped:
+                    if '@app.route' in stripped or '@router.' in stripped:
                         exports.append(f"- `{rel_path}`: {stripped}")
+            except SyntaxError:
+                # Fallback to regex for files with syntax errors
+                try:
+                    for line in content.split('\n'):
+                        stripped = line.strip()
+                        if stripped.startswith('def ') and not stripped.startswith('def _'):
+                            sig = stripped.split('):')[0] + ')'
+                            exports.append(f"- `{rel_path}`: {sig}")
+                        elif stripped.startswith('class ') and not stripped.startswith('class _'):
+                            name = stripped.split('(')[0].split(':')[0].replace('class ', '')
+                            exports.append(f"- `{rel_path}`: class {name}")
+                except Exception:
+                    continue
             except Exception:
                 continue
         return exports[:30]
+
+    def _extract_interface_summary(self, path: Path, max_chars: int = 500) -> str:
+        """Extract compact interface summary using AST. Fallback to filename."""
+        if not path.exists() or path.suffix != ".py":
+            return str(path.name)
+        try:
+            import ast as _ast
+            tree = _ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            parts = []
+            for node in _ast.iter_child_nodes(tree):
+                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    if not node.name.startswith("_"):
+                        args = ", ".join(a.arg for a in node.args.args if a.arg != "self")
+                        parts.append(f"{node.name}({args})")
+                elif isinstance(node, _ast.ClassDef) and not node.name.startswith("_"):
+                    parts.append(f"class {node.name}")
+            return "; ".join(parts)[:max_chars] if parts else str(path.name)
+        except Exception:
+            return str(path.name)
 
     def _gather_upstream_artifacts(
         self,
@@ -1519,16 +1691,17 @@ class ForgeShell:
         store: Any,
         all_tasks: list,
     ) -> dict:
-        """Gather structured artifact context from completed upstream tasks."""
+        """Gather structured artifact context from upstream tasks (including failed with artifacts)."""
         context: dict = {}
 
-        # 1. Direct dependencies' artifacts
+        # 1. Direct dependencies' artifacts (completed AND failed-with-artifacts)
         upstream_artifacts = []
         for dep_id in task.blocked_by:
             dep = store.get(dep_id)
-            if dep and dep.status == "completed" and dep.artifacts:
+            if dep and dep.artifacts:
                 upstream_artifacts.append({
                     "task": dep.subject,
+                    "status": dep.status,
                     "files": list(dep.artifacts.keys()),
                     "details": dep.artifacts,
                 })
@@ -1537,17 +1710,25 @@ class ForgeShell:
             lines = ["## Upstream Task Results"]
             for ua in upstream_artifacts:
                 lines.append(f"\n### {ua['task']}")
+                if ua.get("status") == "failed":
+                    lines.append("**WARNING**: Upstream task failed — files may be incomplete. READ them before use.")
                 lines.append(f"Files created: {', '.join(self._shorten_paths(ua['files']))}")
                 for fpath, info in list(ua['details'].items())[:5]:
                     short = self._shorten_path(fpath)
                     action = info.get('action', 'unknown') if isinstance(info, dict) else 'written'
                     lines.append(f"  - {short} ({action})")
+                    # Inline interface summary for .py files
+                    full = self.project_path / short
+                    if full.suffix == ".py" and full.exists():
+                        iface = self._extract_interface_summary(full)
+                        if iface != full.name:
+                            lines.append(f"    Interface: {iface}")
             context["upstream_results"] = "\n".join(lines)
 
-        # 2. All project files from completed tasks
+        # 2. All project files from completed/failed tasks (with artifacts)
         all_created_files = []
         for t in all_tasks:
-            if t.status == "completed" and t.artifacts:
+            if t.status in ("completed", "failed") and t.artifacts:
                 for fpath in t.artifacts.keys():
                     short = self._shorten_path(fpath)
                     all_created_files.append(short)
@@ -1630,11 +1811,16 @@ class ForgeShell:
                     (i for i, wave in enumerate(formation.wave_order) if role.name in wave),
                     0,
                 )
+                display_model = self.model or role.model
                 console.print(
                     f"    [muted]Wave {wave_idx_hint}:[/] {role.name} "
-                    f"[muted]({_short_model(role.model)})[/]"
+                    f"[muted]({_short_model(display_model)})[/]"
                 )
             console.print()
+
+        # ── Build context for multi-agent coordination ────────────────────
+        from forge_comms import BuildContext
+        build_ctx = BuildContext(self.project_path)
 
         # ── Execute waves ─────────────────────────────────────────────────
         console.print(f"  [nova]Nova[/] is building your project...")
@@ -1679,12 +1865,13 @@ class ForgeShell:
 
             # Launch all tasks in this wave concurrently
             coros = [
-                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore)
+                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore, build_ctx)
                 for task in runnable
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
 
             # Process results
+            total_cost = getattr(self, '_build_total_cost', 0.0)
             for i, result in enumerate(results):
                 task = runnable[i]
                 if isinstance(result, Exception):
@@ -1694,16 +1881,22 @@ class ForgeShell:
                         f"  [error]{task.subject}[/]  [muted](error: {result})[/]"
                     )
                 else:
-                    w_idx, name, status, dur, tc, fc = result
+                    w_idx, name, status, dur, tc, fc, cost, model_used = result
                     wave_results.append((w_idx, name, status, dur))
                     total_tool_calls += tc
                     total_files += fc
+                    total_cost += cost
+                    short_m = _short_model(model_used) if model_used else ""
+                    from forge_models import format_cost
+                    cost_str = f"  {format_cost(cost)}" if cost > 0 else ""
+                    model_str = f"  {short_m}" if short_m else ""
                     if status == "pass":
-                        console.print(f"  [success]{name}[/]  [muted]{dur:.0f}s[/]")
+                        console.print(f"  [success]{name}[/]  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "fail":
-                        console.print(f"  [error]{name}[/]  [muted]{dur:.0f}s[/]")
+                        console.print(f"  [error]{name}[/]  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     else:
                         console.print(f"  [muted]{name}  (skipped)[/]")
+            self._build_total_cost = total_cost
 
         total_duration = time.time() - total_start
         self._sync_task_state()
@@ -1739,19 +1932,53 @@ class ForgeShell:
             else:
                 console.print(f"  [warning]Gate: CONDITIONAL[/] — {gate_result['summary']}")
 
+        # Runtime verification (skip with --no-verify)
+        if "--no-verify" not in arg:
+            await self._run_verification(store)
+
+        # Post-build integrity check: verify expected files exist on disk
+        missing_files = []
+        for task_entry in store.list():
+            if task_entry.status == "completed":
+                for fpath in (task_entry.metadata or {}).get("files", []):
+                    full = self.project_path / fpath
+                    if not full.exists():
+                        missing_files.append(fpath)
+        if missing_files:
+            console.print()
+            console.print(f"  [warning]Missing files ({len(missing_files)}):[/] {', '.join(missing_files[:8])}")
+            console.print(f"  [hint]Tasks completed but these files were never written to disk.[/]")
+
         # Summary line
         passed = sum(1 for _, _, s, _ in wave_results if s == "pass")
         failed = sum(1 for _, _, s, _ in wave_results if s == "fail")
+        total_cost = getattr(self, '_build_total_cost', 0.0)
+        from forge_models import format_cost
         console.print()
         console.print(
             f"  [muted]{passed} passed, {failed} failed, "
-            f"{total_tool_calls} tool calls, {total_duration:.0f}s[/]"
+            f"{total_tool_calls} tool calls, {total_duration:.0f}s, "
+            f"cost: {format_cost(total_cost)}[/]"
         )
+
+        # Communication stats
+        if build_ctx:
+            cs = build_ctx.stats()
+            if cs["claims"] > 0 or cs["announcements"] > 0:
+                console.print(
+                    f"  [muted]Coordination: {cs['claims']} files claimed, "
+                    f"{cs['conflicts']} conflicts prevented, "
+                    f"{cs['announcements']} announcements shared[/]"
+                )
 
         # List generated files
         all_files = self._list_project_files()
         if all_files:
             console.print(f"  [muted]Files: {', '.join(all_files[:10])}[/]")
+
+        # Auto-preview on successful build
+        if passed > 0 and "--no-preview" not in arg:
+            self._auto_preview()
 
         self._suggest_next_action()
 
@@ -1834,6 +2061,41 @@ class ForgeShell:
                 "issues": [f"Gate review error: {exc}"],
                 "summary": str(exc)[:200],
             }
+
+    async def _run_verification(self, store: Any) -> None:
+        """Run runtime verification: start app, test with browser, report results."""
+        from forge_verify import BuildVerifier
+
+        spec_text = ""
+        spec_path = self.project_path / "spec.md"
+        if spec_path.exists():
+            try:
+                spec_text = spec_path.read_text()[:4000]
+            except Exception:
+                pass
+
+        console.print("  [muted]Verifying build...[/]")
+        verifier = BuildVerifier(self.project_path, spec_text=spec_text)
+
+        try:
+            completed = store.list(status="completed") if store else []
+            vr = await verifier.verify(tasks=completed)
+
+            if vr.status == "pass":
+                console.print(f"  [success]Verify: PASS[/] — {vr.summary}")
+            elif vr.status == "fail":
+                console.print(f"  [error]Verify: FAIL[/] — {vr.summary}")
+            else:
+                console.print(f"  [warning]Verify: PARTIAL[/] — {vr.summary}")
+
+            # Show individual check results
+            for check in vr.checks:
+                icon = "[success]OK[/]" if check.passed else "[error]FAIL[/]"
+                console.print(f"    {icon}  {check.name}: {check.detail[:80]}")
+                if check.evidence_path:
+                    console.print(f"         [muted]screenshot: {check.evidence_path}[/]")
+        except Exception as exc:
+            console.print(f"  [warning]Verify: SKIP[/] — {exc}")
 
     # ── /status ──────────────────────────────────────────────────────────
 
@@ -1930,36 +2192,41 @@ class ForgeShell:
     # ── /models ──────────────────────────────────────────────────────────
 
     def _cmd_models(self) -> None:
+        from forge_models import MODEL_CAPABILITIES, PHASE_DEFAULTS, format_cost as fmt_cost
         providers = _check_all_providers()
 
         table = Table(
             box=box.ROUNDED, show_header=True,
             header_style="bold cyan", padding=(0, 1),
         )
-        table.add_column("Alias", style="bold", min_width=15)
+        table.add_column("Model", style="bold", min_width=15)
         table.add_column("Provider", width=12)
-        table.add_column("Status", width=14)
+        table.add_column("Cost/1K in", width=12)
+        table.add_column("Context", width=10)
+        table.add_column("Strengths", min_width=20)
+        table.add_column("Escalates to", width=14)
+        table.add_column("Status", width=12)
 
-        for alias, model_id in sorted(MODEL_ALIASES.items()):
+        for alias, cap in MODEL_CAPABILITIES.items():
+            prov_name = {"bedrock": "Bedrock", "openai": "OpenRouter", "anthropic": "Anthropic"}.get(cap.provider, cap.provider)
             prov = _provider_for_model(alias)
-            prov_name = (
-                "Bedrock" if "bedrock" in model_id
-                else "OpenRouter" if "openrouter" in model_id
-                else "Anthropic"
-            )
-
             ready = providers.get(prov, False)
-            if model_id == self.model:
+            if cap.model_id == self.model:
                 status = "[success]active[/]"
             elif ready:
                 status = "[success]ready[/]"
             else:
                 status = "[muted]needs /login[/]"
-
-            table.add_row(alias, prov_name, status)
+            ctx = f"{cap.context_window // 1000}K"
+            esc = cap.escalation_target or "-"
+            table.add_row(alias, prov_name, f"${cap.cost_per_1k_input:.5f}", ctx, ", ".join(cap.strengths), esc, status)
 
         console.print()
         console.print(table)
+        console.print()
+        console.print("  [step]Smart Defaults:[/]")
+        for phase, alias in PHASE_DEFAULTS.items():
+            console.print(f"    {phase:12s} -> [accent]{alias}[/]")
         console.print(f"\n  [hint]Switch: /model <alias>  |  Set up: /login <provider>[/]")
 
     # ── /formation ───────────────────────────────────────────────────────
@@ -2044,199 +2311,79 @@ class ForgeShell:
 
         console.print(table)
 
+    # ── Auto-preview ──────────────────────────────────────────────────
+
+    def _auto_preview(self) -> None:
+        """Automatically start preview after a successful build."""
+        from forge_preview import PreviewManager, PreviewError, detect_stack
+
+        try:
+            si = detect_stack(self.project_path)
+            if si.kind == "unknown":
+                return  # No servable app — silently skip
+
+            console.print()
+            console.print("  [info]Starting preview...[/]")
+
+            if self._preview_mgr is None:
+                self._preview_mgr = PreviewManager(self.project_path)
+
+            tunnel_url = self._preview_mgr.start(stack_info=si)
+            console.print(Panel(
+                f"[bold green]{tunnel_url}[/]\n\n"
+                f"  [muted]Stack: {si.kind} ({si.entry})[/]\n"
+                f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
+                border_style="green",
+                title="[bold green] Live Preview [/]",
+                padding=(1, 2),
+            ))
+        except PreviewError as e:
+            console.print(f"  [warning]Preview: {e}[/]")
+        except Exception as e:
+            console.print(f"  [warning]Preview failed: {e}[/]")
+
     # ── /preview ────────────────────────────────────────────────────────
 
     def _cmd_preview(self, arg: str) -> None:
         """Launch Cloudflare Tunnel for live preview."""
-        import subprocess as sp
-        import re
+        from forge_preview import PreviewManager, PreviewError
 
         if arg == "stop":
-            if hasattr(self, "_preview_procs"):
-                for proc in self._preview_procs:
-                    if proc.poll() is None:
-                        proc.kill()
-                del self._preview_procs
+            if self._preview_mgr and self._preview_mgr.is_running:
+                self._preview_mgr.stop()
+                self._preview_mgr = None
                 console.print("  [success]Preview stopped.[/]")
             else:
                 console.print("  [muted]No preview running.[/]")
             return
 
-        cf_path = shutil.which("cloudflared")
-        if not cf_path:
-            console.print("  [error]cloudflared not found.[/]")
-            console.print("  [hint]Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/[/]")
-            return
+        # Create (or replace) the manager — stop() is called automatically
+        # if a previous preview was running, preventing orphan processes
+        if self._preview_mgr is None:
+            self._preview_mgr = PreviewManager(self.project_path)
 
-        # Find a free port
-        import socket
-        def _find_free_port(start: int) -> int:
-            for p in range(start, start + 20):
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    if s.connect_ex(('127.0.0.1', p)) != 0:
-                        return p
-            return start + 20
+        try:
+            from forge_preview import detect_stack
+            si = detect_stack(self.project_path)
 
-        def _port_is_listening(p: int) -> bool:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(('127.0.0.1', p)) == 0
+            rel = si.cwd.relative_to(self.project_path) if si.cwd != self.project_path else Path(".")
+            loc = f" from {rel}/" if str(rel) != "." else ""
+            console.print(f"  [info]Preview:[/] {self.project_path.name} ({si.kind}{loc}) on port {si.port}")
+            console.print(f"  [muted]Server: {si.server_cmd}[/]")
+            console.print("  Starting Cloudflare Tunnel...")
 
-        # ── Detect app type and entry point ──────────────────────────
-        pp = self.project_path
+            tunnel_url = self._preview_mgr.start(stack_info=si)
 
-        # Search root + common subdirectories for entry points
-        search_dirs = [pp]
-        for sub in ("backend", "server", "api", "src", "app"):
-            sd = pp / sub
-            if sd.is_dir():
-                search_dirs.append(sd)
-
-        # 1) Flask / Python app
-        flask_entry = None
-        flask_cwd = pp
-        for d in search_dirs:
-            for fname in ("app.py", "main.py", "server.py", "wsgi.py", "run.py"):
-                fp = d / fname
-                if fp.exists():
-                    try:
-                        src = fp.read_text()
-                        if "flask" in src.lower() or "Flask" in src:
-                            flask_entry = fname
-                            flask_cwd = d
-                            break
-                    except Exception:
-                        pass
-            if flask_entry:
-                break
-
-        # 2) Node.js app
-        node_cwd = None
-        for d in search_dirs:
-            if (d / "package.json").exists():
-                node_cwd = d
-                break
-        # Also check frontend dirs for Node
-        if not node_cwd:
-            for sub in ("frontend", "client", "web", "ui"):
-                sd = pp / sub
-                if sd.is_dir() and (sd / "package.json").exists():
-                    node_cwd = sd
-                    break
-
-        # 3) Static site (index.html)
-        static_cwd = None
-        for d in search_dirs:
-            if (d / "index.html").exists():
-                static_cwd = d
-                break
-        # Also check frontend dirs for static
-        if not static_cwd:
-            for sub in ("frontend", "client", "web", "public", "dist", "build"):
-                sd = pp / sub
-                if sd.is_dir() and (sd / "index.html").exists():
-                    static_cwd = sd
-                    break
-
-        # ── Pick the best server ─────────────────────────────────────
-        port = None
-        server_cmd = None
-        server_cwd = pp
-        stack = None
-
-        if flask_entry:
-            port = _find_free_port(5000)
-            module = flask_entry[:-3]  # strip .py
-            server_cmd = f"python3 -m flask --app {module}:app run --host 0.0.0.0 --port {port}"
-            server_cwd = flask_cwd
-            stack = "flask"
-        elif node_cwd:
-            port = _find_free_port(3000)
-            server_cmd = f"PORT={port} npm start"
-            server_cwd = node_cwd
-            stack = "node"
-        elif static_cwd:
-            port = _find_free_port(8080)
-            server_cmd = f"python3 -m http.server {port}"
-            server_cwd = static_cwd
-            stack = "static"
-        else:
-            # No recognizable entry point — don't serve a bare directory listing
-            console.print("  [warning]No servable entry point found.[/]")
             console.print()
-            console.print("  [muted]Looked for:[/]")
-            console.print("    Flask app   (app.py, main.py, server.py with Flask import)")
-            console.print("    Node app    (package.json)")
-            console.print("    Static site (index.html)")
-            console.print()
-            console.print("  [hint]In root and subdirs: backend/, server/, frontend/, src/[/]")
-            return
-
-        rel = server_cwd.relative_to(pp) if server_cwd != pp else Path(".")
-        loc = f" from {rel}/" if str(rel) != "." else ""
-        console.print(f"  [info]Preview:[/] {pp.name} ({stack}{loc}) on port {port}")
-
-        procs = []
-        console.print(f"  [muted]Server: {server_cmd}[/]")
-        err_log = pp / ".forge" / "preview-stderr.log"
-        err_fh = open(err_log, "w")
-        server_proc = sp.Popen(
-            server_cmd, shell=True, cwd=str(server_cwd),
-            stdout=sp.DEVNULL, stderr=err_fh,
-        )
-        procs.append(server_proc)
-        # Wait for server to start listening
-        for _ in range(10):
-            time.sleep(0.5)
-            if _port_is_listening(port):
-                break
-            if server_proc.poll() is not None:
-                # Server crashed
-                err_fh.close()
-                err_text = err_log.read_text().strip()
-                console.print(f"  [error]Server failed to start![/]")
-                if err_text:
-                    for ln in err_text.split("\n")[-5:]:
-                        console.print(f"    [muted]{ln}[/]")
-                return
-        else:
-            if not _port_is_listening(port):
-                console.print(f"  [warning]Server may not have started (port {port} not open)[/]")
-
-        console.print("  Starting Cloudflare Tunnel...")
-        tunnel_proc = sp.Popen(
-            [cf_path, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=sp.PIPE, stderr=sp.STDOUT, text=True,
-        )
-        procs.append(tunnel_proc)
-
-        tunnel_url = None
-        deadline = time.time() + 15
-        while time.time() < deadline:
-            line = tunnel_proc.stdout.readline()
-            if not line:
-                break
-            if "trycloudflare.com" in line:
-                match = re.search(r"(https://[a-z0-9-]+\.trycloudflare\.com)", line)
-                if match:
-                    tunnel_url = match.group(1)
-                    break
-
-        if not tunnel_url:
-            console.print("  [error]Could not establish tunnel.[/]")
-            for proc in procs:
-                if proc.poll() is None:
-                    proc.kill()
-            return
-
-        self._preview_procs = procs
-        console.print()
-        console.print(Panel(
-            f"[bold green]{tunnel_url}[/]\n\n"
-            f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
-            border_style="green",
-            title="[bold green] Live Preview [/]",
-            padding=(1, 2),
-        ))
+            console.print(Panel(
+                f"[bold green]{tunnel_url}[/]\n\n"
+                f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
+                border_style="green",
+                title="[bold green] Live Preview [/]",
+                padding=(1, 2),
+            ))
+        except PreviewError as e:
+            console.print(f"  [error]{e}[/]")
 
     # ── /deploy ─────────────────────────────────────────────────────────
 
@@ -2248,6 +2395,178 @@ class ForgeShell:
         console.print(f"    [accent]forge deploy --domain yourapp.example.com[/]")
         console.print()
         console.print("  [hint]Or try /preview for a quick shareable URL.[/]")
+
+    # ── /interview ─────────────────────────────────────────────────────
+
+    async def _cmd_interview(self) -> None:
+        """5-step guided project setup."""
+        from formations import FORMATIONS
+
+        console.print()
+        console.print(Panel(
+            "Answer 5 quick questions and Nova will handle the rest.\n"
+            "  [muted]Enter to accept defaults \u00b7 Ctrl-C to quit[/]",
+            title="[brand] Interview [/]",
+            border_style="bright_magenta",
+            padding=(0, 2),
+        ))
+
+        answers: dict[str, str] = {}
+        steps = ["scope", "stack", "risk", "formation", "model"]
+        i = 0
+
+        while i < len(steps):
+            step = steps[i]
+            console.print()
+            console.print(Rule(f" Step {i + 1}/{len(steps)} ", style="dim", align="right"))
+
+            # Breadcrumbs for completed steps
+            for prev in steps[:i]:
+                console.print(f"  [muted]{prev:12s}[/] {answers[prev]}")
+            if i > 0:
+                console.print()
+
+            result = await self._interview_step(step, answers)
+            if result is None:
+                console.print("  [muted]Interview cancelled.[/]")
+                return
+            answers[step] = result
+            i += 1
+
+        # Summary table
+        console.print()
+        table = Table(
+            box=box.ROUNDED, show_header=False, border_style="bright_magenta",
+            title="[bold] Your Build Config [/]", padding=(0, 2),
+        )
+        table.add_column("", style="bold", width=12)
+        table.add_column("")
+        for k, v in answers.items():
+            table.add_row(k.capitalize(), v)
+        console.print(table)
+        console.print()
+
+        if not await ask_confirm("Build now?"):
+            console.print("  [muted]Config saved. Run /build when ready.[/]")
+            return
+
+        # Apply model selection
+        self.model = resolve_model(answers.get("model", "nova-lite"))
+        console.print()
+        console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
+        await self._guided_build(answers["scope"])
+
+    async def _interview_step(self, step: str, answers: dict) -> str | None:
+        """Execute a single interview step. Returns value or None on cancel."""
+        from formations import FORMATIONS
+
+        if step == "scope":
+            return await ask_text(
+                "What do you want to build?",
+                instruction='e.g. "A REST API for recipes with auth"',
+            )
+        elif step == "stack":
+            return await ask_select("Tech stack", [
+                Choice(title="Auto-detect (Nova decides)", value="auto"),
+                Choice(title="Python + Flask", value="flask"),
+                Choice(title="Node.js + Express", value="node"),
+                Choice(title="Static site (HTML/CSS/JS)", value="static"),
+                Choice(title="Custom (describe after)", value="custom"),
+            ], default="auto")
+        elif step == "risk":
+            return await ask_select("Risk level", [
+                Choice(title="Low \u2014 prototypes, internal tools", value="low"),
+                Choice(title="Medium \u2014 filesystem writes, configs", value="medium"),
+                Choice(title="High \u2014 deployment, auth, networking", value="high"),
+            ], default="low")
+        elif step == "formation":
+            formation_choices = [
+                Choice(
+                    title=f"{name:22s} ({len(f.roles)} roles) {f.description[:40]}",
+                    value=name,
+                )
+                for name, f in FORMATIONS.items()
+            ]
+            return await ask_select("Agent formation", formation_choices, default="feature-impl")
+        elif step == "model":
+            from forge_models import MODEL_CAPABILITIES
+            providers = _check_all_providers()
+            model_choices = []
+            for alias, cap in MODEL_CAPABILITIES.items():
+                prov = _provider_for_model(alias)
+                ready = providers.get(prov, False)
+                status = "ready" if ready else "needs /login"
+                ctx = f"{cap.context_window // 1000}K"
+                strengths = ", ".join(cap.strengths[:3])
+                model_choices.append(Choice(
+                    title=f"{alias:18s} ({ctx}, {strengths}) [{status}]",
+                    value=alias,
+                ))
+            current = next(
+                (a for a, fid in MODEL_ALIASES.items() if fid == self.model),
+                "nova-lite",
+            )
+            return await ask_select("AI model", model_choices, default=current)
+        return None
+
+    # ── Chat context builder ───────────────────────────────────────────
+
+    def _build_chat_context(self, user_input: str) -> tuple[str, str]:
+        """Build (system_prompt, enriched_user_prompt) for chat agent."""
+        from prompt_builder import PromptBuilder
+
+        mc = get_model_config(self.model)
+        ctx_window = mc.context_window
+
+        # V11-grade system prompt with chat role profile + environment context
+        pb = PromptBuilder(self.project_path)
+        system = pb.build_enriched_system_prompt(role="chat", max_tokens=ctx_window)
+
+        # ── User prompt context sections ──────────────────────────────
+        parts = [user_input]
+
+        # Chat history for continuity
+        history_ctx = self.chat_history.to_context(ctx_window)
+        if history_ctx:
+            parts.append(history_ctx)
+
+        # Task state
+        summary = self._get_task_summary()
+        if summary and summary["total"] > 0:
+            done = summary["completed"]
+            total = summary["total"]
+            failed = summary.get("failed", 0)
+            pending = summary.get("pending", 0)
+            task_line = f"## Project State\n{done}/{total} tasks complete"
+            if failed:
+                task_line += f", {failed} failed"
+            if pending:
+                task_line += f", {pending} pending"
+            parts.append(task_line)
+
+        # Preview URL
+        if self._preview_mgr and self._preview_mgr.url:
+            parts.append(f"## Live Preview\nURL: {self._preview_mgr.url}")
+
+        # Project files — budget-aware content inclusion
+        existing = self._gather_project_files()
+        if existing:
+            file_tree = "\n".join(f"  {k}" for k in sorted(existing.keys()))
+            parts.append(f"## Project File Tree\n{file_tree}")
+            # Include key file contents (budget-aware)
+            max_content = 2000 if ctx_window <= 32_000 else 4000
+            ui_exts = (".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".json", ".py")
+            shown = 0
+            max_files = 5 if ctx_window <= 32_000 else 8
+            for rel_path, content in existing.items():
+                if shown >= max_files:
+                    break
+                if any(rel_path.endswith(ext) for ext in ui_exts):
+                    parts.append(f"## File: {rel_path}\n```\n{content[:max_content]}\n```")
+                    shown += 1
+
+        user_prompt = "\n\n---\n\n".join(parts)
+        return system, user_prompt
 
     # ── Natural language handler ─────────────────────────────────────────
 
@@ -2272,26 +2591,20 @@ class ForgeShell:
                 console.print()
                 console.print(f"  [nova]Nova[/] [muted]--[/] You already have a project here "
                               f"([bold]{self.project_path.name}[/]).")
-                console.print()
-                console.print(f"    [accent]1.[/] Start a fresh project for this")
-                console.print(f"    [accent]2.[/] Add to the current project (chat)")
-                console.print(f"    [accent]3.[/] Cancel")
-                console.print()
-                try:
-                    session = PromptSession(style=PT_STYLE)
-                    choice = await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: session.prompt(HTML("<prompt>Choice (1/2/3): </prompt>")),
-                    )
-                except (EOFError, KeyboardInterrupt):
-                    return
-                choice = choice.strip()
-                if choice == "1":
+                action = await ask_select(
+                    f"You already have a project ({self.project_path.name})",
+                    [
+                        Choice(title="Start a fresh project for this", value="fresh"),
+                        Choice(title="Add to the current project (chat)", value="add"),
+                        Choice(title="Cancel", value="cancel"),
+                    ],
+                )
+                if action == "fresh":
                     console.print()
                     console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
                     await self._guided_build(user_input)
                     return
-                elif choice == "2":
+                elif action == "add":
                     pass  # Fall through to chat agent below
                 else:
                     console.print("  [muted]Cancelled.[/]")
@@ -2313,50 +2626,41 @@ class ForgeShell:
             console.print()
 
         # General agent interaction
-        with Progress(
-            SpinnerColumn("dots"),
-            TextColumn("[nova]Nova[/] is thinking..."),
-            TimeElapsedColumn(),
-            console=console,
-            transient=True,
-        ) as progress:
-            progress.add_task("thinking", total=None)
+        from forge_agent import ForgeAgent, BUILT_IN_TOOLS
+        from forge_display import ChatDisplay
 
-            from forge_agent import ForgeAgent, BUILT_IN_TOOLS
-            mc = get_model_config(self.model, max_tokens=4096)
+        # Build rich context (V11-grade system prompt + history + task state + files)
+        system_prompt, user_prompt = self._build_chat_context(user_input)
 
-            agent = ForgeAgent(
-                model_config=mc,
-                project_root=self.project_path,
-                tools=BUILT_IN_TOOLS,
-                max_turns=20,
-                agent_id="forge-chat",
-            )
+        # Scale max_tokens — respect per-provider output limits
+        # Bedrock Nova: 5K (Lite), 10K (Pro/Premier) hard caps
+        # OpenRouter/Anthropic: much higher limits
+        mc = get_model_config(self.model)
+        provider = get_provider(self.model)
+        if provider == "bedrock":
+            chat_max_tokens = min(5000, max(4096, mc.context_window // 16))
+        else:
+            chat_max_tokens = min(16384, max(4096, mc.context_window // 8))
+        mc = get_model_config(self.model, max_tokens=chat_max_tokens)
 
-            spec_text = ""
-            spec_path = self.project_path / "spec.md"
-            if spec_path.exists():
-                spec_text = spec_path.read_text()[:3000]
+        # Create display for real-time feedback
+        chat_display = ChatDisplay()
 
-            context = ""
-            if spec_text:
-                context = f"\n\nProject spec:\n{spec_text}"
+        # Create agent with event wiring
+        agent = ForgeAgent(
+            model_config=mc,
+            project_root=self.project_path,
+            tools=BUILT_IN_TOOLS,
+            max_turns=30,
+            agent_id="forge-chat",
+            on_event=chat_display.on_event,
+        )
 
-            existing = self._gather_project_files()
-            if existing:
-                context += f"\n\nExisting files: {', '.join(existing.keys())}"
+        # Run with real-time display
+        with chat_display.create_progress():
+            result = await agent.run(prompt=user_prompt, system=system_prompt)
 
-            result = await agent.run(
-                prompt=f"{user_input}{context}",
-                system=(
-                    "You are Nova, an AI build assistant powered by Amazon Nova. "
-                    "You help users build software. Be friendly, concise, and proactive. "
-                    "Use write_file to create files and read_file to check existing ones. "
-                    "Always offer to help with next steps."
-                ),
-            )
-
-        # Display
+        # Display result
         console.print()
         if result.error:
             console.print(f"  [error]Something went wrong:[/] {result.error}")
@@ -2369,14 +2673,23 @@ class ForgeShell:
             else:
                 console.print(result.output)
 
-        if result.tool_calls_made > 0:
-            console.print(
-                f"  [muted]({result.turns} turns, {result.tool_calls_made} tool calls)[/]"
-            )
-
         if result.artifacts:
             for path in result.artifacts:
                 console.print(f"  [success]{Path(path).name}[/] [muted]created[/]")
+
+        # Save conversation turn for continuity
+        self.chat_history.add_turn(
+            user=user_input,
+            assistant=result.output[:1000] if result.output else "",
+            build_result={
+                "files_created": list(result.artifacts.keys())[:10],
+                "status": "error" if result.error else "ok",
+            } if result.artifacts else None,
+        )
+        self.chat_history.save()
+
+        # Show footer with tool/file summary
+        chat_display.print_footer(result)
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -2509,16 +2822,20 @@ class ForgeShell:
         """Gather non-forge project files with content previews."""
         files = {}
         skip = {"forge_cli.py", "challenge_build.py", "demo_nova_e2e.py"}
-        for ext in ("*.py", "*.js", "*.ts", "*.html", "*.json", "*.yml", "*.yaml"):
+        skip_dirs = {".forge", "__pycache__", "node_modules", ".git", "venv", ".venv"}
+        for ext in ("*.py", "*.js", "*.jsx", "*.ts", "*.tsx", "*.html", "*.css",
+                     "*.json", "*.yml", "*.yaml", "*.md"):
             for f in self.project_path.rglob(ext):
-                if f.name in skip or ".forge" in f.parts or "__pycache__" in f.parts:
+                if f.name in skip:
+                    continue
+                if any(d in f.parts for d in skip_dirs):
                     continue
                 rel = str(f.relative_to(self.project_path))
                 try:
-                    files[rel] = f.read_text()[:2000]
+                    files[rel] = f.read_text()[:4000]
                 except Exception:
                     pass
-                if len(files) >= 15:
+                if len(files) >= 25:
                     return files
         return files
 
@@ -2526,12 +2843,16 @@ class ForgeShell:
         """List meaningful project files (not forge internals)."""
         files = []
         skip = {"forge_cli.py", "challenge_build.py", "demo_nova_e2e.py"}
-        for ext in ("*.py", "*.js", "*.ts", "*.html", "*.css", "*.json", "*.yml"):
+        skip_dirs = {".forge", "__pycache__", "node_modules", ".git", "venv", ".venv"}
+        for ext in ("*.py", "*.js", "*.jsx", "*.ts", "*.tsx", "*.html", "*.css",
+                     "*.json", "*.yml", "*.yaml"):
             for f in self.project_path.rglob(ext):
-                if f.name in skip or ".forge" in f.parts or "__pycache__" in f.parts:
+                if f.name in skip:
+                    continue
+                if any(d in f.parts for d in skip_dirs):
                     continue
                 files.append(str(f.relative_to(self.project_path)))
-        return sorted(files)[:20]
+        return sorted(files)[:30]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

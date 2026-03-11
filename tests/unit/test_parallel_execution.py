@@ -30,6 +30,7 @@ def _make_shell(tmp_path: Path):
     shell = ForgeShell.__new__(ForgeShell)
     shell.project_path = tmp_path
     shell.model = "nova-lite"
+    shell.config = {}
     shell._sync_task_state = MagicMock()
     shell._list_project_files = MagicMock(return_value=[])
     shell._gather_project_files = MagicMock(return_value={})
@@ -128,7 +129,7 @@ class TestParallelWaveExecution:
             semaphore = asyncio.Semaphore(1)
             result = await shell._run_single_task(all_tasks[0], store, all_tasks, 0, None, semaphore)
 
-        w_idx, name, status, dur, tc, fc = result
+        w_idx, name, status, dur, tc, fc, *_extra = result
         assert status == "pass"
         assert w_idx == 0
 
@@ -245,7 +246,7 @@ class TestFailedTaskDoesntBlockWave:
             semaphore = asyncio.Semaphore(1)
             result = await shell._run_single_task(all_tasks[0], store, all_tasks, 0, None, semaphore)
 
-        w_idx, name, status, dur, tc, fc = result
+        w_idx, name, status, dur, tc, fc, *_extra = result
         assert status == "fail"
         assert w_idx == 0
 
@@ -317,7 +318,7 @@ class TestSequentialWavesRespected:
 
 
 class TestReturnTuple:
-    """_run_single_task must return a 6-tuple with correct types."""
+    """_run_single_task must return an 8-tuple with correct types."""
 
     @pytest.mark.asyncio
     async def test_return_tuple_structure_on_success(self, tmp_path):
@@ -336,8 +337,8 @@ class TestReturnTuple:
             result = await shell._run_single_task(store.list()[0], store, store.list(), 2, None, semaphore)
 
         assert isinstance(result, tuple)
-        assert len(result) == 6
-        w_idx, name, status, dur, tc, fc = result
+        assert len(result) == 8
+        w_idx, name, status, dur, tc, fc, *_extra = result
         assert w_idx == 2
         assert isinstance(name, str)
         assert status in ("pass", "fail")
@@ -362,7 +363,7 @@ class TestReturnTuple:
             semaphore = asyncio.Semaphore(1)
             result = await shell._run_single_task(store.list()[0], store, store.list(), 0, None, semaphore)
 
-        w_idx, name, status, dur, tc, fc = result
+        w_idx, name, status, dur, tc, fc, *_extra = result
         assert status == "fail"
         assert tc == 0
         assert fc == 0

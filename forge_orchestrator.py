@@ -151,24 +151,47 @@ class ForgeOrchestrator:
                 "Format: JSON array of objects, each with:\n"
                 '  {"subject": "...", "description": "...", "sprint": "sprint-01", '
                 '"risk": "low|medium|high", "blocked_by": [], "files": ["path/file.py"]}\n\n'
+                "DECOMPOSITION STRATEGY — FILE-CENTRIC TASKS:\n"
+                "Create ONE task per output file. Each task builds that file COMPLETELY with all "
+                "features that belong in it. Do NOT create feature-based tasks (bad: 'Add dark mode', "
+                "'Add timer', 'Add chart') — create file-based tasks (good: 'Create app.js with timer, "
+                "chart, dark mode, and task management').\n\n"
                 "CRITICAL RULES:\n"
-                "1. Each task MUST list the files it will create or modify in the 'files' field.\n"
-                "2. NO TWO TASKS may write to the same file. If two features touch the same file,\n"
-                "   combine them into one task or make the second task depend on (blocked_by) the first.\n"
-                "3. Group related edits to the same file into a single task.\n"
-                "4. Order tasks by dependency. Use blocked_by to reference earlier task indices.\n"
-                "5. Keep it to 5-15 tasks.\n\n"
-                "Example:\n"
-                '  [{"subject": "Create database models", "description": "Create SQLite models for User and Task",\n'
+                "1. Each task MUST list the files it will create in the 'files' field.\n"
+                "2. ONE TASK PER FILE — each file appears in exactly one task.\n"
+                "3. Backend files first (blocked_by: []), frontend files depend on backend.\n"
+                "4. The task description MUST include ALL features that go into that file.\n"
+                "5. If the spec says 'NOT X' or 'do NOT use X', repeat that constraint in the task description.\n"
+                "6. Target 3-8 tasks total. More tasks = more interface mismatches.\n\n"
+                "Example for a Flask+JS app:\n"
+                '  [{"subject": "Create models.py — database layer", '
+                '"description": "SQLite helper functions: create_tables(), get_tasks(), create_task(title, order), '
+                'update_task(id, title, order), delete_task(id), create_session(task_id, start, end), get_stats(). '
+                'Use raw sqlite3 — NOT SQLAlchemy.",\n'
                 '    "files": ["models.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": []},\n'
-                '   {"subject": "Create API routes", "description": "REST endpoints for CRUD operations",\n'
-                '    "files": ["routes.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [0]}]\n\n'
+                '   {"subject": "Create app.py — Flask server with all API routes", '
+                '"description": "Flask app with routes: GET/POST /api/tasks, PUT/DELETE /api/tasks/<id>, '
+                'POST /api/sessions, GET /api/stats. Import helpers from models.py. Serve templates/index.html.",\n'
+                '    "files": ["app.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [0]},\n'
+                '   {"subject": "Create templates/index.html — complete single-page UI", '
+                '"description": "Full HTML page with task list, timer, chart container, dark mode toggle. '
+                'Links to static/style.css and static/app.js.",\n'
+                '    "files": ["templates/index.html"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1]},\n'
+                '   {"subject": "Create static/app.js — all frontend JavaScript", '
+                '"description": "Complete JS: task CRUD with drag-and-drop, Pomodoro timer with SVG progress, '
+                'Chart.js bar chart, dark mode toggle, Web Audio API beep. All in one file.",\n'
+                '    "files": ["static/app.js"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1]},\n'
+                '   {"subject": "Create static/style.css — all styles", '
+                '"description": "Complete CSS: glassmorphism, gradients, dark mode CSS variables, responsive layout.",\n'
+                '    "files": ["static/style.css"], "sprint": "sprint-01", "risk": "low", "blocked_by": []}]\n\n'
                 "Write the tasks.json file now."
             ),
             system=(
-                "You are a task decomposer. Read the spec and break it into implementable tasks. "
+                "You are a task decomposer. Read the spec and break it into FILE-CENTRIC tasks. "
+                "Each task creates ONE complete file with ALL features that belong in it. "
                 "Write the tasks.json file using write_file tool. "
-                "IMPORTANT: Each task must own unique files — never assign the same file to multiple tasks."
+                "IMPORTANT: One task per file. Never split a single file across multiple tasks. "
+                "Target 3-8 tasks total."
             ),
         )
 

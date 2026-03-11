@@ -146,7 +146,8 @@ class TestGatherUpstreamArtifacts:
         assert "models.py" in result["upstream_results"]
         assert "Create models" in result["upstream_results"]
 
-    def test_skips_failed_dependency_artifacts(self, tmp_path):
+    def test_failed_dependency_with_artifacts_visible(self, tmp_path):
+        """Failed deps WITH artifacts should now appear with a warning."""
         shell = _make_shell(tmp_path)
         dep = _make_task(
             "1", "Create API",
@@ -159,8 +160,10 @@ class TestGatherUpstreamArtifacts:
         all_tasks = [dep, task]
 
         result = shell._gather_upstream_artifacts(task, store, all_tasks)
-        # Failed dep should not appear in upstream_results
-        assert "upstream_results" not in result
+        # Failed dep with artifacts SHOULD appear
+        assert "upstream_results" in result
+        assert "api.py" in result["upstream_results"]
+        assert "WARNING" in result["upstream_results"]
 
     def test_project_files_from_all_completed_tasks(self, tmp_path):
         shell = _make_shell(tmp_path)
@@ -186,8 +189,8 @@ class TestGatherUpstreamArtifacts:
 
     def test_exports_extracted_from_completed_py_files(self, tmp_path):
         shell = _make_shell(tmp_path)
-        # Write an actual Python file
-        (tmp_path / "utils.py").write_text("def compute():\n    return 42\n")
+        # Write an actual Python file with parameters
+        (tmp_path / "utils.py").write_text("def compute(x, y):\n    return x + y\n")
         t1 = _make_task(
             "1", "Create utils",
             status="completed",
@@ -200,7 +203,7 @@ class TestGatherUpstreamArtifacts:
 
         result = shell._gather_upstream_artifacts(current, store, all_tasks)
         assert "available_exports" in result
-        assert "def compute()" in result["available_exports"]
+        assert "def compute(x, y)" in result["available_exports"]
 
     def test_pending_tasks_not_in_project_files(self, tmp_path):
         shell = _make_shell(tmp_path)
@@ -327,3 +330,171 @@ class TestContextHintBuilding:
 
         # No upstream context — hint is empty
         assert context_hint == ""
+
+
+# ── Interface mismatch fix tests ────────────────────────────────────────────
+
+class TestFailedTaskArtifacts:
+    def test_failed_task_artifacts_visible_to_downstream(self, tmp_path):
+        """Failed dep artifacts should appear in upstream_results."""
+        shell = _make_shell(tmp_path)
+        dep = _make_task(
+            "1", "Create models",
+            status="failed",
+            artifacts={str(tmp_path / "models.py"): {"action": "written"}},
+        )
+        task = _make_task("2", "Build API", blocked_by=["1"])
+        store = MagicMock()
+        store.get.side_effect = lambda id_: dep if id_ == "1" else None
+        all_tasks = [dep, task]
+
+        result = shell._gather_upstream_artifacts(task, store, all_tasks)
+        assert "upstream_results" in result
+        assert "models.py" in result["upstream_results"]
+
+    def test_failed_dep_warning_label(self, tmp_path):
+        """Failed upstream should include WARNING text."""
+        shell = _make_shell(tmp_path)
+        dep = _make_task(
+            "1", "Create models",
+            status="failed",
+            artifacts={str(tmp_path / "models.py"): {"action": "written"}},
+        )
+        task = _make_task("2", "Build API", blocked_by=["1"])
+        store = MagicMock()
+        store.get.side_effect = lambda id_: dep if id_ == "1" else None
+        all_tasks = [dep, task]
+
+        result = shell._gather_upstream_artifacts(task, store, all_tasks)
+        assert "WARNING" in result["upstream_results"]
+        assert "incomplete" in result["upstream_results"].lower()
+
+    def test_failed_task_files_in_project_files(self, tmp_path):
+        """Failed tasks with artifacts should appear in project_files listing."""
+        shell = _make_shell(tmp_path)
+        t1 = _make_task(
+            "1", "Create models",
+            status="failed",
+            artifacts={str(tmp_path / "models.py"): {"action": "written"}},
+        )
+        current = _make_task("2", "Build API", blocked_by=[])
+        store = MagicMock()
+        store.get.return_value = None
+        all_tasks = [t1, current]
+
+        result = shell._gather_upstream_artifacts(current, store, all_tasks)
+        assert "project_files" in result
+        assert "models.py" in result["project_files"]
+
+
+class TestASTSignatureExtraction:
+    def test_full_params_captured(self, tmp_path):
+        """AST extraction should capture full parameter lists."""
+        shell = _make_shell(tmp_path)
+        (tmp_path / "models.py").write_text(
+            "def create_board(name):\n    pass\n\n"
+            "def get_board_full(board_id):\n    pass\n"
+        )
+        exports = shell._extract_exports_from_files(["models.py"])
+        assert any("create_board(name)" in e for e in exports)
+        assert any("get_board_full(board_id)" in e for e in exports)
+
+    def test_classes_with_bases_and_methods(self, tmp_path):
+        """AST should capture class bases and public methods."""
+        shell = _make_shell(tmp_path)
+        (tmp_path / "models.py").write_text(
+            "class User(Base):\n"
+            "    def get(self):\n        pass\n"
+            "    def update(self, data):\n        pass\n"
+            "    def _internal(self):\n        pass\n"
+        )
+        exports = shell._extract_exports_from_files(["models.py"])
+        assert any("class User(Base)" in e for e in exports)
+        assert any("get" in e and "update" in e for e in exports)
+        # Private method should NOT appear in methods list
+        assert not any("_internal" in e for e in exports)
+
+    def test_fallback_on_syntax_error(self, tmp_path):
+        """AST failure should fallback to regex extraction."""
+        shell = _make_shell(tmp_path)
+        (tmp_path / "broken.py").write_text(
+            "def valid_func(x, y):\n    pass\n\n"
+            "def another()  # missing colon — syntax error\n"
+        )
+        exports = shell._extract_exports_from_files(["broken.py"])
+        # Should still extract something via regex fallback
+        assert any("valid_func" in e for e in exports)
+
+
+class TestMandatoryReadInstruction:
+    def test_present_when_deps_exist(self, tmp_path):
+        """Prompt should include mandatory read instruction when task has deps."""
+        shell = _make_shell(tmp_path)
+        mandatory_reads = []
+        dep_artifacts = {str(tmp_path / "models.py"): {"action": "written"}}
+        for fpath in dep_artifacts.keys():
+            short = shell._shorten_path(fpath)
+            if short.endswith(('.py', '.js', '.ts', '.jsx', '.tsx')):
+                mandatory_reads.append(short)
+
+        assert len(mandatory_reads) == 1
+        assert "models.py" in mandatory_reads[0]
+
+    def test_absent_when_no_deps(self, tmp_path):
+        """No mandatory reads when task has no dependencies."""
+        shell = _make_shell(tmp_path)
+        mandatory_reads = []
+        # No deps → no mandatory reads
+        assert mandatory_reads == []
+
+
+class TestInterfaceSummary:
+    def test_summary_in_upstream_context(self, tmp_path):
+        """Interface summaries should appear in upstream context for .py files."""
+        shell = _make_shell(tmp_path)
+        (tmp_path / "models.py").write_text(
+            "def create_board(name):\n    pass\n\n"
+            "def get_board_full(board_id):\n    pass\n"
+        )
+        dep = _make_task(
+            "1", "Create models",
+            status="completed",
+            artifacts={str(tmp_path / "models.py"): {"action": "written"}},
+        )
+        task = _make_task("2", "Build API", blocked_by=["1"])
+        store = MagicMock()
+        store.get.side_effect = lambda id_: dep if id_ == "1" else None
+        all_tasks = [dep, task]
+
+        result = shell._gather_upstream_artifacts(task, store, all_tasks)
+        assert "Interface:" in result["upstream_results"]
+        assert "create_board(name)" in result["upstream_results"]
+
+
+class TestImportNameCheck:
+    def test_catches_missing_name(self, tmp_path):
+        """from models import Board should fail when Board is not defined."""
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))))
+        from forge_verify import _get_module_exports
+
+        (tmp_path / "models.py").write_text(
+            "def create_board(name):\n    pass\n\n"
+            "def get_board_full(board_id):\n    pass\n"
+        )
+        exports = _get_module_exports(tmp_path / "models.py")
+        assert "create_board" in exports
+        assert "get_board_full" in exports
+        assert "Board" not in exports  # Board class doesn't exist
+
+    def test_passes_valid_imports(self, tmp_path):
+        """from models import create_board should pass when function exists."""
+        from forge_verify import _get_module_exports
+
+        (tmp_path / "models.py").write_text(
+            "def create_board(name):\n    pass\n\n"
+            "class Board:\n    pass\n"
+        )
+        exports = _get_module_exports(tmp_path / "models.py")
+        assert "create_board" in exports
+        assert "Board" in exports

@@ -79,8 +79,9 @@ def plan(ctx: click.Context, goal: str, model: str | None, template: str | None)
 @click.option("--model", "-m", default=None, help="Model for coding agents")
 @click.option("--formation", "-f", default=None, help="Formation name (auto-selected if omitted)")
 @click.option("--max-concurrent", default=6, help="Max parallel agents per wave")
+@click.option("--preview/--no-preview", default=True, help="Auto-start preview after build")
 @click.pass_context
-def build(ctx: click.Context, model: str | None, formation: str | None, max_concurrent: int) -> None:
+def build(ctx: click.Context, model: str | None, formation: str | None, max_concurrent: int, preview: bool) -> None:
     """Execute the build pipeline (waves + gate review)."""
     from forge_orchestrator import ForgeOrchestrator
 
@@ -105,7 +106,31 @@ def build(ctx: click.Context, model: str | None, formation: str | None, max_conc
     if not result.success:
         sys.exit(1)
 
-    click.echo("\nBuild successful. Run 'forge deploy' to deploy.")
+    click.echo("\nBuild successful!")
+
+    # Auto-preview
+    if preview:
+        from forge_preview import PreviewManager, PreviewError, detect_stack
+        try:
+            si = detect_stack(project_path)
+            if si.kind != "unknown":
+                click.echo(f"\nStarting preview ({si.kind}: {si.entry})...")
+                mgr = PreviewManager(project_path)
+                url = mgr.start(stack_info=si)
+                click.echo(f"\n  Preview: {url}")
+                click.echo(f"  Press Ctrl+C to stop.\n")
+                try:
+                    mgr._server_proc.wait()
+                except KeyboardInterrupt:
+                    click.echo("\nStopping preview...")
+                    mgr.stop()
+            else:
+                click.echo("Run 'forge preview' to start a shareable preview.")
+        except PreviewError as e:
+            click.echo(f"\nPreview failed: {e}")
+            click.echo("Run 'forge preview' to retry.")
+    else:
+        click.echo("Run 'forge preview' to start a shareable preview.")
 
 
 # ── forge deploy ─────────────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 # Normalize ForgeAgent names to V11 names so hooks match correctly.
 _TOOL_NAME_MAP: dict[str, str] = {
     "write_file": "Write",
+    "append_file": "Write",
     "edit_file": "Edit",
     "read_file": "Read",
     "bash": "Bash",

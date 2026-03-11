@@ -1,0 +1,39 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Start with a minimal, non-breaking rule set
+select = [
+    "E",   # pycodestyle errors (syntax issues, indentation)
+    "F",   # pyflakes (unused imports, undefined names, redefined)
+    "W",   # pycodestyle warnings
+    "I",   # isort (import ordering)
+    "UP",  # pyupgrade (modern Python syntax)
+]
+ignore = [
+    "E501",  # line length — handled by formatter, not linter
+    "E741",  # ambiguous variable name (l, O, I) — too noisy for existing code
+    "F841",  # local variable assigned but never used — fix incrementally
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "forge_agent", "forge_cli", "forge_comms", "forge_compliance",
+    "forge_deployer", "forge_display", "forge_guards", "forge_hooks",
+    "forge_hooks_impl", "forge_index", "forge_migrate", "forge_models",
+    "forge_orchestrator", "forge_pipeline", "forge_preview", "forge_prompt",
+    "forge_registry", "forge_schema", "forge_session", "forge_tasks",
+    "forge_teams", "forge_verify", "forge_web", "formations",
+    "model_router", "prompt_builder", "config",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

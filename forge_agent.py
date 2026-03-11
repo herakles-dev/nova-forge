@@ -15,6 +15,7 @@ import os
 import random
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,26 @@ class AgentResult:
     artifacts: dict[str, Any] = field(default_factory=dict)
     tool_calls_made: int = 0
     error: str | None = None
+    model_id: str = ""        # which model completed this
+    tokens_in: int = 0        # total input tokens
+    tokens_out: int = 0       # total output tokens
+    escalated: bool = False   # was model escalated?
+
+
+@dataclass
+class AgentEvent:
+    """Structured event emitted during agent execution."""
+    kind: str              # turn_start, model_response, tool_start, tool_end, compact, error, stream_delta, model_escalation
+    turn: int = 0
+    tool_name: str = ""
+    tool_args: dict = field(default_factory=dict)
+    file_path: str = ""
+    file_action: str = ""  # read, write, edit, run, search
+    tokens_in: int = 0
+    tokens_out: int = 0
+    duration_ms: int = 0
+    error: str = ""
+    delta: Any = None      # StreamDelta for stream_delta events
 
 
 # ── Tool definitions (common format for all providers) ───────────────────────
@@ -76,6 +97,24 @@ BUILT_IN_TOOLS: list[dict] = [
             "properties": {
                 "path": {"type": "string", "description": "File path (relative to project root or absolute)"},
                 "content": {"type": "string", "description": "Full file content to write"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "append_file",
+        "description": (
+            "Append content to the end of an existing file, or create it if it does not exist.\n\n"
+            "- Use write_file FIRST to create the file with the initial section.\n"
+            "- Then call append_file one or more times to add remaining sections.\n"
+            "- For large files (>150 lines), use: write_file (first part) + append_file (rest).\n"
+            "- Runs syntax check after appending (.py, .json, .yaml)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path"},
+                "content": {"type": "string", "description": "Content to append"},
             },
             "required": ["path", "content"],
         },
@@ -222,6 +261,34 @@ BUILT_IN_TOOLS: list[dict] = [
             "required": ["note"],
         },
     },
+    {
+        "name": "claim_file",
+        "description": (
+            "Claim exclusive write access to a file. Other agents cannot modify "
+            "files you've claimed. Call BEFORE writing to prevent conflicts."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path relative to project root"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "check_context",
+        "description": (
+            "Check what other agents have done: files claimed/written, "
+            "announcements (endpoints, exports), module dependencies."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "focus": {"type": "string", "description": "Optional filter: 'api', 'frontend', 'imports'"},
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -246,6 +313,8 @@ class ForgeAgent:
         wire_v11_hooks: bool = True,
         on_event: Any = None,
         streaming: bool = True,
+        escalation_model: str | None = None,
+        build_context: Any = None,
     ) -> None:
         self.model_config = model_config
         self.project_root = Path(project_root).resolve()
@@ -261,7 +330,10 @@ class ForgeAgent:
         self._files_read: set[str] = set()
         self.on_event = on_event
         self.streaming = streaming
+        self.escalation_model = escalation_model
+        self._escalated = False
         self.autonomy_manager: AutonomyManager | None = None
+        self.build_context = build_context  # BuildContext for multi-agent coordination
 
         # Auto-wire V11 hooks into the active HookSystem (provided or default)
         if wire_v11_hooks:
@@ -304,8 +376,17 @@ class ForgeAgent:
         messages = self._build_initial_messages(prompt, system, context)
         artifacts: dict[str, Any] = {}
         total_tool_calls = 0
+        _total_in = 0
+        _total_out = 0
 
         for turn in range(self.max_turns):
+            # Emit turn_start event
+            if self.on_event:
+                try:
+                    self.on_event(AgentEvent(kind="turn_start", turn=turn + 1))
+                except Exception:
+                    pass
+
             # Call the model with retry logic for transient errors
             response = None
             last_error = None
@@ -329,7 +410,7 @@ class ForgeAgent:
                             attempt + 1, MAX_API_RETRIES, exc,
                         )
                         if self.on_event:
-                            self.on_event({"type": "retry", "attempt": attempt + 1, "reason": str(exc)})
+                            self.on_event(AgentEvent(kind="error", error=f"Retry {attempt + 1}: {exc}"))
                         if attempt < MAX_API_RETRIES - 1:
                             delay = min(2 ** attempt + random.uniform(0, 1), 30)
                             logger.warning("Retrying in %.1fs", delay)
@@ -354,7 +435,27 @@ class ForgeAgent:
                     artifacts=artifacts,
                     tool_calls_made=total_tool_calls,
                     error=str(last_error),
+                    model_id=self.model_config.model_id,
+                    tokens_in=_total_in,
+                    tokens_out=_total_out,
                 )
+
+            # Track tokens
+            _resp_in = response.usage.get("input_tokens", 0)
+            _resp_out = response.usage.get("output_tokens", 0)
+            _total_in += _resp_in
+            _total_out += _resp_out
+
+            # Emit model_response event
+            if self.on_event:
+                try:
+                    self.on_event(AgentEvent(
+                        kind="model_response", turn=turn + 1,
+                        tokens_in=_resp_in,
+                        tokens_out=_resp_out,
+                    ))
+                except Exception:
+                    pass
 
             tool_calls = self.router.extract_tool_calls(response)
 
@@ -388,6 +489,9 @@ class ForgeAgent:
                     turns=turn + 1,
                     artifacts=artifacts,
                     tool_calls_made=total_tool_calls,
+                    model_id=self.model_config.model_id,
+                    tokens_in=_total_in,
+                    tokens_out=_total_out,
                 )
 
             # Append assistant message to history
@@ -397,7 +501,46 @@ class ForgeAgent:
             # Execute each tool call
             for call in tool_calls:
                 total_tool_calls += 1
+
+                # Emit tool_start event
+                _tool_file = call.args.get("path", call.args.get("file_path", call.args.get("pattern", ""))) if isinstance(call.args, dict) else ""
+                if self.on_event:
+                    try:
+                        self.on_event(AgentEvent(
+                            kind="tool_start", turn=turn + 1,
+                            tool_name=call.name,
+                            tool_args=call.args if isinstance(call.args, dict) else {},
+                            file_path=str(_tool_file),
+                        ))
+                    except Exception:
+                        pass
+
+                _tool_t0 = time.monotonic()
                 result_str = await self._execute_tool_call(call, artifacts)
+                _tool_dur = int((time.monotonic() - _tool_t0) * 1000)
+
+                # Determine file action
+                _fa = {"read_file": "read", "write_file": "write", "append_file": "append",
+                       "edit_file": "edit", "bash": "run", "glob_files": "search",
+                       "grep": "search", "search_replace_all": "edit"}.get(call.name, "")
+                _tool_err = ""
+                if result_str and ("ERROR" in result_str[:80] or "BLOCKED" in result_str[:80]):
+                    _tool_err = result_str[:200]
+
+                # Emit tool_end event
+                if self.on_event:
+                    try:
+                        self.on_event(AgentEvent(
+                            kind="tool_end", turn=turn + 1,
+                            tool_name=call.name,
+                            file_path=str(_tool_file),
+                            file_action=_fa,
+                            duration_ms=_tool_dur,
+                            error=_tool_err,
+                        ))
+                    except Exception:
+                        pass
+
                 messages.append(
                     adapter.format_tool_result(call.id, result_str)
                 )
@@ -413,6 +556,34 @@ class ForgeAgent:
                     self._estimate_tokens(messages),
                 )
 
+        # Escalation: if max_turns hit and we have an escalation target, retry with smarter model
+        if self.escalation_model and not self._escalated:
+            self._escalated = True
+            new_config = get_model_config(self.escalation_model, max_tokens=self.model_config.max_tokens)
+
+            if self.on_event:
+                try:
+                    self.on_event(AgentEvent(
+                        kind="model_escalation",
+                        error=f"Escalating: {self.model_config.short_name} -> {new_config.short_name}",
+                    ))
+                except Exception:
+                    pass
+
+            old_config = self.model_config
+            old_provider = self.provider
+            self.model_config = new_config
+            self.provider = get_provider(new_config.model_id)
+
+            escalated_result = await self.run(prompt=prompt, system=system, context=context)
+            escalated_result.escalated = True
+            escalated_result.tokens_in += _total_in
+            escalated_result.tokens_out += _total_out
+
+            self.model_config = old_config
+            self.provider = old_provider
+            return escalated_result
+
         # Session end — fire stop hooks
         await self.hooks.on_stop(project=self.project_root.name)
 
@@ -422,6 +593,9 @@ class ForgeAgent:
             artifacts=artifacts,
             tool_calls_made=total_tool_calls,
             error="max_turns_exceeded",
+            model_id=self.model_config.model_id,
+            tokens_in=_total_in,
+            tokens_out=_total_out,
         )
 
     # ── Message construction ─────────────────────────────────────────────────
@@ -519,6 +693,8 @@ class ForgeAgent:
             return await self._tool_read_file(args)
         elif name == "write_file":
             return await self._tool_write_file(args, artifacts)
+        elif name == "append_file":
+            return await self._tool_append_file(args, artifacts)
         elif name == "edit_file":
             return await self._tool_edit_file(args, artifacts)
         elif name == "bash":
@@ -535,6 +711,10 @@ class ForgeAgent:
             return await self._tool_search_replace_all(args, artifacts)
         elif name == "remember":
             return await self._tool_remember(args)
+        elif name == "claim_file":
+            return self._tool_claim_file(args)
+        elif name == "check_context":
+            return self._tool_check_context(args)
         else:
             return f"Unknown tool: {name}"
 
@@ -616,9 +796,46 @@ class ForgeAgent:
 
         return result
 
+    @staticmethod
+    def _unescape_content(content: str) -> str:
+        """Fix Nova's double-escaping: model sometimes wraps content in quotes and escapes internals.
+
+        Detects pattern like: "\\\"\\\"\\\"docstring..." and unescapes to: \"\"\"docstring...
+        Also handles content wrapped in outer quotes: '"actual content"'
+        """
+        if not content:
+            return content
+        # Pattern: content starts with " and ends with " — model wrapped it as a JSON string
+        if len(content) > 2 and content[0] == '"' and content[-1] == '"' and '\\"' in content:
+            try:
+                import json
+                unescaped = json.loads(content)
+                if isinstance(unescaped, str):
+                    return unescaped
+            except (json.JSONDecodeError, ValueError):
+                pass
+        # Pattern: backslash-escaped quotes throughout (\"  ->  ")
+        if '\\"' in content and '\\n' not in content:
+            content = content.replace('\\"', '"')
+        return content
+
     async def _tool_write_file(self, args: dict, artifacts: dict) -> str:
+        args["content"] = self._unescape_content(args.get("content", ""))
         path = self._resolve_path(args["path"])
         self.sandbox.validate_write(path)
+        rel = self._relative_path(path)
+
+        # Auto-claim via BuildContext if available
+        if self.build_context is not None:
+            if not self.build_context.claim_file(str(rel), self.agent_id):
+                existing = self.build_context.is_claimed(str(rel))
+                owner = existing.agent_id if existing else "unknown"
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
+                return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
+            self.build_context.update_claim_status(str(rel), self.agent_id, "writing")
+            if self.on_event:
+                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
         # Read-tracking warning
         warning = ""
@@ -628,15 +845,66 @@ class ForgeAgent:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(args["content"], encoding="utf-8")
         artifacts[str(path)] = {"action": "write", "size": len(args["content"])}
-        rel = self._relative_path(path)
         verify = await self._auto_verify(path)
+
+        # Auto-announce file creation with interface summary
+        if self.build_context is not None:
+            self.build_context.update_claim_status(str(rel), self.agent_id, "done")
+            summary = self._extract_interface_summary(path)
+            self.build_context.announce(self.agent_id, "file_created", f"{rel}: {summary}")
+
         return f"{warning}File written: {rel} ({len(args['content'])} chars){verify}"
+
+    async def _tool_append_file(self, args: dict, artifacts: dict) -> str:
+        args["content"] = self._unescape_content(args.get("content", ""))
+        path = self._resolve_path(args["path"])
+        self.sandbox.validate_write(path)
+        rel = self._relative_path(path)
+
+        # Auto-claim via BuildContext if available
+        if self.build_context is not None:
+            if not self.build_context.claim_file(str(rel), self.agent_id):
+                existing = self.build_context.is_claimed(str(rel))
+                owner = existing.agent_id if existing else "unknown"
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
+                return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
+            self.build_context.update_claim_status(str(rel), self.agent_id, "writing")
+            if self.on_event:
+                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        chunk = args["content"]
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(chunk)
+        total = path.stat().st_size
+        artifacts[str(path)] = {"action": "append", "size": total, "appended": len(chunk)}
+        verify = await self._auto_verify(path)
+
+        # Auto-announce
+        if self.build_context is not None:
+            self.build_context.update_claim_status(str(rel), self.agent_id, "done")
+            self.build_context.announce(self.agent_id, "file_appended", f"{rel}: +{len(chunk)} chars")
+
+        return f"Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}"
 
     async def _tool_edit_file(self, args: dict, artifacts: dict) -> str:
         path = self._resolve_path(args["path"])
         self.sandbox.validate_write(path)
+        rel = self._relative_path(path)
         if not path.exists():
-            return f"File not found: {self._relative_path(path)}"
+            return f"File not found: {rel}"
+
+        # Auto-claim via BuildContext if available
+        if self.build_context is not None:
+            if not self.build_context.claim_file(str(rel), self.agent_id):
+                existing = self.build_context.is_claimed(str(rel))
+                owner = existing.agent_id if existing else "unknown"
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
+                return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
+            if self.on_event:
+                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
         # Read-tracking warning
         warning = ""
@@ -648,15 +916,39 @@ class ForgeAgent:
         new = args["new_string"]
         count = content.count(old)
         if count == 0:
-            return f"old_string not found in {self._relative_path(path)}"
+            return f"old_string not found in {rel}"
         if count > 1:
-            return f"old_string appears {count} times in {self._relative_path(path)} — must be unique (1 occurrence)"
+            return f"old_string appears {count} times in {rel} — must be unique (1 occurrence)"
         content = content.replace(old, new, 1)
         path.write_text(content, encoding="utf-8")
         artifacts[str(path)] = {"action": "edit", "old_len": len(old), "new_len": len(new)}
-        rel = self._relative_path(path)
         verify = await self._auto_verify(path)
+
+        # Auto-announce file edit with interface summary
+        if self.build_context is not None:
+            summary = self._extract_interface_summary(path)
+            self.build_context.announce(self.agent_id, "file_edited", f"{rel}: {summary}")
+
         return f"{warning}File edited: {rel} (replaced {len(old)} chars with {len(new)} chars){verify}"
+
+    def _extract_interface_summary(self, path: Path, max_chars: int = 500) -> str:
+        """Extract compact interface summary using AST. Fallback to filename."""
+        if not path.exists() or path.suffix != ".py":
+            return str(path.name)
+        try:
+            import ast as _ast
+            tree = _ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            parts = []
+            for node in _ast.iter_child_nodes(tree):
+                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    if not node.name.startswith("_"):
+                        args = ", ".join(a.arg for a in node.args.args if a.arg != "self")
+                        parts.append(f"{node.name}({args})")
+                elif isinstance(node, _ast.ClassDef) and not node.name.startswith("_"):
+                    parts.append(f"class {node.name}")
+            return "; ".join(parts)[:max_chars] if parts else str(path.name)
+        except Exception:
+            return str(path.name)
 
     async def _tool_bash(self, args: dict) -> str:
         command = args["command"]
@@ -850,6 +1142,40 @@ class ForgeAgent:
 
         return f"Remembered [{category}]: {note[:80]}{'...' if len(note) > 80 else ''}"
 
+    # ── Communication tools ─────────────────────────────────────────────────
+
+    def _tool_claim_file(self, args: dict) -> str:
+        """Claim exclusive write access to a file."""
+        path = args["path"]
+        if self.build_context is None:
+            return f"Claimed: {path} (no build context — standalone mode)"
+        if self.build_context.claim_file(path, self.agent_id):
+            if self.on_event:
+                self.on_event(AgentEvent(kind="file_claimed", file_path=path))
+            return f"Claimed: {path}"
+        else:
+            existing = self.build_context.is_claimed(path)
+            owner = existing.agent_id if existing else "unknown"
+            if self.on_event:
+                self.on_event(AgentEvent(kind="file_conflict", file_path=path, error=f"owned by {owner}"))
+            return f"CONFLICT: {path} already claimed by {owner}"
+
+    def _tool_check_context(self, args: dict) -> str:
+        """Read shared build state."""
+        if self.build_context is None:
+            return "No build context available — standalone mode."
+        context = self.build_context.to_context(self.agent_id, budget_chars=3000)
+        if not context:
+            return "No coordination data yet — you are the first agent running."
+        focus = args.get("focus", "")
+        if focus:
+            # Filter lines by focus keyword
+            lines = context.split("\n")
+            filtered = [l for l in lines if focus.lower() in l.lower() or l.startswith("#")]
+            if filtered:
+                return "\n".join(filtered)
+        return context
+
     # ── Auto-verify after writes ─────────────────────────────────────────────
 
     async def _auto_verify(self, path: Path) -> str:
@@ -901,7 +1227,7 @@ class ForgeAgent:
         """Forward a StreamDelta to the on_event callback (if registered)."""
         if self.on_event is not None:
             try:
-                self.on_event({"kind": "stream_delta", "delta": delta})
+                self.on_event(AgentEvent(kind="stream_delta", delta=delta))
             except Exception:
                 pass  # Never let UI callbacks crash the agent loop
 
@@ -1009,6 +1335,28 @@ class ForgeAgent:
         compacted = head + [{"role": "user", "content": summary}]
         # Need an assistant ack for providers that require alternating turns
         compacted.append({"role": "assistant", "content": "Understood, continuing with the compacted context."})
-        compacted.extend(tail)
+
+        # Fix Bedrock toolResult pairing: if tail starts with a user message
+        # containing toolResult blocks, those are orphaned (no matching toolUse
+        # in the preceding synthetic assistant message). Skip such messages
+        # to prevent "number of toolResult blocks exceeds toolUse blocks" error.
+        tail_start = 0
+        while tail_start < len(tail):
+            msg = tail[tail_start]
+            if msg.get("role") != "user":
+                break
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                has_tool_result = any(
+                    isinstance(b, dict) and (
+                        "toolResult" in b or b.get("type") == "tool_result"
+                    )
+                    for b in content
+                )
+                if has_tool_result:
+                    tail_start += 1
+                    continue
+            break
+        compacted.extend(tail[tail_start:])
 
         return compacted

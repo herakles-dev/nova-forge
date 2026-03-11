@@ -76,9 +76,9 @@ class TestEnhancedToolDescriptions:
 
     # ── Count / existence ────────────────────────────────────────────────────
 
-    def test_built_in_tools_has_ten_tools(self):
-        """BUILT_IN_TOOLS must define exactly 10 tools."""
-        assert len(BUILT_IN_TOOLS) == 10
+    def test_built_in_tools_has_thirteen_tools(self):
+        """BUILT_IN_TOOLS must define exactly 13 tools (10 core + append_file + claim_file + check_context)."""
+        assert len(BUILT_IN_TOOLS) == 13
 
     def test_all_tools_have_name_and_description(self):
         """Every tool entry must have 'name' and 'description' keys."""
@@ -1029,8 +1029,8 @@ class TestOnStreamDeltaCallback:
         agent._on_stream_delta(delta)
 
         assert len(events) == 1
-        assert events[0]["kind"] == "stream_delta"
-        assert events[0]["delta"] is delta
+        assert events[0].kind == "stream_delta"
+        assert events[0].delta is delta
 
     def test_on_stream_delta_no_event_handler_no_crash(self, tmp_path):
         """_on_stream_delta should not crash when on_event is None."""

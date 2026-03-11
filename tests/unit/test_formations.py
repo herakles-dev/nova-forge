@@ -125,9 +125,10 @@ class TestToolProfiles:
         assert "full" in TOOL_PROFILES
         assert "minimal" in TOOL_PROFILES
 
-    def test_full_has_all_six_tools(self):
+    def test_full_has_all_tools(self):
         assert TOOL_PROFILES["full"] == {
-            "read_file", "write_file", "edit_file", "bash", "glob_files", "grep"
+            "read_file", "write_file", "append_file", "edit_file", "bash", "glob_files", "grep",
+            "claim_file", "check_context",
         }
 
     def test_readonly_no_write(self):

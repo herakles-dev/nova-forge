@@ -191,6 +191,11 @@ class ProjectIndex:
         # Detect stack
         self.stack = self._detect_stack()
         self.scanned_at = time.time()
+
+        # Scan imports/exports for dependency graph
+        self.scan_exports()
+        self.scan_imports()
+
         return self
 
     def _detect_stack(self) -> list[str]:
@@ -397,6 +402,156 @@ class ProjectIndex:
 
         return "\n".join(parts)
 
+    # ── Import/Export scanning ────────────────────────────────────────────
+
+    exports: dict[str, list[str]] = field(default_factory=dict)   # file -> [name, ...]
+    imports: dict[str, list[str]] = field(default_factory=dict)   # file -> [module, ...]
+
+    def scan_exports(self) -> None:
+        """Extract module-level exports from Python/JS/TS files.
+
+        Python: def/class at indent 0 (non-underscore)
+        JS/TS: export statements
+        """
+        self.exports.clear()
+        for rel_path, entry in self.files.items():
+            fpath = self.project_root / rel_path
+            if not fpath.exists():
+                continue
+            names: list[str] = []
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if entry.file_type == "Python":
+                            if line.startswith("def ") and not line.startswith("def _"):
+                                name = line.split("(")[0].replace("def ", "").strip()
+                                if name:
+                                    names.append(name)
+                            elif line.startswith("class ") and not line.startswith("class _"):
+                                name = line.split("(")[0].split(":")[0].replace("class ", "").strip()
+                                if name:
+                                    names.append(name)
+                        elif entry.file_type in ("JavaScript", "TypeScript", "TSX", "JSX"):
+                            stripped = line.strip()
+                            if stripped.startswith("export "):
+                                # Extract export name (simplified)
+                                rest = stripped[7:].strip()
+                                for kw in ("default ", "function ", "class ", "const ", "let ", "var ", "async function "):
+                                    if rest.startswith(kw):
+                                        rest = rest[len(kw):].strip()
+                                        break
+                                name = rest.split("(")[0].split(" ")[0].split(":")[0].split("=")[0].strip()
+                                if name and name not in ("{", "*"):
+                                    names.append(name)
+            except Exception:
+                continue
+            if names:
+                self.exports[rel_path] = names
+
+    def scan_imports(self) -> None:
+        """Extract import statements from Python/JS/TS files.
+
+        Python: from X import Y, import X
+        JS/TS: import ... from, require()
+        """
+        self.imports.clear()
+        for rel_path, entry in self.files.items():
+            fpath = self.project_root / rel_path
+            if not fpath.exists():
+                continue
+            modules: list[str] = []
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if entry.file_type == "Python":
+                            if stripped.startswith("from ") and " import " in stripped:
+                                mod = stripped.split("from ")[1].split(" import")[0].strip()
+                                if mod and not mod.startswith("."):
+                                    modules.append(mod)
+                            elif stripped.startswith("import "):
+                                mod = stripped.split("import ")[1].split(" as ")[0].split(",")[0].strip()
+                                if mod:
+                                    modules.append(mod)
+                        elif entry.file_type in ("JavaScript", "TypeScript", "TSX", "JSX"):
+                            if " from " in stripped and ("import " in stripped or "} from" in stripped):
+                                mod = stripped.split(" from ")[-1].strip().strip("'\"`;")
+                                if mod:
+                                    modules.append(mod)
+                            elif "require(" in stripped:
+                                start = stripped.find("require(") + 8
+                                end = stripped.find(")", start)
+                                if end > start:
+                                    mod = stripped[start:end].strip("'\"")
+                                    if mod:
+                                        modules.append(mod)
+            except Exception:
+                continue
+            if modules:
+                self.imports[rel_path] = modules
+
+    def get_dependents(self, file_path: str) -> list[str]:
+        """Which project files import from this file?"""
+        # Derive possible module names from the file path
+        p = Path(file_path)
+        stem = p.stem  # e.g. "app" from "app.py"
+        rel_no_ext = str(p.with_suffix(""))  # e.g. "src/app"
+        # Also try dot-notation: "src/utils/helpers" -> "src.utils.helpers"
+        dot_notation = rel_no_ext.replace("/", ".").replace("\\", ".")
+
+        dependents = []
+        for other_path, imported_modules in self.imports.items():
+            if other_path == file_path:
+                continue
+            for mod in imported_modules:
+                # Match by stem, relative path, or dot notation
+                if mod == stem or mod == rel_no_ext or mod == dot_notation:
+                    dependents.append(other_path)
+                    break
+                # Also check if module ends with the stem (e.g. "mypackage.app")
+                if mod.endswith("." + stem):
+                    dependents.append(other_path)
+                    break
+        return dependents
+
+    def to_dependency_context(self, files: list[str], budget_chars: int = 2000) -> str:
+        """Render import/export relationships for a set of files."""
+        if not files and not self.exports:
+            return ""
+
+        parts: list[str] = []
+        used = 0
+
+        # Show exports for the given files
+        for f in files:
+            exports = self.exports.get(f, [])
+            if exports:
+                line = f"- {f} exports: {', '.join(exports[:10])}"
+                if used + len(line) < budget_chars:
+                    parts.append(line)
+                    used += len(line)
+
+            # Show who depends on these files
+            deps = self.get_dependents(f)
+            if deps:
+                line = f"- {f} imported by: {', '.join(deps[:5])}"
+                if used + len(line) < budget_chars:
+                    parts.append(line)
+                    used += len(line)
+
+        # Show imports for the given files
+        for f in files:
+            imports = self.imports.get(f, [])
+            if imports:
+                line = f"- {f} imports: {', '.join(imports[:10])}"
+                if used + len(line) < budget_chars:
+                    parts.append(line)
+                    used += len(line)
+
+        if not parts:
+            return ""
+        return "\n".join(parts)
+
     # ── Persistence ──────────────────────────────────────────────────────────
 
     def save(self, cache_path: Path | None = None) -> None:
@@ -413,6 +568,8 @@ class ProjectIndex:
             "languages": self.languages,
             "files": {k: v.to_dict() for k, v in self.files.items()},
             "dirs": self.dirs,
+            "exports": self.exports,
+            "imports": self.imports,
         }
         cache_path.write_text(json.dumps(data, indent=2))
 
@@ -433,6 +590,8 @@ class ProjectIndex:
             idx.entry_points = data.get("entry_points", [])
             idx.languages = data.get("languages", {})
             idx.dirs = data.get("dirs", {})
+            idx.exports = data.get("exports", {})
+            idx.imports = data.get("imports", {})
             idx.files = {
                 k: FileEntry.from_dict(v) for k, v in data.get("files", {}).items()
             }

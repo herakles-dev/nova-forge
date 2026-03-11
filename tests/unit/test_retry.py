@@ -193,12 +193,12 @@ async def test_retry_event_emitted(tmp_path):
             result = await agent.run("Do something")
 
     assert result.error is None
-    retry_events = [e for e in events if e.get("type") == "retry"]
+    retry_events = [e for e in events if e.kind == "error" and "Retry" in e.error]
     assert len(retry_events) == 2
-    assert retry_events[0]["attempt"] == 1
-    assert retry_events[1]["attempt"] == 2
+    assert "Retry 1" in retry_events[0].error
+    assert "Retry 2" in retry_events[1].error
     for e in retry_events:
-        assert "429" in e["reason"]
+        assert "429" in e.error
 
 
 @pytest.mark.asyncio
