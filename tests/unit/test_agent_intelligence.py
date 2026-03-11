@@ -335,5 +335,5 @@ def test_slim_prompt_has_verify_hints():
         model_id="bedrock/us.amazon.nova-2-lite-v1:0",
     )
     assert "SYNTAX ERROR" in prompt
-    assert "INCOMPLETE" in prompt
-    assert "parameterized SQL" in prompt
+    assert "CONFLICT" in prompt
+    assert "write_file" in prompt

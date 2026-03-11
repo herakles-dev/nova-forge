@@ -35,6 +35,17 @@ def _make_shell(tmp_path: Path):
     shell._list_project_files = MagicMock(return_value=[])
     shell._gather_project_files = MagicMock(return_value={})
     shell._gather_upstream_artifacts = MagicMock(return_value={})
+    # Mock assistant for autonomy-aware prompt building
+    shell.assistant = MagicMock()
+    shell.assistant.read_autonomy_level = MagicMock(return_value=2)
+    shell.assistant.skill_level = "intermediate"
+    # Mock session_manager for build completion profile updates
+    shell.session_manager = MagicMock()
+    mock_profile = MagicMock()
+    mock_profile.skill_level = "intermediate"
+    mock_profile.to_dict = MagicMock(return_value={})
+    shell.session_manager.load_profile = MagicMock(return_value=mock_profile)
+    shell.session_manager.update_profile_after_build = MagicMock(return_value=mock_profile)
     return shell
 
 

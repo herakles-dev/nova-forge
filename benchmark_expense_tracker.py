@@ -430,11 +430,16 @@ async def run_benchmark(coding_model: str):
                 )
 
             spec_text = (PROJECT_DIR / "spec.md").read_text()
+            expected_files = (task.metadata or {}).get("files", [])
+            files_hint = ", ".join(expected_files) if expected_files else "as specified"
             prompt = (
                 f"## Project Spec\n{spec_text}\n\n"
                 f"## Your Task\n{task.subject}: {task.description}\n\n"
+                f"## Your Files\n"
+                f"You MUST create these files: {files_hint}\n"
+                f"Only write YOUR files. Do NOT create files that belong to other tasks.\n\n"
                 f"## Instructions\n"
-                f"Implement this task COMPLETELY. Use write_file to create EVERY file listed in your task. "
+                f"Implement this task COMPLETELY. Use write_file to create EVERY file listed above. "
                 f"For large files (>100 lines), use write_file for the first section then append_file for remaining sections. "
                 f"Read existing files first with read_file if you need context. "
                 f"Write complete, working code — not stubs or placeholders. "
@@ -474,8 +479,6 @@ async def run_benchmark(coding_model: str):
                 build_context=build_context,
                 on_event=on_event,
             )
-
-            expected_files = (task.metadata or {}).get("files", [])
 
             task_start = time.time()
             try:
@@ -643,7 +646,7 @@ async def run_benchmark(coding_model: str):
         js_src = js_path.read_text()
         js_checks = [
             ("fetch() calls", "fetch(" in js_src),
-            ("/api/ endpoint usage", "/api/" in js_src),
+            ("/api/ endpoint usage", "/api/" in js_src or "/api'" in js_src or '/api"' in js_src),
             ("DOM manipulation", "document." in js_src),
         ]
         for label, passed in js_checks:

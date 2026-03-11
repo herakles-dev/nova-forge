@@ -386,6 +386,7 @@ class ForgeAgent:
         self._escalated = False
         self.autonomy_manager: AutonomyManager | None = None
         self.build_context = build_context  # BuildContext for multi-agent coordination
+        self._claimed_files: set[str] = set()  # Tracks files already claimed (suppresses duplicate events)
 
         # Auto-wire V11 hooks into the active HookSystem (provided or default)
         if wire_v11_hooks:
@@ -903,8 +904,10 @@ class ForgeAgent:
                     self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
                 return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
             self.build_context.update_claim_status(str(rel), self.agent_id, "writing")
-            if self.on_event:
-                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
+            if str(rel) not in self._claimed_files:
+                self._claimed_files.add(str(rel))
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
         # Read-tracking: warn on overwrite without reading (but allow new files)
         warning = ""
@@ -945,8 +948,10 @@ class ForgeAgent:
                     self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
                 return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
             self.build_context.update_claim_status(str(rel), self.agent_id, "writing")
-            if self.on_event:
-                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
+            if str(rel) not in self._claimed_files:
+                self._claimed_files.add(str(rel))
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
         path.parent.mkdir(parents=True, exist_ok=True)
         chunk = args["content"]
@@ -982,8 +987,10 @@ class ForgeAgent:
                 if self.on_event:
                     self.on_event(AgentEvent(kind="file_conflict", file_path=str(rel), error=f"owned by {owner}"))
                 return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file — it is NOT yours. Focus ONLY on your assigned files."
-            if self.on_event:
-                self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
+            if str(rel) not in self._claimed_files:
+                self._claimed_files.add(str(rel))
+                if self.on_event:
+                    self.on_event(AgentEvent(kind="file_claimed", file_path=str(rel)))
 
         # Read-tracking: BLOCK edit on unread files (agent must read first)
         if str(path) not in self._files_read:

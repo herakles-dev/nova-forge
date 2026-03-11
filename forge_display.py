@@ -47,6 +47,7 @@ THEME = Theme({
     "step": "bold white",
     "blocked": "dim yellow",
     "retry": "yellow",
+    "hint": "italic dim cyan",
     "file.read": "dim",
     "file.write": "green",
     "file.edit": "yellow",
@@ -571,7 +572,7 @@ def display_autonomy_panel(level: int, skill_level: str = "intermediate") -> Non
     from rich.columns import Columns
     from rich.text import Text
 
-    _level_names = {0: "Manual", 1: "Guided", 2: "Supervised", 3: "Trusted", 4: "Autonomous"}
+    _level_names = {0: "Manual", 1: "Guided", 2: "Supervised", 3: "Trusted", 4: "Autonomous", 5: "Unattended"}
     _caps = {
         0: ([], ["read files", "write files", "run commands", "all operations"]),
         1: (["read files freely"], ["write files", "run commands", "destructive ops"]),
@@ -580,19 +581,20 @@ def display_autonomy_panel(level: int, skill_level: str = "intermediate") -> Non
         3: (["read files freely", "write files freely", "run most commands"],
             ["permanent data deletion"]),
         4: (["everything — no interruptions"], []),
+        5: (["everything — CI/CD optimized, no interruptions"], []),
     }
 
     name = _level_names.get(level, str(level))
     can_do, asks_about = _caps.get(level, ([], []))
 
     # Visual bar
-    filled = level
-    empty = 4 - filled
+    filled = min(level, 5)
+    empty = max(0, 5 - filled)
     bar = "[cyan]" + "█" * filled + "[/][dim]" + "░" * empty + "[/]"
 
     lines: list[str] = [
         f"   Current: [bold]A{level} ({name})[/]",
-        f"   {bar} {level}/4",
+        f"   {bar} {level}/5",
         "",
     ]
 
@@ -603,7 +605,7 @@ def display_autonomy_panel(level: int, skill_level: str = "intermediate") -> Non
             lines.append(f"   [muted]✗[/] {ask} [dim](asks first)[/]")
         lines.append("")
 
-    lines.append("   [dim]Set: /autonomy 0-4   Explain: /autonomy ?[/]")
+    lines.append("   [dim]Set: /autonomy 0-5   Explain: /autonomy ?[/]")
 
     console.print(Panel(
         "\n".join(lines),

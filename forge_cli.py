@@ -280,7 +280,7 @@ HELP_TEXT = """
   [accent]/interview[/]          5-step guided project setup (advanced)
   [accent]/autonomy[/]           View or change how much Nova asks for approval
   [accent]/autonomy ?[/]         Explain all 5 autonomy levels
-  [accent]/autonomy[/] [muted]0-4[/]       Set level  [muted](0=Manual · 2=Supervised · 4=Autonomous)[/]
+  [accent]/autonomy[/] [muted]0-5[/]       Set level  [muted](0=Manual · 2=Supervised · 4=Autonomous · 5=Unattended)[/]
 
 [bold bright_white]Build[/]
   [accent]/plan[/] [muted]<goal>[/]        Plan a project from a description
@@ -1548,6 +1548,8 @@ class ForgeShell:
                         + "\n".join(f"- {c}" for c in unique)
                     )
 
+            expected_files = (task.metadata or {}).get("files", [])
+
             # Output limit coaching for small-context models
             chunk_hint = ""
             if ctx <= 32_000:
@@ -1558,15 +1560,19 @@ class ForgeShell:
                     "Strategy: write_file (first 80 lines) → append_file (next 80) → repeat.\n"
                 )
 
+            files_hint = ", ".join(expected_files) if expected_files else "as specified"
             prompt = (
                 f"## Project Spec\n{spec_text}\n\n"
                 f"## Your Task\n{task.subject}: {task.description}\n\n"
+                f"## Your Files\n"
+                f"You MUST create these files: {files_hint}\n"
+                f"Only write YOUR files. Do NOT create files that belong to other tasks.\n\n"
                 f"## Instructions\n"
-                f"Implement this task COMPLETELY. Use write_file to create EVERY file listed in your task. "
+                f"Implement this task COMPLETELY. Use write_file to create EVERY file listed above. "
                 f"For large files, use write_file for the first section then append_file for remaining sections. "
                 f"Read existing files first with read_file if you need context. "
                 f"Write complete, working code — not stubs or placeholders. "
-                f"Do NOT create extra files beyond what is listed in your task's file list."
+                f"Do NOT describe file contents in text — use write_file/append_file tools with the full content."
                 f"{chunk_hint}"
                 f"{spec_constraints}"
                 f"{read_instruction}"
@@ -1581,10 +1587,10 @@ class ForgeShell:
                 role="builder",
                 project_context=spec_text[:2000] if spec_text else "",
                 model_id=task_mc.model_id,
+                autonomy_level=self.assistant.read_autonomy_level(),
             )
 
             wave_start = time.time()
-            expected_files = (task.metadata or {}).get("files", [])
             try:
                 result = await agent.run(prompt=prompt, system=system_prompt)
                 duration = time.time() - wave_start
@@ -2066,6 +2072,17 @@ class ForgeShell:
         if all_files:
             console.print(f"  [muted]Files: {', '.join(all_files[:10])}[/]")
 
+        # Update user profile with build results (skill progression)
+        try:
+            profile = self.session_manager.load_profile()
+            profile = self.session_manager.update_profile_after_build(profile, passed, failed)
+            self.assistant.skill_level = profile.skill_level
+            # Also persist to global profile for cross-project defaults
+            from config import save_global_profile
+            save_global_profile(profile.to_dict())
+        except Exception:
+            pass  # Non-critical — don't block build on profile update
+
         # Auto-preview on successful build
         if passed > 0 and "--no-preview" not in arg:
             self._auto_preview()
@@ -2494,7 +2511,7 @@ class ForgeShell:
     # ── /autonomy ────────────────────────────────────────────────────────
 
     async def _cmd_autonomy(self, arg: str) -> None:
-        """View, explain, or change the autonomy level (A0-A4)."""
+        """View, explain, or change the autonomy level (A0-A5)."""
         from forge_display import display_autonomy_panel
 
         arg = arg.strip()
@@ -2757,7 +2774,11 @@ class ForgeShell:
 
         # V11-grade system prompt with chat role profile + environment context
         pb = PromptBuilder(self.project_path)
-        system = pb.build_enriched_system_prompt(role="chat", max_tokens=ctx_window)
+        system = pb.build_enriched_system_prompt(
+            role="chat",
+            max_tokens=ctx_window,
+            autonomy_level=self.assistant.read_autonomy_level(),
+        )
 
         # ── User prompt context sections ──────────────────────────────
         parts = [user_input]

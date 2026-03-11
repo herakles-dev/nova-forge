@@ -8,7 +8,7 @@
 - **CLI**: Click (forge.py) + custom interactive shell (forge_cli.py)
 - **LLM Providers**: AWS Bedrock (Nova), OpenRouter (Gemini), Anthropic (Claude)
 - **UI**: Rich (live progress, tables, panels, spinners)
-- **Testing**: pytest (871 tests in 37 test files)
+- **Testing**: pytest (883 tests in 37 test files)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
 - **Dependencies**: boto3, openai, anthropic, flask, rich, click, pyyaml, jsonschema, pydantic
 
@@ -175,7 +175,7 @@ nova-forge/
 ├── agents/                # 20 YAML agent definitions
 ├── schemas/               # 8 JSON schemas
 ├── templates/             # 4 app skeletons (flask-api, streamlit-dash, static-site, nova-chat)
-├── tests/unit/            # 871 tests (37 test files)
+├── tests/unit/            # 883 tests (37 test files)
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt

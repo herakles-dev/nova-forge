@@ -5,7 +5,7 @@ Tests:
   test_a0_blocks_all_risk_levels
   test_a1_allows_low_only
   test_a2_blocks_high
-  test_a3_allows_high
+  test_a3_blocks_high
   test_a4_allows_everything
   test_autonomy_manager_wired_into_agent
   test_record_build_result_success
@@ -105,12 +105,12 @@ def test_a2_blocks_high(tmp_path):
     assert mgr.check_permission(RiskLevel.HIGH) is False
 
 
-def test_a3_allows_high(tmp_path):
-    """A3 (Trusted) allows LOW, MEDIUM, and HIGH."""
+def test_a3_blocks_high(tmp_path):
+    """A3 (Trusted) allows LOW and MEDIUM but blocks HIGH (requires approval)."""
     mgr = make_manager(tmp_path, level=3)
     assert mgr.check_permission(RiskLevel.LOW) is True
     assert mgr.check_permission(RiskLevel.MEDIUM) is True
-    assert mgr.check_permission(RiskLevel.HIGH) is True
+    assert mgr.check_permission(RiskLevel.HIGH) is False
 
 
 def test_a4_allows_everything(tmp_path):

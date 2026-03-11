@@ -75,14 +75,14 @@ class TestBackwardCompatibility:
         assert mgr.check_permission(RiskLevel.MEDIUM) is True
         assert mgr.check_permission(RiskLevel.HIGH) is False
 
-    def test_a3_allows_all_risk_levels(self, tmp_path):
-        """A3 (Trusted) should allow LOW, MEDIUM, HIGH."""
+    def test_a3_allows_low_and_medium(self, tmp_path):
+        """A3 (Trusted) should allow LOW and MEDIUM but block HIGH (requires approval)."""
         af = tmp_path / "autonomy.json"
         af.write_text(json.dumps({"level": 3}))
         mgr = AutonomyManager(af)
         assert mgr.check_permission(RiskLevel.LOW) is True
         assert mgr.check_permission(RiskLevel.MEDIUM) is True
-        assert mgr.check_permission(RiskLevel.HIGH) is True
+        assert mgr.check_permission(RiskLevel.HIGH) is False
 
     def test_a4_allows_everything(self, tmp_path):
         """A4 (Autonomous) should allow everything."""

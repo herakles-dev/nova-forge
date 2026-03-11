@@ -722,7 +722,7 @@ class AutonomyManager:
         A0 (Manual)     — nothing allowed automatically.
         A1 (Guided)     — only LOW risk allowed.
         A2 (Supervised) — LOW and MEDIUM allowed; HIGH blocked.
-        A3 (Trusted)    — LOW and MEDIUM and HIGH allowed.
+        A3 (Trusted)    — LOW and MEDIUM allowed; HIGH requires approval.
         A4 (Autonomous) — everything allowed (includes any future CRITICAL level).
         A5 (Unattended) — same as A4, with enhanced logging.
         """
@@ -731,8 +731,9 @@ class AutonomyManager:
             # A4/A5: Autonomous/Unattended — everything allowed.
             return True
         if level >= 3:
-            # A3: Trusted — allow LOW, MEDIUM, HIGH; block only hypothetical CRITICAL.
-            return risk in (RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH)
+            # A3: Trusted — allow LOW and MEDIUM; HIGH still requires approval.
+            # (Matches check() which blocks HIGH at level < 4.)
+            return risk in (RiskLevel.LOW, RiskLevel.MEDIUM)
         if level >= 2:
             # A2: Supervised — allow LOW and MEDIUM; block HIGH.
             return risk in (RiskLevel.LOW, RiskLevel.MEDIUM)

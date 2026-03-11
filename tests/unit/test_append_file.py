@@ -22,6 +22,7 @@ def _make_agent(project_root: Path, build_context=None) -> ForgeAgent:
     agent.agent_id = "test-agent-1"
     agent.on_event = None
     agent._files_read = set()
+    agent._claimed_files = set()
     # Mock hooks with async methods
     agent.hooks = MagicMock()
     agent.hooks.pre_tool_use = AsyncMock(return_value=HookResult(blocked=False))
