@@ -57,7 +57,7 @@ MODEL_ALIASES: dict[str, str] = {
 
 # Default models for each pipeline phase
 DEFAULT_MODELS: dict[str, str] = {
-    "planning": "bedrock/us.amazon.nova-2-lite-v1:0",
+    "planning": "bedrock/us.amazon.nova-pro-v1:0",
     "coding":   "bedrock/us.amazon.nova-pro-v1:0",
     "review":   "bedrock/us.amazon.nova-2-lite-v1:0",
 }
