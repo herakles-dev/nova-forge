@@ -2266,6 +2266,124 @@ class ForgeShell:
                 json.dumps(artifact_manifest, indent=2)
             )
 
+        # ── Post-build integration check (formation-based) ────────────────
+        if not build_paused:
+            from forge_verify import scan_file_references
+            issues = scan_file_references(self.project_path)
+            if issues:
+                console.print()
+                console.print(f"  [warning]Integration issues detected ({len(issues)}):[/]")
+                for iss in issues[:5]:
+                    console.print(f"    [muted]• {iss}[/]")
+                console.print("  [info]Running integration-check formation (auditor → fixer → verifier)...[/]")
+
+                # Gather all generated files for context
+                all_gen_files = []
+                for t in store.list():
+                    if t.status == "completed" and t.metadata:
+                        all_gen_files.extend(t.metadata.get("files", []))
+                all_gen_files = list(dict.fromkeys(all_gen_files))
+
+                # Create integration tasks
+                issues_text = "\n".join(f"- {iss}" for iss in issues)
+                file_tree = "\n".join(f"  {f}" for f in all_gen_files)
+
+                auditor_task = store.create(
+                    subject="Audit cross-file integration",
+                    description=(
+                        f"Read ALL project files and identify cross-file issues.\n\n"
+                        f"Known issues from static scan:\n{issues_text}\n\n"
+                        f"Project files:\n{file_tree}\n\n"
+                        f"Read each file listed above. For each issue, explain:\n"
+                        f"1. What file has the problem\n"
+                        f"2. What the code does (e.g. send_static_file('index.html'))\n"
+                        f"3. Where the referenced file actually is (e.g. templates/index.html)\n"
+                        f"4. What the fix should be (e.g. change to render_template, add import)\n"
+                    ),
+                    metadata={"agent": "auditor", "files": [], "integration_fix": True},
+                )
+                fixer_task = store.create(
+                    subject="Fix integration issues",
+                    description=(
+                        f"Fix the cross-file issues identified by the auditor.\n\n"
+                        f"CRITICAL RULES:\n"
+                        f"- render_template() is a STANDALONE function: from flask import render_template\n"
+                        f"- It is NOT a method on app: NEVER write app.render_template()\n"
+                        f"- Files in templates/ → use render_template()\n"
+                        f"- Files in static/ → use send_static_file() or url_for('static')\n"
+                        f"- Always READ the file BEFORE editing to see its actual content\n"
+                        f"- Only fix the specific issues — do not rewrite entire files\n"
+                    ),
+                    metadata={"agent": "fixer", "files": all_gen_files, "integration_fix": True},
+                    blocked_by=[auditor_task.id],
+                )
+                verifier_task = store.create(
+                    subject="Verify integration fixes",
+                    description=(
+                        f"Verify the app works after fixes:\n"
+                        f"1. Read app.py to find the port number\n"
+                        f"2. Run: python3 app.py & (start server in background)\n"
+                        f"3. Wait 2 seconds, then run: curl -s -o /dev/null -w '%{{http_code}}' http://localhost:PORT/\n"
+                        f"4. Confirm status is 200\n"
+                        f"5. Run: kill %1 (stop server)\n"
+                        f"If status is not 200, report what went wrong."
+                    ),
+                    metadata={"agent": "verifier", "files": [], "integration_fix": True},
+                    blocked_by=[fixer_task.id],
+                )
+
+                # Run integration tasks using the integration-check formation
+                from formations import get_formation
+                fix_formation = get_formation("integration-check")
+                fix_tasks = [auditor_task, fixer_task, verifier_task]
+                fix_waves = store.compute_waves()
+
+                # Filter to only integration fix tasks
+                for fw_idx, fw_tasks in enumerate(fix_waves):
+                    fix_runnable = [
+                        t for t in fw_tasks
+                        if (t.metadata or {}).get("integration_fix")
+                        and store.get(t.id) and store.get(t.id).status not in ("completed", "blocked")
+                    ]
+                    if not fix_runnable:
+                        continue
+
+                    provider = get_provider(self.model)
+                    max_concurrent = PROVIDER_CONCURRENCY.get(provider, 4)
+                    fix_sem = asyncio.Semaphore(min(max_concurrent, len(fix_runnable)))
+
+                    for ft in fix_runnable:
+                        store.update(ft.id, status="in_progress")
+
+                    fix_coros = [
+                        self._run_single_task(
+                            ft, store, fix_tasks, fw_idx, fix_formation,
+                            fix_sem, build_ctx, cancellation, display
+                        )
+                        for ft in fix_runnable
+                    ]
+                    fix_results = await asyncio.gather(*fix_coros, return_exceptions=True)
+
+                    for i, fr in enumerate(fix_results):
+                        ft = fix_runnable[i]
+                        if isinstance(fr, Exception):
+                            store.update(ft.id, status="failed")
+                            console.print(f"    [error]✗[/] {ft.subject}  [muted](error: {fr})[/]")
+                        else:
+                            _, name, status, dur, tc, fc, cost, model_used = fr
+                            short_m = _short_model(model_used) if model_used else ""
+                            if status == "pass":
+                                console.print(f"    [success]✓[/] {name}  [muted]{dur:.0f}s  {short_m}[/]")
+                            else:
+                                console.print(f"    [error]✗[/] {name}  [muted]{dur:.0f}s  {short_m}[/]")
+
+                # Re-check if issues are resolved
+                remaining = scan_file_references(self.project_path)
+                if remaining:
+                    console.print(f"  [warning]Still {len(remaining)} integration issue(s) after fix attempt[/]")
+                else:
+                    console.print("  [success]Integration issues resolved![/]")
+
         # Skip gate review and verification if build was paused
         if not build_paused:
             # Gate review (skip with --no-review)

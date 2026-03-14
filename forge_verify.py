@@ -188,58 +188,9 @@ class BuildVerifier:
 
     def _check_file_references(self, result: VerifyResult) -> None:
         """Verify that code file references (templates, static files) resolve to actual files."""
+        mismatches = scan_file_references(self.project_path)
         py_files = sorted(self.project_path.glob("**/*.py"))
         py_files = [f for f in py_files if not _skip_path(f, self.project_path)]
-
-        mismatches = []
-        for f in py_files:
-            try:
-                src = f.read_text()
-            except Exception:
-                continue
-
-            # Flask: render_template('x.html') → must exist in templates/
-            for m in re.finditer(r"render_template\(\s*['\"]([^'\"]+)['\"]", src):
-                ref = m.group(1)
-                target = self.project_path / "templates" / ref
-                if not target.exists():
-                    # Check if it's misplaced in static/ instead
-                    alt = self.project_path / "static" / ref
-                    if alt.exists():
-                        mismatches.append(f"{f.name}: render_template('{ref}') but file is in static/, not templates/")
-                    else:
-                        mismatches.append(f"{f.name}: render_template('{ref}') but templates/{ref} missing")
-
-            # Flask: send_static_file('x.html') → must exist in static/
-            for m in re.finditer(r"send_static_file\(\s*['\"]([^'\"]+)['\"]", src):
-                ref = m.group(1)
-                target = self.project_path / "static" / ref
-                if not target.exists():
-                    alt = self.project_path / "templates" / ref
-                    if alt.exists():
-                        mismatches.append(f"{f.name}: send_static_file('{ref}') but file is in templates/, not static/")
-                    else:
-                        mismatches.append(f"{f.name}: send_static_file('{ref}') but static/{ref} missing")
-
-            # Jinja2: url_for('static', filename='x') → must exist in static/
-            for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
-                ref = m.group(1)
-                target = self.project_path / "static" / ref
-                if not target.exists():
-                    mismatches.append(f"{f.name}: url_for static '{ref}' but static/{ref} missing")
-
-        # Also check HTML templates for broken static references
-        html_files = list(self.project_path.glob("templates/**/*.html")) + list(self.project_path.glob("static/**/*.html"))
-        for f in html_files:
-            try:
-                src = f.read_text()
-            except Exception:
-                continue
-            for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
-                ref = m.group(1)
-                target = self.project_path / "static" / ref
-                if not target.exists():
-                    mismatches.append(f"{f.name}: references static/{ref} but file missing")
 
         if mismatches:
             result.add("file_references", False, "; ".join(mismatches[:5]))
@@ -689,3 +640,71 @@ def _extract_api_endpoints(spec_text: str, project_path: Path) -> list[tuple[str
                 continue
 
     return endpoints
+
+
+# ── Public file reference scanner ────────────────────────────────────────────
+
+def scan_file_references(project_path: Path) -> list[str]:
+    """Scan project for cross-file reference mismatches.
+
+    Returns a list of human-readable issue descriptions. Empty list = no issues.
+    Used by both BuildVerifier and the build pipeline's integration check.
+    """
+    project_path = Path(project_path)
+    py_files = sorted(project_path.glob("**/*.py"))
+    py_files = [f for f in py_files if not _skip_path(f, project_path)]
+
+    issues = []
+    for f in py_files:
+        try:
+            src = f.read_text()
+        except Exception:
+            continue
+
+        # Flask: render_template('x') → must exist in templates/
+        for m in re.finditer(r"render_template\(\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            target = project_path / "templates" / ref
+            if not target.exists():
+                alt = project_path / "static" / ref
+                if alt.exists():
+                    issues.append(f"{f.name}: render_template('{ref}') but file is in static/, not templates/")
+                else:
+                    issues.append(f"{f.name}: render_template('{ref}') but templates/{ref} missing")
+
+        # Flask: send_static_file('x') → must exist in static/
+        for m in re.finditer(r"send_static_file\(\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            target = project_path / "static" / ref
+            if not target.exists():
+                alt = project_path / "templates" / ref
+                if alt.exists():
+                    issues.append(f"{f.name}: send_static_file('{ref}') but file is in templates/, not static/")
+                else:
+                    issues.append(f"{f.name}: send_static_file('{ref}') but static/{ref} missing")
+
+        # url_for('static', filename='x') → must exist in static/
+        for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            target = project_path / "static" / ref
+            if not target.exists():
+                issues.append(f"{f.name}: url_for static '{ref}' but static/{ref} missing")
+
+        # app.render_template() — common mistake (it's a standalone function)
+        for m in re.finditer(r"app\.render_template\(", src):
+            issues.append(f"{f.name}: app.render_template() is invalid — use render_template() (standalone function from flask)")
+
+    # Check HTML templates for broken static references
+    html_files = list(project_path.glob("templates/**/*.html")) + list(project_path.glob("static/**/*.html"))
+    for f in html_files:
+        try:
+            src = f.read_text()
+        except Exception:
+            continue
+        for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            target = project_path / "static" / ref
+            if not target.exists():
+                issues.append(f"{f.name}: references static/{ref} but file missing")
+
+    return issues

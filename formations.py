@@ -666,6 +666,86 @@ _ALL_HANDS_PLANNING = Formation(
 )
 
 
+# Formation 11: integration-check
+# Post-build cross-file verification and repair.
+_INTEGRATION_CHECK = Formation(
+    name="integration-check",
+    description=(
+        "Post-build integration verification. Runs after all build tasks complete "
+        "to catch cross-file mismatches that parallel agents introduce. "
+        "Auditor reads ALL generated files (read-only, smart model) and produces "
+        "a diagnosis listing every cross-file issue. Fixer applies targeted repairs. "
+        "Verifier starts the server, hits GET /, and confirms the app works end-to-end. "
+        "Use when: build completed but verification found file reference mismatches, "
+        "broken routes, or missing imports between modules."
+    ),
+    roles=[
+        Role(
+            name="auditor",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["*"],
+            },
+            description=(
+                "Reads ALL generated project files and identifies cross-file issues: "
+                "file reference mismatches (send_static_file vs render_template vs wrong directory), "
+                "broken imports between modules, routes that reference missing files, "
+                "template/static directory confusion. Produces a structured diagnosis. "
+                "READ-ONLY — do not modify any files."
+            ),
+        ),
+        Role(
+            name="fixer",
+            model=_FAST_MODEL,
+            tool_policy="coding",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["*.py", "*.html", "*.js", "*.css", "*.json"],
+            },
+            description=(
+                "Applies targeted fixes based on auditor's diagnosis. Key rules: "
+                "- render_template() is a standalone function from flask, NOT app.render_template() "
+                "- Files in templates/ must be served via render_template() "
+                "- Files in static/ must be served via send_static_file() or url_for('static') "
+                "- Always add missing imports (e.g. from flask import render_template) "
+                "- Read each file before editing to confirm the actual content "
+                "Minimal changes — fix ONLY the identified issues."
+            ),
+        ),
+        Role(
+            name="verifier",
+            model=_FAST_MODEL,
+            tool_policy="testing",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": [],
+            },
+            description=(
+                "Verifies the fixes work by running the app and testing it: "
+                "1. Run bash: python3 app.py & (or equivalent) to start the server "
+                "2. Run bash: curl -s -o /dev/null -w '%{http_code}' http://localhost:PORT/ "
+                "3. Confirm the status code is 200 "
+                "4. Kill the server process "
+                "Default position is FAIL — evidence must prove the app serves correctly."
+            ),
+        ),
+    ],
+    wave_order=[["auditor"], ["fixer"], ["verifier"]],
+    gate_criteria=[
+        "Auditor has identified all cross-file issues",
+        "Fixer has applied minimal, targeted repairs",
+        "Verifier confirmed GET / returns 200",
+        "No new files created — only existing files fixed",
+    ],
+    tool_policy_defaults="coding",
+)
+
+
 # ── Module-level FORMATIONS registry ────────────────────────────────────────
 
 FORMATIONS: dict[str, Formation] = {
@@ -679,6 +759,7 @@ FORMATIONS: dict[str, Formation] = {
     "code-review":         _CODE_REVIEW,
     "recovery":            _RECOVERY,
     "all-hands-planning":  _ALL_HANDS_PLANNING,
+    "integration-check":   _INTEGRATION_CHECK,
 }
 
 

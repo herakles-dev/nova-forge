@@ -106,7 +106,7 @@ User Goal -> Interview (3-phase deep planning)
 | forge_preview.py | 800 | PreviewManager — 14-stack detection + Cloudflare Tunnel |
 | forge_orchestrator.py | 751 | Plan/build/deploy orchestration + JSON recovery |
 | forge.py | 740 | Click CLI commands (14 commands) |
-| formations.py | 656 | 10 formations + DAAO routing + 5 tool policies |
+| formations.py | 656 | 11 formations + DAAO routing + 5 tool policies |
 | forge_tasks.py | 643 | TaskStore + topological sort (Kahn's algorithm) |
 | forge_index.py | 634 | ProjectIndex, export/import scanning, dependency graph |
 | forge_session.py | 625 | Session lifecycle + persistence |
@@ -169,7 +169,7 @@ nova-forge/
 ├── forge_verify.py             # BuildVerifier (L1-L3 checks)
 ├── forge_display.py            # Rich live UI
 ├── forge_theme.py              # Brand design tokens
-├── formations.py               # 10 formations + DAAO routing
+├── formations.py               # 11 formations + DAAO routing
 ├── forge_tasks.py              # TaskStore + topo sort
 ├── forge_*.py                  # (14 more modules — see Module Map)
 ├── benchmark_nova_models.py    # Model benchmark suite

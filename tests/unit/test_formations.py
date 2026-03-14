@@ -12,13 +12,13 @@ from formations import (
 class TestFormationRegistry:
     """All 8 formations are importable and well-formed."""
 
-    def test_ten_formations_registered(self):
-        assert len(FORMATIONS) == 10
+    def test_eleven_formations_registered(self):
+        assert len(FORMATIONS) == 11
         expected = {
             "single-file", "lightweight-feature", "feature-impl",
             "new-project", "bug-investigation", "security-review",
             "perf-optimization", "code-review",
-            "recovery", "all-hands-planning",
+            "recovery", "all-hands-planning", "integration-check",
         }
         assert set(FORMATIONS.keys()) == expected
 
