@@ -30,6 +30,37 @@ from forge_tasks import TaskStore, Task
 logger = logging.getLogger(__name__)
 
 
+def _infer_files_from_subject(subject: str, description: str = "") -> list[str]:
+    """Infer file paths from task subject like 'Create app.py — Flask server'.
+
+    Handles patterns:
+      'Create models.py — ...'       -> ['models.py']
+      'Create static/style.css'      -> ['static/style.css']
+      'Create templates/index.html'  -> ['templates/index.html']
+      'Build app.js — ...'           -> ['app.js']
+    """
+    import re
+    text = subject + " " + description
+
+    # Direct file references in subject
+    files = []
+    for m in re.finditer(r'(?:Create|Build|Write|Add|Implement)\s+([a-zA-Z0-9_/.-]+\.\w{1,6})', subject, re.IGNORECASE):
+        candidate = m.group(1)
+        if candidate and not candidate.startswith('.'):
+            files.append(candidate)
+
+    if files:
+        return files
+
+    # Fall back to any file-like patterns in subject
+    for m in re.finditer(r'([a-zA-Z0-9_]+(?:/[a-zA-Z0-9_]+)*\.\w{1,6})', subject):
+        candidate = m.group(1)
+        if candidate and not candidate.startswith('.') and candidate not in files:
+            files.append(candidate)
+
+    return files
+
+
 def _recover_json(raw: str) -> list | None:
     """Attempt to recover a JSON array from malformed LLM output.
 
@@ -327,6 +358,15 @@ class ForgeOrchestrator:
                     else:
                         raise parse_err
                 if isinstance(tasks_data, list):
+                    # Infer missing 'files' field from task subject
+                    for t in tasks_data:
+                        if not t.get("files"):
+                            inferred = _infer_files_from_subject(t.get("subject", ""), t.get("description", ""))
+                            if inferred:
+                                t["files"] = inferred
+                    # Write back with inferred files
+                    tasks_path.write_text(json.dumps(tasks_data, indent=2))
+
                     # Merge tasks that share files to prevent parallel conflicts
                     tasks_data = self._dedup_tasks(tasks_data)
                     task_count = len(tasks_data)
