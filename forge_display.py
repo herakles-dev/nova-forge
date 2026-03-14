@@ -130,8 +130,11 @@ class TaskTrace:
     files_edited: list = field(default_factory=list)
     commands_run: list = field(default_factory=list)
     error: str = ""
+    tool_log: list = field(default_factory=list)  # Per-tool-call detail for proof-of-work
+    self_corrections: int = 0
     _current_tool: str = ""
     _current_file: str = ""
+    _tool_start_ms: int = 0
 
     @property
     def duration(self) -> float:
@@ -191,8 +194,16 @@ class BuildDisplay:
                 completed=0,
             )
 
-    def end_task(self, task_id: int, passed: bool, result: Any = None) -> None:
-        """Called when a build task finishes."""
+    def end_task(self, task_id: int, passed: bool, result: Any = None, suppress_output: bool = False) -> None:
+        """Called when a build task finishes.
+
+        Args:
+            task_id: The task identifier.
+            passed: Whether the task passed.
+            result: Optional AgentResult with token/turn details.
+            suppress_output: If True, skip printing the task result line
+                (useful when the caller prints its own detailed output).
+        """
         trace = self.traces.get(task_id)
         if not trace:
             return
@@ -205,6 +216,7 @@ class BuildDisplay:
             trace.tokens_out += getattr(result, "token_usage", {}).get("output", 0)
             if not passed and getattr(result, "error", None):
                 trace.error = result.error
+            trace.self_corrections = getattr(result, "self_corrections", 0)
 
         self._completed += 1
 
@@ -212,8 +224,9 @@ class BuildDisplay:
         if self._progress and self._overall_task is not None:
             self._progress.update(self._overall_task, completed=self._completed)
 
-        # Print task result line
-        self._print_task_result(trace)
+        # Print task result line (unless caller handles its own output)
+        if not suppress_output:
+            self._print_task_result(trace)
 
     def mark_blocked(self, task_id: int, subject: str, reason: str) -> None:
         """Called when a task is blocked due to failed dependencies."""
@@ -258,10 +271,20 @@ class BuildDisplay:
             trace.tool_calls += 1
             trace._current_tool = event.tool_name
             trace._current_file = event.file_path
+            trace._tool_start_ms = int(time.monotonic() * 1000)
             self._update_tool_status(event, trace)
 
         elif event.kind == "tool_end":
             trace.tool_ms += event.duration_ms
+            # Record per-tool-call detail for proof-of-work log
+            tool_entry = {
+                "tool": trace._current_tool,
+                "file": trace._current_file or event.file_path or "",
+                "action": event.file_action or "",
+                "duration_ms": event.duration_ms,
+                "error": event.error or "",
+            }
+            trace.tool_log.append(tool_entry)
             # Track files
             if event.file_action == "write" and event.file_path:
                 if event.file_path not in trace.files_written:
@@ -301,6 +324,12 @@ class BuildDisplay:
                 self._progress.update(
                     self._current_task,
                     description="[warning]Pausing after current operation...[/]",
+                )
+        elif event.kind == "turn_limit_warning":
+            if self._progress and self._current_task is not None:
+                self._progress.update(
+                    self._current_task,
+                    description="[warning]Turn limit reached — extending...[/]",
                 )
         elif event.kind == "error":
             trace.error = event.error
@@ -543,6 +572,8 @@ class BuildDisplay:
                         "files_edited": trace.files_edited,
                         "commands_run": trace.commands_run[:10],
                         "error": trace.error or "",
+                        "tool_log": trace.tool_log[:50],
+                        "self_corrections": trace.self_corrections,
                     }
                     f.write(json.dumps(entry) + "\n")
 

@@ -273,7 +273,7 @@ class BuildVerifier:
 
         url = f"http://localhost:{port}{path}"
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             req = urllib.request.Request(url, headers={"User-Agent": "NovaForge-Verify/1.0"})
             resp = await loop.run_in_executor(
                 None,
@@ -293,7 +293,7 @@ class BuildVerifier:
 
         url = f"http://localhost:{port}{path}"
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             req = urllib.request.Request(url, headers={"User-Agent": "NovaForge-Verify/1.0"})
             resp = await loop.run_in_executor(
                 None,

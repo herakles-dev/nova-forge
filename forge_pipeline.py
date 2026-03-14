@@ -409,14 +409,27 @@ class WaveExecutor:
             return role.name, task, result
 
         coros = [run_one(t) for t in tasks]
-        gather_results: list[tuple[str, Task, AgentResult]] = await asyncio.gather(
-            *coros, return_exceptions=False
-        )
+        raw_results = await asyncio.gather(*coros, return_exceptions=True)
 
         # Build agent_results keyed by role name + task id to avoid collisions
         # when multiple tasks use the same role.
         agent_results: dict[str, AgentResult] = {}
-        for role_name, task, result in gather_results:
+        for i, raw in enumerate(raw_results):
+            task = tasks[i]
+            if isinstance(raw, BaseException):
+                # Task raised an unhandled exception — wrap as a failed AgentResult
+                logger.error("Task %s raised exception: %s", task.id, raw)
+                role_name = "unknown"
+                result = AgentResult(error=str(raw))
+                errors.append(f"Task {task.id} ({task.subject}): {raw}")
+                try:
+                    self.store.update(task.id, status="failed")
+                except (KeyError, ValueError) as exc:
+                    logger.warning("Could not mark task %s failed: %s", task.id, exc)
+                key = f"{role_name}:{task.id}"
+                agent_results[key] = result
+                continue
+            role_name, task, result = raw
             # Key format: role_name if unique, else role_name:task_id
             key = role_name if role_name not in agent_results else f"{role_name}:{task.id}"
             agent_results[key] = result

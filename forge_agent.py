@@ -369,6 +369,7 @@ class ForgeAgent:
         escalation_model: str | None = None,
         build_context: Any = None,
         cancellation: Any = None,
+        soft_max_turns: int | None = None,
     ) -> None:
         self.model_config = model_config
         self.project_root = Path(project_root).resolve()
@@ -378,6 +379,7 @@ class ForgeAgent:
         self.risk_classifier = RiskClassifier()
         self.tools = tools if tools is not None else BUILT_IN_TOOLS
         self.max_turns = max_turns
+        self.soft_max_turns = soft_max_turns or max_turns
         self.agent_id = agent_id
         self.provider = get_provider(model_config.model_id)
         self._hook_state = None
@@ -448,7 +450,9 @@ class ForgeAgent:
         self._self_correction_count = 0
         _syntax_error_files: list[str] = []
 
-        for turn in range(self.max_turns):
+        turn = 0
+        hard_limit = self.max_turns * 2  # absolute safety cap
+        while turn < hard_limit:
             # Check for cooperative cancellation (Ctrl-C pause)
             if self._cancellation and self._cancellation.is_paused():
                 return AgentResult(
@@ -461,6 +465,13 @@ class ForgeAgent:
                     tokens_in=_total_in,
                     tokens_out=_total_out,
                 )
+
+            # Soft turn limit warning
+            if turn == self.soft_max_turns - 1 and self.on_event:
+                try:
+                    self.on_event(AgentEvent(kind="turn_limit_warning", turn=turn + 1))
+                except Exception:
+                    pass
 
             # Emit turn_start event
             if self.on_event:
@@ -576,6 +587,7 @@ class ForgeAgent:
                     adapter = self.router.route(self.model_config.model_id)
                     messages.append(adapter.format_assistant_message(response))
                     messages.append({"role": "user", "content": error_msg})
+                    turn += 1
                     continue  # Let the model retry this turn
 
                 tool_calls = valid_calls  # Use only valid calls
@@ -600,6 +612,7 @@ class ForgeAgent:
                     messages.append({"role": "user", "content": verify_prompt})
                     self.auto_verify = False  # Don't re-inject phase 1
                     self._awaiting_read_proof = True
+                    turn += 1
                     continue
 
                 # Self-correction phase 2: model said "verified" without reading
@@ -621,6 +634,7 @@ class ForgeAgent:
                     adapter = self.router.route(self.model_config.model_id)
                     messages.append(adapter.format_assistant_message(response))
                     messages.append({"role": "user", "content": force_read})
+                    turn += 1
                     continue
 
                 # Clear read proof flag if model DID use tools (it read/fixed files)
@@ -739,6 +753,7 @@ class ForgeAgent:
                 )
                 messages.append({"role": "user", "content": fix_msg})
                 _syntax_error_files.clear()
+                turn += 1
                 continue  # Force another turn to fix
 
             # Context compaction — threshold from budget (60% for 32K, 75% for 200K, 80% for 1M+)
@@ -752,7 +767,9 @@ class ForgeAgent:
                     self._estimate_tokens(messages),
                 )
 
-        # Escalation: if max_turns hit and we have an escalation target, retry with smarter model
+            turn += 1
+
+        # Escalation: if hard limit hit and we have an escalation target, retry with smarter model
         if self.escalation_model and not self._escalated:
             self._escalated = True
             new_config = get_model_config(self.escalation_model, max_tokens=self.model_config.max_tokens)
@@ -785,7 +802,7 @@ class ForgeAgent:
 
         return AgentResult(
             output="Max turns reached",
-            turns=self.max_turns,
+            turns=turn,
             artifacts=artifacts,
             tool_calls_made=total_tool_calls,
             error="max_turns_exceeded",

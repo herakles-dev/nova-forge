@@ -1547,6 +1547,19 @@ class ForgeShell:
                 for tf in task_files_meta:
                     build_ctx.claim_file(tf, agent_id)
 
+            # Create per-task event callback that routes to the correct trace
+            # When tasks run in parallel, each agent needs its own closure
+            # to set _active_task_id before delegating to display.on_event
+            if display:
+                def _make_event_cb(tid):
+                    def _cb(event):
+                        display._active_task_id = tid
+                        display.on_event(event)
+                    return _cb
+                task_event_cb = _make_event_cb(task.id)
+            else:
+                task_event_cb = None
+
             agent = ForgeAgent(
                 model_config=task_mc,
                 project_root=self.project_path,
@@ -1556,7 +1569,7 @@ class ForgeShell:
                 escalation_model=escalation,
                 build_context=build_ctx,
                 cancellation=cancellation,
-                on_event=display.on_event if display else None,
+                on_event=task_event_cb,
             )
 
             spec_text = ""
@@ -2148,7 +2161,7 @@ class ForgeShell:
                 if isinstance(result, Exception):
                     store.update(task.id, status="failed")
                     wave_results.append((wave_idx, task.subject, "fail", 0.0))
-                    display.end_task(task.id, passed=False)
+                    display.end_task(task.id, passed=False, suppress_output=True)
                     console.print(
                         f"  [error]{task.subject}[/]  [muted](error: {result})[/]"
                     )
@@ -2163,10 +2176,10 @@ class ForgeShell:
                     cost_str = f"  {format_cost(cost)}" if cost > 0 else ""
                     model_str = f"  {short_m}" if short_m else ""
                     if status == "pass":
-                        display.end_task(task.id, passed=True)
+                        display.end_task(task.id, passed=True, suppress_output=True)
                         console.print(f"  [success]\u2713[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "fail":
-                        display.end_task(task.id, passed=False)
+                        display.end_task(task.id, passed=False, suppress_output=True)
                         console.print(f"  [error]\u2717[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "paused":
                         console.print(f"  [warning]\u23f8[/] {name}  [muted](paused)[/]")
@@ -4243,8 +4256,13 @@ class ForgeShell:
         # Display result
         console.print()
         if result.error:
-            console.print(f"  [error]Something went wrong:[/] {result.error}")
-            console.print(f"  [hint]Try rephrasing, or check your credentials.[/]")
+            if result.error == "max_turns_exceeded":
+                console.print(f"\n  [warning]Nova used all available turns ({result.turns}).[/]")
+                console.print(f"  [hint]Your request may need more steps. Try breaking it into smaller parts,[/]")
+                console.print(f"  [hint]or just ask Nova to continue where it left off.[/]")
+            else:
+                console.print(f"  [error]Something went wrong:[/] {result.error}")
+                console.print(f"  [hint]Try rephrasing, or check your credentials.[/]")
         elif result.output:
             console.print(f"  [nova]Nova[/] [muted]--[/]", end=" ")
             if any(c in result.output for c in ["```", "##", "- "]):
