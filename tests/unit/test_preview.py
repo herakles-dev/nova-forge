@@ -167,11 +167,15 @@ class TestPreviewManager:
             mgr.start()
         mgr.stop()
 
-    @patch("forge_preview.shutil.which", return_value=None)
-    def test_start_raises_without_cloudflared(self, mock_which, tmp_path):
+    @patch("forge_preview._ensure_cloudflared", return_value=None)
+    def test_start_falls_back_to_local_without_cloudflared(self, mock_ensure, tmp_path):
+        """Without cloudflared, start() falls back to local-only preview."""
         (tmp_path / "app.py").write_text("from flask import Flask\n")
         mgr = PreviewManager(tmp_path)
-        with pytest.raises(PreviewError, match="cloudflared not found"):
+        # Should not raise about cloudflared — falls back to local preview.
+        # But server won't actually start (no real Flask app), so expect PreviewError
+        # about server start failure, NOT about cloudflared.
+        with pytest.raises(PreviewError, match="Server failed to start"):
             mgr.start()
         mgr.stop()
 
@@ -512,7 +516,7 @@ class TestPreviewResilience:
     def test_reconnect_tunnel_raises_without_cloudflared(self, tmp_path):
         mgr = PreviewManager(tmp_path)
         mgr._port = 19880
-        with patch("forge_preview.shutil.which", return_value=None):
+        with patch("forge_preview._ensure_cloudflared", return_value=None):
             with pytest.raises(PreviewError, match="cloudflared not found"):
                 mgr._reconnect_tunnel()
         mgr.stop()

@@ -1543,6 +1543,7 @@ class ForgeShell:
         semaphore: asyncio.Semaphore,
         build_ctx: Any = None,
         cancellation: Any = None,
+        display: Any = None,
     ) -> tuple[int, str, str, float, int, int, float, str]:
         """Execute a single task inside a semaphore-limited slot.
 
@@ -1610,6 +1611,7 @@ class ForgeShell:
                 escalation_model=escalation,
                 build_context=build_ctx,
                 cancellation=cancellation,
+                on_event=display.on_event if display else None,
             )
 
             spec_text = ""
@@ -2090,7 +2092,6 @@ class ForgeShell:
 
         # ── Execute waves ─────────────────────────────────────────────────
         console.print(f"  [nova]Nova[/] is building your project...")
-        console.print(f"  [muted]{len(retryable)} tasks to complete  (Ctrl-C to pause)[/]")
         console.print()
 
         try:
@@ -2106,15 +2107,23 @@ class ForgeShell:
         wave_results: list[tuple[int, str, str, float]] = []
         build_paused = False
 
+        # ── Live progress display ────────────────────────────────────────
+        from forge_display import BuildDisplay
+        display = BuildDisplay(total_tasks=len(retryable))
+        progress = display.create_progress()
+
         wave_idx = 0
-        while wave_idx < len(waves):
+        with progress:
+          while wave_idx < len(waves):
             # Check for pause at wave boundary
             if cancellation.is_paused():
+                progress.stop()
                 choice = await self._show_pause_menu(store)
                 if choice == "resume":
                     cancellation.reset()
                     waves = store.compute_waves()
                     wave_idx = 0  # restart; existing filter skips completed
+                    progress.start()
                     continue
                 else:  # cancel or None
                     build_paused = True
@@ -2136,6 +2145,7 @@ class ForgeShell:
             max_concurrent = PROVIDER_CONCURRENCY.get(provider, 4)
             semaphore = asyncio.Semaphore(min(max_concurrent, len(runnable)))
 
+            # Wave header — print through progress context
             console.print()
             console.print(f"  ", end="")
             console.print(wave_header(wave_idx, len(waves), len(runnable)))
@@ -2148,9 +2158,13 @@ class ForgeShell:
             for task in runnable:
                 store.update(task.id, status="in_progress")
 
-            # Launch all tasks in this wave concurrently
+            # Notify display of each starting task
+            for task in runnable:
+                display.start_task(task.id, task.subject)
+
+            # Launch all tasks in this wave concurrently (with live display)
             coros = [
-                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore, build_ctx, cancellation)
+                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore, build_ctx, cancellation, display)
                 for task in runnable
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
@@ -2163,6 +2177,7 @@ class ForgeShell:
                 if isinstance(result, Exception):
                     store.update(task.id, status="failed")
                     wave_results.append((wave_idx, task.subject, "fail", 0.0))
+                    display.end_task(task.id, passed=False)
                     console.print(
                         f"  [error]{task.subject}[/]  [muted](error: {result})[/]"
                     )
@@ -2177,8 +2192,10 @@ class ForgeShell:
                     cost_str = f"  {format_cost(cost)}" if cost > 0 else ""
                     model_str = f"  {short_m}" if short_m else ""
                     if status == "pass":
+                        display.end_task(task.id, passed=True)
                         console.print(f"  [success]\u2713[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "fail":
+                        display.end_task(task.id, passed=False)
                         console.print(f"  [error]\u2717[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "paused":
                         console.print(f"  [warning]\u23f8[/] {name}  [muted](paused)[/]")
@@ -2189,11 +2206,14 @@ class ForgeShell:
 
             # If any task was paused, check cancellation at wave boundary
             if any_paused and cancellation.is_paused():
+                progress.stop()
+                display.update_pause_visual()
                 choice = await self._show_pause_menu(store)
                 if choice == "resume":
                     cancellation.reset()
                     waves = store.compute_waves()
                     wave_idx = 0
+                    progress.start()
                     continue
                 else:
                     build_paused = True
@@ -2762,13 +2782,15 @@ class ForgeShell:
             if self._preview_mgr is None:
                 self._preview_mgr = PreviewManager(self.project_path)
 
-            tunnel_url = self._preview_mgr.start(stack_info=si)
+            preview_url = self._preview_mgr.start(stack_info=si)
+            is_local = preview_url.startswith("http://localhost")
+            title = "[bold green] Local Preview [/]" if is_local else "[bold green] Live Preview [/]"
             console.print(Panel(
-                f"[bold green]{tunnel_url}[/]\n\n"
+                f"[bold green]{preview_url}[/]\n\n"
                 f"  [muted]Stack: {si.kind} ({si.entry})[/]\n"
                 f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
                 border_style="green",
-                title="[bold green] Live Preview [/]",
+                title=title,
                 padding=(1, 2),
             ))
         except PreviewError as e:
@@ -2824,19 +2846,36 @@ class ForgeShell:
             loc = f" from {rel}/" if str(rel) != "." else ""
             console.print(f"  [info]Preview:[/] {self.project_path.name} ({si.kind}{loc}) on port {si.port}")
             console.print(f"  [muted]Server: {si.server_cmd}[/]")
-            console.print("  Starting Cloudflare Tunnel (up to 3 retries)...")
+            from forge_preview import _ensure_cloudflared
+            cf_path = _ensure_cloudflared()
+            if cf_path:
+                console.print("  Starting Cloudflare Tunnel (up to 3 retries)...")
+            else:
+                console.print("  [muted]cloudflared unavailable — starting local preview[/]")
 
-            tunnel_url = self._preview_mgr.start(stack_info=si)
+            preview_url = self._preview_mgr.start(stack_info=si)
+            is_local = preview_url.startswith("http://localhost")
 
             console.print()
-            console.print(Panel(
-                f"[bold green]{tunnel_url}[/]\n\n"
-                f"  [muted]Type [accent]/preview stop[/] to shut down.\n"
-                f"  Type [accent]/preview status[/] to check health.[/]",
-                border_style="green",
-                title="[bold green] Live Preview [/]",
-                padding=(1, 2),
-            ))
+            if is_local:
+                console.print(Panel(
+                    f"[bold green]{preview_url}[/]\n\n"
+                    f"  [muted]Local preview — install cloudflared for a public URL.\n"
+                    f"  Type [accent]/preview stop[/] to shut down.\n"
+                    f"  Type [accent]/preview status[/] to check health.[/]",
+                    border_style="green",
+                    title="[bold green] Local Preview [/]",
+                    padding=(1, 2),
+                ))
+            else:
+                console.print(Panel(
+                    f"[bold green]{preview_url}[/]\n\n"
+                    f"  [muted]Type [accent]/preview stop[/] to shut down.\n"
+                    f"  Type [accent]/preview status[/] to check health.[/]",
+                    border_style="green",
+                    title="[bold green] Live Preview [/]",
+                    padding=(1, 2),
+                ))
         except PreviewError as e:
             err = str(e)
             console.print(f"  [error]{err}[/]")

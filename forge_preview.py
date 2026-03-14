@@ -40,6 +40,65 @@ TUNNEL_RETRIES = 3
 TUNNEL_BACKOFF_BASE = 2.0
 HEALTH_CACHE_TTL = 5.0
 
+# ── cloudflared download URLs ────────────────────────────────────────────
+import platform as _platform
+
+_CF_VERSION = "2025.2.1"
+_CF_BASE = f"https://github.com/cloudflare/cloudflared/releases/download/{_CF_VERSION}"
+_CF_URLS: dict[tuple[str, str], str] = {
+    ("Linux", "x86_64"):  f"{_CF_BASE}/cloudflared-linux-amd64",
+    ("Linux", "aarch64"): f"{_CF_BASE}/cloudflared-linux-arm64",
+    ("Darwin", "x86_64"): f"{_CF_BASE}/cloudflared-darwin-amd64.tgz",
+    ("Darwin", "arm64"):  f"{_CF_BASE}/cloudflared-darwin-arm64.tgz",
+}
+
+
+def _ensure_cloudflared() -> str | None:
+    """Return path to cloudflared, downloading it if necessary.
+
+    Downloads to ~/.forge/bin/cloudflared (user-local, no sudo needed).
+    Returns None if platform is unsupported or download fails.
+    """
+    # Already on PATH?
+    existing = shutil.which("cloudflared")
+    if existing:
+        return existing
+
+    # Check our local install location
+    local_bin = Path.home() / ".forge" / "bin"
+    local_cf = local_bin / "cloudflared"
+    if local_cf.exists() and os.access(local_cf, os.X_OK):
+        return str(local_cf)
+
+    # Determine download URL
+    system = _platform.system()
+    machine = _platform.machine()
+    url = _CF_URLS.get((system, machine))
+    if not url:
+        return None
+
+    # Download
+    try:
+        local_bin.mkdir(parents=True, exist_ok=True)
+        if url.endswith(".tgz"):
+            import tarfile
+            import io
+            data = urllib.request.urlopen(url, timeout=60).read()
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+                for member in tar.getmembers():
+                    if member.name.endswith("cloudflared"):
+                        f = tar.extractfile(member)
+                        if f:
+                            local_cf.write_bytes(f.read())
+                            break
+        else:
+            data = urllib.request.urlopen(url, timeout=60).read()
+            local_cf.write_bytes(data)
+        local_cf.chmod(0o755)
+        return str(local_cf)
+    except Exception:
+        return None
+
 
 class PreviewError(Exception):
     """Raised when preview cannot be started."""
@@ -559,13 +618,13 @@ class PreviewManager:
 
     @property
     def is_running(self) -> bool:
-        """True if both server and tunnel processes are alive."""
-        return (
-            self._server_proc is not None
-            and self._server_proc.poll() is None
-            and self._tunnel_proc is not None
-            and self._tunnel_proc.poll() is None
-        )
+        """True if server is alive (and tunnel too, if started)."""
+        if self._server_proc is None or self._server_proc.poll() is not None:
+            return False
+        # Local-only mode: no tunnel proc
+        if self._tunnel_proc is None:
+            return True
+        return self._tunnel_proc.poll() is None
 
     def start(self, stack_info: StackInfo | None = None) -> str:
         """Start preview. Stops any existing preview first.
@@ -597,13 +656,8 @@ class PreviewManager:
         self._stack = si
         self._port = si.port
 
-        # Find cloudflared
-        cf_path = shutil.which("cloudflared")
-        if not cf_path:
-            raise PreviewError(
-                "cloudflared not found. "
-                "Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
-            )
+        # Find cloudflared (auto-downloads if missing, falls back to local-only)
+        cf_path = _ensure_cloudflared()
 
         # Install deps if needed
         if si.needs_install and si.install_cmd:
@@ -631,7 +685,13 @@ class PreviewManager:
                 msg += f": {err_text[-300:]}"
             raise PreviewError(msg)
 
-        # Start tunnel with retry + exponential backoff
+        # Start tunnel with retry + exponential backoff (or local-only fallback)
+        if not cf_path:
+            local_url = f"http://localhost:{si.port}"
+            self._url = local_url
+            self._health_cache = None
+            return local_url
+
         tunnel_url = None
         last_err = "timed out"
         for attempt in range(TUNNEL_RETRIES):
@@ -745,10 +805,11 @@ class PreviewManager:
 
         server_alive = self._server_proc is not None and self._server_proc.poll() is None
         tunnel_alive = self._tunnel_proc is not None and self._tunnel_proc.poll() is None
+        local_only = self._tunnel_proc is None and self._url and self._url.startswith("http://localhost")
         http_ok = self._http_health_ok()
 
         # Everything healthy
-        if server_alive and tunnel_alive and http_ok:
+        if server_alive and (tunnel_alive or local_only) and http_ok:
             return True
 
         # Server died — restart it
@@ -758,8 +819,8 @@ class PreviewManager:
             except PreviewError:
                 return False
 
-        # Tunnel died — reconnect
-        if not tunnel_alive:
+        # Tunnel died — reconnect (skip in local-only mode)
+        if not tunnel_alive and not local_only:
             try:
                 self._reconnect_tunnel()
             except PreviewError:
@@ -805,7 +866,7 @@ class PreviewManager:
         self._kill_proc(self._tunnel_proc)
         self._tunnel_proc = None
 
-        cf_path = shutil.which("cloudflared")
+        cf_path = _ensure_cloudflared()
         if not cf_path:
             raise PreviewError("cloudflared not found — cannot reconnect tunnel")
 

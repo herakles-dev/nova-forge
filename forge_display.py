@@ -315,6 +315,7 @@ class BuildDisplay:
             BarColumn(bar_width=30, complete_style=BRAND["accent"], finished_style=BRAND["green"]),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
+            TextColumn("[dim]Ctrl-C to pause[/]"),
             console=console,
             transient=False,
         )
@@ -325,6 +326,14 @@ class BuildDisplay:
             "[muted]waiting...[/]", total=None,
         )
         return self._progress
+
+    def update_pause_visual(self) -> None:
+        """Show pause indicator in the progress bar."""
+        if self._progress and self._current_task is not None:
+            self._progress.update(
+                self._current_task,
+                description="[warning]\u23f8 Pausing...[/]",
+            )
 
     # ── Display helpers ─────────────────────────────────────────────────
 
