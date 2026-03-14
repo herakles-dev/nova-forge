@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demos — Nova Forge</title>
+<meta name="description" content="Apps planned, coded, tested and deployed entirely by AI agents. Zero human code.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x2692;</text></svg>">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a12;--surface:#12121e;--card:#16162a;--accent:#a78bfa;--cyan:#67e8f9;--green:#4ade80;--orange:#fb923c;--red:#f87171;--yellow:#fbbf24;--text:#e4e4f0;--text-2:#b8b8cc;--muted:#7a7a94;--gradient:linear-gradient(135deg,#e879f9 0%,#a78bfa 40%,#67e8f9 100%);--radius:12px;--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;
+  background-image:radial-gradient(circle,rgba(167,139,250,.06) 1px,transparent 1px);background-size:24px 24px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+
+/* Layout */
+.wrap{max-width:1120px;margin:0 auto;padding:0 1.25rem}
+section{padding:3.5rem 0}
+h2{font-size:1.6rem;font-weight:700;margin-bottom:1.5rem}
+.gradient-text{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* Hero */
+.hero{text-align:center;padding:3rem 0 2rem}
+.back-link{display:inline-block;margin-bottom:1.5rem;color:var(--muted);font-size:.9rem}
+.back-link:hover{color:var(--accent)}
+.hero h1{font-size:clamp(2rem,5vw,3rem);font-weight:800;margin-bottom:.75rem}
+.hero p{color:var(--text-2);font-size:1.05rem;max-width:640px;margin:0 auto 1.5rem}
+.stats-bar{display:flex;justify-content:center;flex-wrap:wrap;gap:1.5rem;color:var(--muted);font-size:.85rem;font-family:var(--mono)}
+.stats-bar span strong{color:var(--text);font-size:1.1rem;margin-right:.25rem}
+
+/* Badges */
+.badge{display:inline-block;padding:.15rem .55rem;border-radius:6px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
+.badge-s{background:rgba(167,139,250,.18);color:var(--accent)}
+.badge-a{background:rgba(74,222,128,.18);color:var(--green)}
+.badge-b{background:rgba(103,232,249,.18);color:var(--cyan)}
+.badge-c{background:rgba(251,191,36,.18);color:var(--yellow)}
+.badge-d,.badge-f{background:rgba(248,113,113,.18);color:var(--red)}
+.badge-easy{background:rgba(74,222,128,.15);color:var(--green)}
+.badge-medium{background:rgba(103,232,249,.15);color:var(--cyan)}
+.badge-hard{background:rgba(167,139,250,.15);color:var(--accent)}
+.badge-nightmare{background:rgba(251,146,60,.15);color:var(--orange)}
+
+/* Gallery Grid */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem}
+.card{background:var(--card);border:1px solid rgba(167,139,250,.1);border-radius:var(--radius);padding:1.25rem;display:flex;flex-direction:column;gap:.6rem;transition:border-color .2s,transform .2s}
+.card:hover{border-color:rgba(167,139,250,.35);transform:translateY(-2px)}
+.card-head{display:flex;align-items:center;gap:.6rem}
+.card-icon{font-size:1.5rem}
+.card-title{font-weight:600;font-size:1.05rem}
+.card-desc{color:var(--text-2);font-size:.88rem;flex:1}
+.tags{display:flex;flex-wrap:wrap;gap:.35rem}
+.tag{background:var(--surface);border:1px solid rgba(167,139,250,.12);padding:.15rem .5rem;border-radius:6px;font-size:.72rem;color:var(--muted);font-family:var(--mono)}
+.card-meta{display:flex;align-items:center;justify-content:space-between;font-size:.82rem;color:var(--muted);border-top:1px solid rgba(255,255,255,.05);padding-top:.6rem;margin-top:auto}
+.card-meta a{font-weight:600}
+
+/* Timeline */
+.timeline{display:flex;flex-direction:column;gap:.4rem}
+.tl-row{display:flex;align-items:center;gap:.75rem;font-size:.85rem;padding:.35rem .75rem;border-radius:8px;background:var(--surface)}
+.tl-sprint{font-weight:600;color:var(--accent);min-width:4.5rem;font-family:var(--mono);font-size:.8rem}
+.tl-date{color:var(--muted);min-width:4.5rem;font-size:.78rem;font-family:var(--mono)}
+.tl-grades{display:flex;gap:.4rem;min-width:11rem}
+.tl-detail{color:var(--text-2);font-size:.82rem}
+.tl-label{font-size:.72rem;color:var(--muted);margin-right:.15rem}
+
+/* Benchmark Matrix */
+.matrix{width:100%;border-collapse:collapse;font-size:.88rem}
+.matrix th,.matrix td{padding:.6rem .75rem;text-align:center;border:1px solid rgba(167,139,250,.08)}
+.matrix th{background:var(--surface);color:var(--text-2);font-weight:600;font-size:.8rem}
+.matrix td{background:var(--card)}
+.matrix td.empty{color:var(--muted)}
+.matrix th:first-child,.matrix td:first-child{text-align:left;font-weight:600}
+
+/* Dev Timeline */
+.dev-timeline{display:grid;grid-template-columns:auto 1fr;gap:.2rem .75rem;font-size:.85rem}
+.dev-sprint{color:var(--accent);font-weight:600;font-family:var(--mono);font-size:.8rem;text-align:right;padding:.25rem 0}
+.dev-desc{color:var(--text-2);padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.03)}
+
+/* Architecture Grid */
+.arch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.75rem}
+.arch-item{background:var(--surface);border-radius:var(--radius);padding:1rem;border-left:3px solid var(--accent)}
+.arch-item h4{font-size:.9rem;font-weight:600;margin-bottom:.3rem}
+.arch-item p{font-size:.82rem;color:var(--text-2)}
+
+/* Footer */
+footer{text-align:center;padding:2.5rem 0;color:var(--muted);font-size:.85rem;border-top:1px solid rgba(167,139,250,.08)}
+footer a{color:var(--text-2)}
+
+/* Responsive */
+@media(max-width:768px){
+  .gallery{grid-template-columns:1fr}
+  .stats-bar{gap:.75rem 1.25rem}
+  .tl-row{flex-wrap:wrap;gap:.35rem}
+  .tl-grades{min-width:auto}
+  .arch-grid{grid-template-columns:1fr 1fr}
+  .matrix{font-size:.78rem}
+  .matrix th,.matrix td{padding:.4rem}
+}
+@media(max-width:480px){
+  .arch-grid{grid-template-columns:1fr}
+  .dev-timeline{grid-template-columns:1fr;gap:.1rem}
+  .dev-sprint{text-align:left}
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+<div class="wrap">
+  <a href="/" class="back-link">&larr; Back to Nova Forge</a>
+  <h1><span class="gradient-text">Built by Nova Forge</span></h1>
+  <p>Every app below was planned, coded, tested and deployed by AI agents &mdash; zero human code.</p>
+  <div class="stats-bar">
+    <span><strong>28</strong>benchmark runs</span>
+    <span><strong>3</strong>Nova models</span>
+    <span><strong>4</strong>scenarios</span>
+    <span><strong>16</strong>sprints</span>
+    <span><strong>5</strong>days of dev</span>
+  </div>
+</div>
+</section>
+
+<!-- App Gallery -->
+<section>
+<div class="wrap">
+  <h2>App Gallery</h2>
+  <div class="gallery">
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1F4B0;</span><span class="card-title">Expense Tracker</span></div>
+      <div class="card-desc">Full-stack expense manager with categories, charts, CSV export</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Chart.js</span></div>
+      <div class="card-meta"><span>Nova Lite <span class="badge badge-s">S</span> 170s</span><a href="/demos/expense-tracker/">View Demo &rarr;</a></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Lite)</span><span class="badge badge-hard">HARD</span></div>
+      <div class="card-desc">Project management with auth, 3 tables, kanban columns</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
+      <div class="card-meta"><span>Nova Lite <span class="badge badge-a">A</span> 285s</span><a href="/demos/kanban-board/">View Demo &rarr;</a></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Pro)</span><span class="badge badge-hard">HARD</span></div>
+      <div class="card-desc">Same kanban spec built by Nova Pro &mdash; different architecture</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
+      <div class="card-meta"><span>Nova Pro <span class="badge badge-a">A</span> 240s</span><a href="/demos/kanban-pro/">View Demo &rarr;</a></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Premier)</span><span class="badge badge-hard">HARD</span></div>
+      <div class="card-desc">Premier's take on kanban &mdash; fewest turns, richest models</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
+      <div class="card-meta"><span>Nova Premier <span class="badge badge-a">A</span> 1336s</span><a href="/demos/kanban-premier/">View Demo &rarr;</a></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x2705;</span><span class="card-title">Todo App</span><span class="badge badge-easy">EASY</span></div>
+      <div class="card-desc">Task management with priorities and filters</div>
+      <div class="tags"><span class="tag">FastAPI</span><span class="tag">SQLite</span><span class="tag">Vanilla JS</span></div>
+      <div class="card-meta"><span>Scenario showcase</span><a href="/demos/todo-app/">View Demo &rarr;</a></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x26A1;</span><span class="card-title">Realtime Kanban</span><span class="badge badge-nightmare">NIGHTMARE</span></div>
+      <div class="card-desc">Full kanban + SSE live updates, file attachments, 5 tables</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SSE</span><span class="tag">Uploads</span><span class="tag">5 Tables</span></div>
+      <div class="card-meta"><span>Scenario showcase</span><a href="/demos/realtime-kanban/">View Demo &rarr;</a></div>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<!-- Model Progression -->
+<section>
+<div class="wrap">
+  <h2>Model Progression</h2>
+  <div class="timeline">
+    <div class="tl-row">
+      <span class="tl-sprint">Sprint 13</span><span class="tl-date">Mar 13</span>
+      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-s">S</span> <span class="tl-label">Pro</span><span class="badge badge-c">C</span> <span class="tl-label">Premier</span><span class="badge badge-c">C</span></span>
+      <span class="tl-detail">expense-tracker</span>
+    </div>
+    <div class="tl-row">
+      <span class="tl-sprint">Sprint 14</span><span class="tl-date">Mar 13</span>
+      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-s">S</span> <span class="tl-label">Pro</span><span class="badge badge-s">S</span> <span class="tl-label">Premier</span><span class="badge badge-s">S</span></span>
+      <span class="tl-detail">expense-tracker (tuned)</span>
+    </div>
+    <div class="tl-row">
+      <span class="tl-sprint">Sprint 17</span><span class="tl-date">Mar 14</span>
+      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-a">A</span> <span class="tl-label">Pro</span><span class="badge badge-a">A</span> <span class="tl-label">Premier</span><span class="badge badge-a">A</span></span>
+      <span class="tl-detail">kanban-board (HARD)</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Benchmark Matrix -->
+<section>
+<div class="wrap">
+  <h2>Benchmark Matrix</h2>
+  <div style="overflow-x:auto">
+  <table class="matrix">
+    <thead><tr><th></th><th>expense-tracker</th><th>todo-app</th><th>kanban-board</th><th>realtime-kanban</th></tr></thead>
+    <tbody>
+      <tr><td>Nova Lite</td><td><span class="badge badge-s">S</span> 100%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 90%</td><td class="empty">&mdash;</td></tr>
+      <tr><td>Nova Pro</td><td><span class="badge badge-s">S</span> 99%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 90%</td><td class="empty">&mdash;</td></tr>
+      <tr><td>Nova Premier</td><td><span class="badge badge-s">S</span> 100%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 89%</td><td class="empty">&mdash;</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+</section>
+
+<!-- Development Timeline -->
+<section>
+<div class="wrap">
+  <h2>Development Timeline</h2>
+  <div class="dev-timeline">
+    <span class="dev-sprint">Sprint 5</span><span class="dev-desc">12 tools, parallel waves, gate review</span>
+    <span class="dev-sprint">Sprint 6</span><span class="dev-desc">Preview, verification, 8 bug fixes</span>
+    <span class="dev-sprint">Sprint 7</span><span class="dev-desc">Light model optimization (slim prompts)</span>
+    <span class="dev-sprint">Sprint 8</span><span class="dev-desc">Agent intelligence (read-before-edit)</span>
+    <span class="dev-sprint">Sprint 9</span><span class="dev-desc">Assistant layer, A0-A5 autonomy</span>
+    <span class="dev-sprint">Sprint 10</span><span class="dev-desc">Agent fine-tuning (883&rarr;1000 tests)</span>
+    <span class="dev-sprint">Sprint 11</span><span class="dev-desc">14-stack preview, benchmark infra</span>
+    <span class="dev-sprint">Sprint 12</span><span class="dev-desc">Deep planning interview (3-phase)</span>
+    <span class="dev-sprint">Sprint 13</span><span class="dev-desc">JSON recovery, 3-tier prompts</span>
+    <span class="dev-sprint">Sprint 14</span><span class="dev-desc">Premier S tier (pre-seeded context)</span>
+    <span class="dev-sprint">Sprint 15</span><span class="dev-desc">Preview resilience, circuit breaker</span>
+    <span class="dev-sprint">Sprint 16</span><span class="dev-desc">Self-correction, demo recording</span>
+  </div>
+</div>
+</section>
+
+<!-- Architecture Highlights -->
+<section>
+<div class="wrap">
+  <h2>Architecture Highlights</h2>
+  <div class="arch-grid">
+    <div class="arch-item"><h4>3-Tier Prompts</h4><p>Slim (32K), Focused (1M), Full (&gt;1M) &mdash; model-appropriate system prompts</p></div>
+    <div class="arch-item"><h4>Circuit Breaker</h4><p>Per-tool failure tracking, auto-disable after 3 failures</p></div>
+    <div class="arch-item"><h4>Self-Correction</h4><p>Agents verify their own output with read-back checks</p></div>
+    <div class="arch-item"><h4>Pre-Seeded Context</h4><p>Upstream files injected into dependent tasks</p></div>
+    <div class="arch-item"><h4>12 Agent Tools</h4><p>read, write, patch, mkdir, bash, search, and more</p></div>
+    <div class="arch-item"><h4>Parallel Waves</h4><p>Tasks execute concurrently by dependency wave</p></div>
+    <div class="arch-item"><h4>Gate Review</h4><p>Adversarial quality checks between waves</p></div>
+    <div class="arch-item"><h4>A0-A5 Autonomy</h4><p>6-level trust system with auto-escalation cap</p></div>
+  </div>
+</div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="wrap">
+    <p>Nova Forge &mdash; Amazon Nova AI Hackathon 2026</p>
+    <p style="margin-top:.5rem"><a href="/">Main Site</a> &nbsp;&middot;&nbsp; <a href="https://github.com/herakles-dev/nova-forge">GitHub</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

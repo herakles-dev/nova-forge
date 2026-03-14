@@ -25,21 +25,21 @@
   </div>
   <ul class="nav-links">
     <li><a href="#hero" class="active">Home</a></li>
-    <li><a href="#quickstart">Quick Start</a></li>
     <li><a href="#ask-nova">Ask Nova</a></li>
-    <li><a href="#prompts">Try It</a></li>
+    <li><a href="#models">Models &amp; Benchmarks</a></li>
     <li><a href="#pipeline">How It Works</a></li>
     <li><a href="#formations">Formations</a></li>
-    <li><a href="#models">Models</a></li>
+    <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#prompts">Try It</a></li>
     <li><a href="#autonomy">Autonomy</a></li>
     <li><a href="#commands">Commands</a></li>
     <li><a href="#api">API</a></li>
-    <li><a href="#gallery">Gallery</a></li>
+    <li><a href="#gallery">Built with Nova</a></li>
   </ul>
   <div class="sidebar-footer">
     <div class="sidebar-meta">
-      <span id="stat-version">v0.4.0</span>
-      <span id="stat-tests">1030 tests</span>
+      <span id="stat-version">v0.5.0</span>
+      <span id="stat-tests">1051 tests</span>
     </div>
   </div>
 </nav>
@@ -62,7 +62,7 @@
       <span class="gradient-text">Describe it.</span>
       <span class="hero-dim">Nova builds it.</span>
     </h1>
-    <p class="hero-sub">Open-source AI agent orchestration framework. Multi-agent parallel builds, quality gates, live preview &amp; one-command deploy. Any LLM via <code>--model</code>.</p>
+    <p class="hero-sub">Open-source agent orchestration framework powered by Amazon Nova. Multi-agent parallel builds, quality gates, live preview &amp; one-command deploy.</p>
 
     <div class="demo-player-wrap">
       <div id="demo-player"></div>
@@ -70,117 +70,62 @@
 
     <div class="hero-stats" id="hero-stats">
       <div class="hero-stat">
-        <span class="hero-stat-value" id="s-models">7</span>
-        <span class="hero-stat-label">Models</span>
+        <span class="hero-stat-value">3</span>
+        <span class="hero-stat-label">Nova Models</span>
       </div>
       <div class="hero-stat">
         <span class="hero-stat-value" id="s-formations">10</span>
         <span class="hero-stat-label">Formations</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value" id="s-tests">1030</span>
+        <span class="hero-stat-value" id="s-tests">1051</span>
         <span class="hero-stat-label">Tests</span>
       </div>
       <div class="hero-stat">
         <span class="hero-stat-value" id="s-tools">12</span>
-        <span class="hero-stat-label">Tools</span>
+        <span class="hero-stat-label">Agent Tools</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">3</span>
-        <span class="hero-stat-label">Providers</span>
+        <span class="hero-stat-value">16</span>
+        <span class="hero-stat-label">Sprints</span>
       </div>
     </div>
 
     <div class="hero-providers">
       <span class="provider-badge">Amazon Bedrock</span>
-      <span class="provider-badge">OpenRouter</span>
-      <span class="provider-badge">Anthropic</span>
+      <span class="provider-badge">Nova Lite &middot; Pro &middot; Premier</span>
+      <span class="provider-badge">Pure Python</span>
     </div>
 
     <div class="demo-result" id="demo-result">
-      <a href="https://demo.forge.herakles.dev" target="_blank" rel="noopener" class="demo-result-link">See what Nova built &rarr;</a>
+      <a href="/demos/" class="demo-result-link">See what Nova built &rarr; 6 apps, 3 models, all grades &amp; scenarios</a>
     </div>
   </section>
 
-  <!-- 2. Quick Start -->
-  <section id="quickstart" class="section">
-    <h2 class="section-title">Quick Start</h2>
-    <p class="section-desc">Three steps to your first AI-powered build.</p>
-
-    <div class="steps">
-      <div class="step" data-step="1">
-        <div class="step-number">1</div>
-        <div class="step-content">
-          <h3>Install</h3>
-          <p>Clone the repo and install dependencies.</p>
-          <div class="code-block compact">
-            <code>git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt</code>
-            <button class="copy-btn" data-copy="git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt" aria-label="Copy">
-              <span class="copy-icon">&#x2398;</span>
-              <span class="copy-ok">&#x2713;</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="step" data-step="2">
-        <div class="step-number">2</div>
-        <div class="step-content">
-          <h3>Configure Credentials</h3>
-          <p>Set up at least one AI provider. Nova Forge supports AWS Bedrock (Amazon Nova), OpenRouter (Gemini), and Anthropic (Claude).</p>
-          <div class="code-block">
-            <pre><code><span class="c"># AWS Bedrock (Nova models)</span>
-export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-export AWS_DEFAULT_REGION=us-east-1
-
-<span class="c"># Or OpenRouter (Gemini models)</span>
-export OPENROUTER_API_KEY=your-key
-
-<span class="c"># Or Anthropic (Claude models)</span>
-export ANTHROPIC_API_KEY=your-key</code></pre>
-            <button class="copy-btn" data-copy="export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
-              <span class="copy-icon">&#x2398;</span>
-              <span class="copy-ok">&#x2713;</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="step" data-step="3">
-        <div class="step-number">3</div>
-        <div class="step-content">
-          <h3>Describe What You Want</h3>
-          <p>Launch the shell and type a natural language description. Nova plans, builds, reviews, and deploys.</p>
-          <div class="code-block">
-            <pre><code>python3 forge_cli.py
-
-<span class="p">&gt;</span> Build a REST API for recipes with user auth and a React frontend</code></pre>
-          </div>
-          <p class="hint">Nova asks a few questions (stack, risk, formation), then builds it with parallel AI agents.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 3. Ask Nova (Inline Chat) -->
+  <!-- Ask Nova (Inline Chat) -->
   <section id="ask-nova" class="section section-wide">
     <h2 class="section-title">Ask Nova</h2>
-    <p class="section-desc">Nova knows everything about this framework. Ask about setup, commands, models, formations, or how to build your project.</p>
+    <p class="section-desc">Nova knows the entire framework. Ask about models, benchmarks, architecture, or how to build your project.</p>
 
     <div class="chat-inline">
       <div class="chat-main">
+        <div class="chat-header">
+          <div class="chat-avatar">N</div>
+          <div class="chat-header-info">
+            <div class="chat-header-name">Nova</div>
+            <div class="chat-header-status">Online</div>
+          </div>
+        </div>
         <div class="chat-messages" id="chat-messages">
           <div class="chat-msg assistant">
-            <p>Hi! I'm Nova, the AI behind Nova Forge. Ask me anything about the framework &mdash; setup, commands, models, formations, or how to build your project.</p>
+            <p>Hey! I'm Nova, the AI behind Nova Forge. I've built expense trackers, kanban boards, and todo apps across all 3 Nova models. Ask me anything &mdash; benchmarks, architecture, how to get started, or what model to pick.</p>
           </div>
           <div class="chat-suggestions" id="chat-suggestions">
-            <button class="chat-suggest" data-q="How do I get started with Nova Forge?">How do I get started?</button>
-            <button class="chat-suggest" data-q="What's the difference between nova-lite and gemini-flash?">nova-lite vs gemini-flash?</button>
-            <button class="chat-suggest" data-q="How do formations work?">How do formations work?</button>
-            <button class="chat-suggest" data-q="How does the autonomy system work?">Explain autonomy levels</button>
+            <button class="chat-suggest" data-q="How do I get started with Nova Forge?">Get started</button>
+            <button class="chat-suggest" data-q="What benchmark scores did Nova models achieve?">Benchmark results</button>
+            <button class="chat-suggest" data-q="What's the difference between nova-lite, nova-pro, and nova-premier?">Compare Nova models</button>
+            <button class="chat-suggest" data-q="How do formations and the multi-agent pipeline work?">How formations work</button>
+            <button class="chat-suggest" data-q="What demo apps were built and where can I see them?">See the demos</button>
           </div>
         </div>
         <form class="chat-input" id="chat-form">
@@ -194,62 +139,102 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
         </div>
         <p class="chat-side-desc">Try asking about:</p>
         <ul class="chat-topics">
-          <li>Model selection &amp; pricing</li>
-          <li>Formation routing logic</li>
-          <li>Build pipeline stages</li>
-          <li>Autonomy levels &amp; safety</li>
-          <li>Deployment to production</li>
+          <li>Nova Lite vs Pro vs Premier</li>
+          <li>Benchmark scores &amp; grading</li>
+          <li>10 agent formations</li>
+          <li>3-tier prompt system</li>
+          <li>Autonomy levels (A0-A5)</li>
+          <li>Circuit breaker &amp; self-correction</li>
+          <li>Deploying to production</li>
           <li>The Python API</li>
         </ul>
+        <div class="chat-side-stats">
+          <div class="chat-side-stat"><span class="chat-side-stat-value">39</span><span class="chat-side-stat-label">Modules</span></div>
+          <div class="chat-side-stat"><span class="chat-side-stat-value">1051</span><span class="chat-side-stat-label">Tests</span></div>
+          <div class="chat-side-stat"><span class="chat-side-stat-value">12</span><span class="chat-side-stat-label">Tools</span></div>
+          <div class="chat-side-stat"><span class="chat-side-stat-value">16</span><span class="chat-side-stat-label">Sprints</span></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- 4. Try It -->
-  <section id="prompts" class="section">
-    <h2 class="section-title">Try It</h2>
-    <p class="section-desc">Copy a prompt directly into the CLI. Each one generates a complete, working project.</p>
+  <!-- Models & Benchmarks -->
+  <section id="models" class="section">
+    <h2 class="section-title">Models</h2>
+    <p class="section-desc">Switch models with <code>/model &lt;alias&gt;</code>. Same pipeline, different brain.</p>
 
-    <div class="prompt-grid">
-      <div class="prompt-card" data-prompt="Build a REST API for a recipe book with user auth, CRUD endpoints for recipes, ingredient search, and a SQLite database">
-        <h4>Recipe API</h4>
-        <p>REST API with auth, CRUD, search, SQLite</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
+    <div class="benchmark-scorecard">
+      <h3 style="margin-bottom:0.5rem;color:var(--accent)">Benchmark Results</h3>
+      <p style="color:var(--dim);font-size:0.85rem;margin-bottom:0.75rem">4 scenarios from Easy to Nightmare. 25+ verification checks per run, real HTTP testing, interface fidelity analysis.</p>
+
+      <div style="margin-bottom:1rem">
+        <p style="color:var(--text);font-size:0.8rem;font-weight:600;margin-bottom:0.4rem">Expense Tracker <span style="color:var(--dim);font-weight:400">— 5 tasks, 5 files, Flask + SQLite</span></p>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap">
+          <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Lite</span><span class="score-detail">100% · 170s</span></div>
+          <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Pro</span><span class="score-detail">99% · 130s</span></div>
+          <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Premier</span><span class="score-detail">100% · 443s</span></div>
+        </div>
       </div>
 
-      <div class="prompt-card" data-prompt="Build a real-time chat application with WebSocket support, multiple rooms, user nicknames, message history, and a clean dark UI">
-        <h4>Real-time Chat</h4>
-        <p>WebSocket chat with rooms and history</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
+      <div>
+        <p style="color:var(--text);font-size:0.8rem;font-weight:600;margin-bottom:0.4rem">Kanban Board <span style="color:var(--dim);font-weight:400">— 7 tasks, 7 files, auth + 3 tables + status machine</span> <span style="background:var(--accent);color:#000;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.7rem;font-weight:700">HARD</span></p>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap">
+          <div class="score-badge"><span class="score-grade">A</span><span class="score-label">Lite</span><span class="score-detail">90% · 285s</span></div>
+          <div class="score-badge"><span class="score-grade">A</span><span class="score-label">Pro</span><span class="score-detail">90% · 240s</span></div>
+          <div class="score-badge"><span class="score-grade">A</span><span class="score-label">Premier</span><span class="score-detail">89% · 1336s</span></div>
+        </div>
       </div>
+    </div>
 
-      <div class="prompt-card" data-prompt="Build a personal portfolio website with a hero section, project cards, a blog with markdown support, contact form, and dark/light theme toggle">
-        <h4>Portfolio Site</h4>
-        <p>Portfolio with blog, themes, contact</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
-      </div>
-
-      <div class="prompt-card" data-prompt="Build a task management dashboard with drag-and-drop kanban board, priority labels, due dates, and local storage persistence">
-        <h4>Task Dashboard</h4>
-        <p>Kanban board with drag-and-drop</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
-      </div>
-
-      <div class="prompt-card" data-prompt="Build a weather dashboard that fetches data from OpenWeatherMap API, shows 5-day forecast, temperature charts, and location search">
-        <h4>Weather Dashboard</h4>
-        <p>5-day forecast with charts</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
-      </div>
-
-      <div class="prompt-card" data-prompt="Build an expense tracker with categories, monthly charts, CSV export, budget limits with alerts, and a responsive mobile-first UI">
-        <h4>Expense Tracker</h4>
-        <p>Budget tracking with charts and export</p>
-        <button class="copy-prompt-btn">Copy prompt</button>
+    <div class="model-grid" id="model-grid">
+      <div class="model-group">
+        <div class="model-group-header">
+          <span class="provider-dot bedrock"></span> Amazon Bedrock
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-lite</code>
+            <span class="model-ctx">32K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">speed</span>
+            <span class="tag">low-cost</span>
+            <span class="tag">reasoning</span>
+          </div>
+          <p class="model-desc">Fast and affordable. Great for learning and quick tasks. Best with focused, single-file builds.</p>
+          <div class="model-cost">$0.00006 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-pro</code>
+            <span class="model-ctx">300K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">reasoning</span>
+            <span class="tag">code</span>
+            <span class="tag">analysis</span>
+          </div>
+          <p class="model-desc">Strong all-rounder. Handles complex coding tasks and reads large codebases. Good balance of capability and cost.</p>
+          <div class="model-cost">$0.0008 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-premier</code>
+            <span class="model-ctx">1M</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">deep-reasoning</span>
+            <span class="tag">code</span>
+            <span class="tag">long-context</span>
+          </div>
+          <p class="model-desc">Most powerful Nova model. Best for complex multi-file projects and deep reasoning.</p>
+          <div class="model-cost">$0.002 / 1K input</div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- 5. How It Works (Pipeline Diagram) -->
+  <!-- How It Works (Pipeline) -->
   <section id="pipeline" class="section section-wide">
     <h2 class="section-title">How It Works</h2>
     <p class="section-desc">A multi-agent pipeline from natural language to deployed application.</p>
@@ -335,7 +320,7 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
     <div class="pipeline-detail" id="pipeline-detail"></div>
   </section>
 
-  <!-- 6. Formations -->
+  <!-- Formations -->
   <section id="formations" class="section section-wide">
     <h2 class="section-title">Formations</h2>
     <p class="section-desc">Pre-configured multi-agent team layouts. Set with <code>/formation &lt;name&gt;</code>. Nova auto-selects based on your project.</p>
@@ -485,134 +470,96 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
     </div>
   </section>
 
-  <!-- 7. Models -->
-  <section id="models" class="section">
-    <h2 class="section-title">Models</h2>
-    <p class="section-desc">Switch models with <code>/model &lt;alias&gt;</code>. Same pipeline, different brain.</p>
+  <!-- Quick Start -->
+  <section id="quickstart" class="section section-wide">
+    <h2 class="section-title">Quick Start</h2>
+    <p class="section-desc">Three commands to your first AI-powered build.</p>
 
-    <div class="benchmark-scorecard">
-      <h3 style="margin-bottom:0.5rem;color:var(--accent)">Benchmark Results (Sprint 14)</h3>
-      <p style="color:var(--dim);font-size:0.85rem;margin-bottom:1rem">Expense Tracker: 5 tasks, 25+ verification checks, real HTTP testing</p>
-      <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
-        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Lite</span><span class="score-detail">100% · 170s · 24 turns</span></div>
-        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Pro</span><span class="score-detail">99% · 130s · 13 turns</span></div>
-        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Premier</span><span class="score-detail">100% · 443s · 10 turns</span></div>
-      </div>
-    </div>
-
-    <div class="model-grid" id="model-grid">
-      <div class="model-group">
-        <div class="model-group-header">
-          <span class="provider-dot bedrock"></span> Amazon Bedrock
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">nova-lite</code>
-            <span class="model-ctx">32K</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">speed</span>
-            <span class="tag">low-cost</span>
-            <span class="tag">reasoning</span>
-          </div>
-          <p class="model-desc">Fast and affordable. Great for learning and quick tasks. Best with focused, single-file builds.</p>
-          <div class="model-cost">$0.00006 / 1K input</div>
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">nova-pro</code>
-            <span class="model-ctx">300K</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">reasoning</span>
-            <span class="tag">code</span>
-            <span class="tag">analysis</span>
-          </div>
-          <p class="model-desc">Strong all-rounder. Handles complex coding tasks and reads large codebases. Good balance of capability and cost.</p>
-          <div class="model-cost">$0.0008 / 1K input</div>
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">nova-premier</code>
-            <span class="model-ctx">1M</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">deep-reasoning</span>
-            <span class="tag">code</span>
-            <span class="tag">long-context</span>
-          </div>
-          <p class="model-desc">Most powerful Nova model. Best for complex multi-file projects and deep reasoning.</p>
-          <div class="model-cost">$0.002 / 1K input</div>
+    <div class="quickstart-grid">
+      <div class="quickstart-card">
+        <div class="quickstart-num">1</div>
+        <h3>Install</h3>
+        <div class="code-block compact">
+          <code>git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt</code>
+          <button class="copy-btn" data-copy="git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt" aria-label="Copy">
+            <span class="copy-icon">&#x2398;</span>
+            <span class="copy-ok">&#x2713;</span>
+          </button>
         </div>
       </div>
 
-      <div class="model-group">
-        <div class="model-group-header">
-          <span class="provider-dot openrouter"></span> Google (via OpenRouter)
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">gemini-flash</code>
-            <span class="model-ctx">1M</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">speed</span>
-            <span class="tag">code</span>
-            <span class="tag">multimodal</span>
-          </div>
-          <p class="model-desc">Lightning fast with a huge context window. Best value for code generation tasks.</p>
-          <div class="model-cost">$0.0001 / 1K input</div>
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">gemini-pro</code>
-            <span class="model-ctx">1M</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">deep-reasoning</span>
-            <span class="tag">code</span>
-            <span class="tag">analysis</span>
-          </div>
-          <p class="model-desc">Top-tier reasoning and coding. Handles the most complex architectural decisions.</p>
-          <div class="model-cost">$0.00125 / 1K input</div>
+      <div class="quickstart-card">
+        <div class="quickstart-num">2</div>
+        <h3>Configure AWS</h3>
+        <div class="code-block compact">
+          <code>export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1</code>
+          <button class="copy-btn" data-copy="export AWS_ACCESS_KEY_ID=your-key AWS_SECRET_ACCESS_KEY=your-secret AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
+            <span class="copy-icon">&#x2398;</span>
+            <span class="copy-ok">&#x2713;</span>
+          </button>
         </div>
       </div>
 
-      <div class="model-group">
-        <div class="model-group-header">
-          <span class="provider-dot anthropic"></span> Anthropic
+      <div class="quickstart-card">
+        <div class="quickstart-num">3</div>
+        <h3>Build Something</h3>
+        <div class="code-block compact">
+          <code>python3 forge_cli.py</code>
+          <button class="copy-btn" data-copy="python3 forge_cli.py" aria-label="Copy">
+            <span class="copy-icon">&#x2398;</span>
+            <span class="copy-ok">&#x2713;</span>
+          </button>
         </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">claude-sonnet</code>
-            <span class="model-ctx">200K</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">code</span>
-            <span class="tag">reasoning</span>
-            <span class="tag">instruction-following</span>
-          </div>
-          <p class="model-desc">Excellent at following instructions precisely. Premium quality for exact specifications.</p>
-          <div class="model-cost">$0.003 / 1K input</div>
-        </div>
-        <div class="model-card">
-          <div class="model-header">
-            <code class="model-name">claude-haiku</code>
-            <span class="model-ctx">200K</span>
-          </div>
-          <div class="model-strengths">
-            <span class="tag">speed</span>
-            <span class="tag">low-cost</span>
-            <span class="tag">code</span>
-          </div>
-          <p class="model-desc">Fast and affordable. Good for straightforward coding tasks where speed matters.</p>
-          <div class="model-cost">$0.0008 / 1K input</div>
-        </div>
+        <p class="quickstart-hint">Describe what you want. Nova plans, builds, reviews, and deploys it.</p>
       </div>
     </div>
   </section>
 
-  <!-- 8. Autonomy -->
+  <!-- Try It -->
+  <section id="prompts" class="section">
+    <h2 class="section-title">Try It</h2>
+    <p class="section-desc">Copy a prompt directly into the CLI. Each one generates a complete, working project.</p>
+
+    <div class="prompt-grid">
+      <div class="prompt-card" data-prompt="Build a personal finance dashboard with user authentication, expense categories (food, transport, utilities, entertainment), monthly bar charts using Chart.js, CSV export of transactions, budget limits with color-coded alerts, and a responsive dark-themed UI. Use Flask and SQLite.">
+        <h4>Personal Finance App</h4>
+        <p>Auth, categories, charts, CSV export, budget alerts</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a project management kanban board with user registration and login, multiple projects per user, tasks with title, description, priority (low/medium/high/critical), assignee, and due date. Implement drag-between-columns status transitions (todo, in-progress, review, done), project-level stats (total tasks, completion %, overdue count), and a responsive 4-column layout. Use Flask and SQLite with 3 related tables.">
+        <h4>Kanban Board</h4>
+        <p>Auth, 4 columns, priorities, assignees, project stats, 3 tables</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a link shortener service with a clean dashboard. Features: generate short codes, track click count and last-clicked timestamp, QR code generation for each link, analytics page showing top links and clicks over time as a line chart, optional password protection for links, and a copy-to-clipboard button. Use Flask and SQLite.">
+        <h4>Link Shortener</h4>
+        <p>Short codes, click analytics, QR codes, password protection</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a markdown note-taking app with folders, full-text search, live preview side-by-side with the editor, tag system for organizing notes, dark theme, and keyboard shortcuts (Ctrl+S to save, Ctrl+N for new note, Ctrl+F to search). Include an export-to-HTML feature. Use Flask and SQLite.">
+        <h4>Markdown Notes</h4>
+        <p>Folders, live preview, tags, search, keyboard shortcuts</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a REST API for a recipe book with user authentication (register/login with hashed passwords), CRUD endpoints for recipes with ingredients list and cooking steps, search by ingredient or cuisine tag, image URL support, difficulty rating (easy/medium/hard), and pagination. Include a simple frontend that displays recipes in a card grid with filters. Use Flask and SQLite.">
+        <h4>Recipe Book API</h4>
+        <p>Auth, CRUD, ingredient search, ratings, card grid UI</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a habit tracker with daily/weekly habit creation, streak counting with best-streak record, a calendar heatmap showing completion history (like GitHub's contribution graph), habit categories, daily check-in page, and weekly summary stats. Use a dark theme with green/purple accent colors. Use Flask and SQLite.">
+        <h4>Habit Tracker</h4>
+        <p>Streaks, calendar heatmap, categories, weekly summary</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Autonomy -->
   <section id="autonomy" class="section">
     <h2 class="section-title">Autonomy System</h2>
     <p class="section-desc">Six trust levels control what Nova can do without asking. Set with <code>/autonomy &lt;0-5&gt;</code>.</p>
@@ -713,7 +660,7 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
     </div>
   </section>
 
-  <!-- 9. CLI Commands -->
+  <!-- CLI Commands -->
   <section id="commands" class="section">
     <h2 class="section-title">CLI Commands</h2>
     <p class="section-desc">Interactive shell commands. Launch with <code>python3 forge_cli.py</code> or the <code>forge</code> command.</p>
@@ -758,7 +705,7 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
     <div class="cmd-panel" id="tab-config">
       <table class="cmd-table">
         <tbody>
-          <tr><td><code class="cmd-name">/model &lt;alias&gt;</code></td><td>Switch the active model (e.g., nova-lite, gemini-flash)</td><td><button class="copy-btn-sm" data-copy="/model gemini-flash">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/model &lt;alias&gt;</code></td><td>Switch the active model (e.g., nova-lite, nova-pro)</td><td><button class="copy-btn-sm" data-copy="/model nova-pro">Copy</button></td></tr>
           <tr><td><code class="cmd-name">/models</code></td><td>Compare all models &mdash; cost, context, strengths</td><td><button class="copy-btn-sm" data-copy="/models">Copy</button></td></tr>
           <tr><td><code class="cmd-name">/formation &lt;name&gt;</code></td><td>View or set agent formation</td><td><button class="copy-btn-sm" data-copy="/formation feature-impl">Copy</button></td></tr>
           <tr><td><code class="cmd-name">/autonomy &lt;0-5&gt;</code></td><td>Set agent autonomy level (A0-A5)</td><td><button class="copy-btn-sm" data-copy="/autonomy 2">Copy</button></td></tr>
@@ -773,7 +720,7 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
       <table class="cmd-table">
         <tbody>
           <tr><td><code class="cmd-name">forge plan "desc"</code></td><td>Plan a project from the command line</td><td><button class="copy-btn-sm" data-copy='forge plan "weather dashboard" --model nova-lite'>Copy</button></td></tr>
-          <tr><td><code class="cmd-name">forge build</code></td><td>Execute the plan with AI agents</td><td><button class="copy-btn-sm" data-copy="forge build --model gemini-flash">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge build</code></td><td>Execute the plan with AI agents</td><td><button class="copy-btn-sm" data-copy="forge build --model nova-pro">Copy</button></td></tr>
           <tr><td><code class="cmd-name">forge deploy</code></td><td>Deploy to production</td><td><button class="copy-btn-sm" data-copy="forge deploy --domain app.example.com">Copy</button></td></tr>
           <tr><td><code class="cmd-name">forge preview</code></td><td>Launch preview with tunnel</td><td><button class="copy-btn-sm" data-copy="forge preview">Copy</button></td></tr>
           <tr><td><code class="cmd-name">forge status</code></td><td>View build status</td><td><button class="copy-btn-sm" data-copy="forge status">Copy</button></td></tr>
@@ -784,7 +731,7 @@ export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
     </div>
   </section>
 
-  <!-- 10. API -->
+  <!-- API -->
   <section id="api" class="section">
     <h2 class="section-title">Programmatic API</h2>
     <p class="section-desc">Use Nova Forge as a library, not just a CLI.</p>
@@ -835,15 +782,15 @@ print(result.output)" aria-label="Copy">
     </div>
   </section>
 
-  <!-- 11. Built With Nova Forge -->
+  <!-- Built with Nova Forge -->
   <section id="gallery" class="section section-wide">
     <h2 class="section-title">Built with Nova Forge</h2>
-    <p class="section-desc">Real projects built by Nova in a single session. Each one: describe it, build, preview, deploy.</p>
+    <p class="section-desc">Real projects built by Nova in a single session. Each one: describe it, build, preview, deploy. <a href="/demos/" style="color:var(--accent);font-weight:600">View all demos &rarr;</a></p>
 
     <div class="gallery-grid">
-      <div class="gallery-card">
+      <a href="/demos/expense-tracker/" class="gallery-card" style="text-decoration:none;color:inherit">
         <div class="gallery-icon">&#x1f4b0;</div>
-        <h4>Expense Tracker</h4>
+        <h4>Expense Tracker <span style="background:var(--accent);color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">S</span></h4>
         <p>Full-stack expense manager with categories, monthly charts, CSV export, and responsive UI.</p>
         <div class="gallery-meta">
           <span class="gallery-tag">Flask</span>
@@ -855,11 +802,11 @@ print(result.output)" aria-label="Copy">
           <span>170s</span>
           <span>5 files</span>
         </div>
-      </div>
+      </a>
 
-      <div class="gallery-card">
+      <a href="/demos/todo-app/" class="gallery-card" style="text-decoration:none;color:inherit">
         <div class="gallery-icon">&#x2705;</div>
-        <h4>Todo App</h4>
+        <h4>Todo App <span style="background:#4ade80;color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">EASY</span></h4>
         <p>Task management with priority levels, filters, and a clean dark UI. FastAPI backend.</p>
         <div class="gallery-meta">
           <span class="gallery-tag">FastAPI</span>
@@ -867,49 +814,88 @@ print(result.output)" aria-label="Copy">
           <span class="gallery-tag">Vanilla JS</span>
         </div>
         <div class="gallery-stats">
-          <span>Nova Pro</span>
-          <span>130s</span>
-          <span>4 files</span>
+          <span>Scenario</span>
+          <span>4 tasks</span>
+          <span>1 table</span>
         </div>
-      </div>
+      </a>
 
-      <div class="gallery-card">
-        <div class="gallery-icon">&#x1f4ac;</div>
-        <h4>Real-time Chat</h4>
-        <p>WebSocket chat with multiple rooms, nicknames, message history, and dark theme.</p>
-        <div class="gallery-meta">
-          <span class="gallery-tag">Node.js</span>
-          <span class="gallery-tag">Socket.io</span>
-          <span class="gallery-tag">HTML/CSS</span>
-        </div>
-        <div class="gallery-stats">
-          <span>Gemini Flash</span>
-          <span>90s</span>
-          <span>6 files</span>
-        </div>
-      </div>
-
-      <div class="gallery-card">
-        <div class="gallery-icon">&#x1f4c1;</div>
-        <h4>Recipe API</h4>
-        <p>REST API with auth, CRUD for recipes, ingredient search, and SQLite persistence.</p>
+      <a href="/demos/kanban-board/" class="gallery-card" style="text-decoration:none;color:inherit;border-color:var(--accent)">
+        <div class="gallery-icon">&#x1f4cb;</div>
+        <h4>Kanban Board <span style="background:var(--accent);color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">HARD</span></h4>
+        <p>Project management with user auth, 3 related tables, kanban columns, status transitions, and project stats.</p>
         <div class="gallery-meta">
           <span class="gallery-tag">Flask</span>
-          <span class="gallery-tag">JWT Auth</span>
+          <span class="gallery-tag">Auth</span>
+          <span class="gallery-tag">3 Tables</span>
+          <span class="gallery-tag">7 Files</span>
+        </div>
+        <div class="gallery-stats">
+          <span>All 3 Nova</span>
+          <span>A tier</span>
+          <span>7 tasks</span>
+        </div>
+      </a>
+
+      <a href="/demos/realtime-kanban/" class="gallery-card" style="text-decoration:none;color:inherit;border-color:#f97316">
+        <div class="gallery-icon">&#x26a1;</div>
+        <h4>Realtime Kanban <span style="background:#f97316;color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">NIGHTMARE</span></h4>
+        <p>Full kanban + SSE live updates, file attachments, activity logging, 5 database tables.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Flask</span>
+          <span class="gallery-tag">SSE</span>
+          <span class="gallery-tag">Uploads</span>
+          <span class="gallery-tag">5 Tables</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Stress Test</span>
+          <span>8 tasks</span>
+          <span>4 waves</span>
+        </div>
+      </a>
+
+      <a href="/demos/kanban-pro/" class="gallery-card" style="text-decoration:none;color:inherit">
+        <div class="gallery-icon">&#x1f4cb;</div>
+        <h4>Kanban (Pro) <span style="background:var(--cyan);color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">A</span></h4>
+        <p>Same kanban spec, different model. Nova Pro's take — different architecture, same quality.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Flask</span>
+          <span class="gallery-tag">Auth</span>
           <span class="gallery-tag">SQLite</span>
         </div>
         <div class="gallery-stats">
-          <span>Nova Premier</span>
-          <span>200s</span>
-          <span>5 files</span>
+          <span>Nova Pro</span>
+          <span>240s</span>
+          <span>7 files</span>
         </div>
-      </div>
+      </a>
+
+      <a href="/demos/kanban-premier/" class="gallery-card" style="text-decoration:none;color:inherit">
+        <div class="gallery-icon">&#x1f4cb;</div>
+        <h4>Kanban (Premier) <span style="background:#fbbf24;color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">A</span></h4>
+        <p>Premier's take — 4-column kanban with "In Review" stage, subtask counts, richest architecture.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Flask</span>
+          <span class="gallery-tag">Auth</span>
+          <span class="gallery-tag">4 Columns</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Nova Premier</span>
+          <span>1336s</span>
+          <span>7 files</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="gallery-cta">
+      <a href="/demos/" class="gallery-cta-btn">View Full Demos Showcase &rarr;</a>
     </div>
   </section>
 
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-links">
+      <a href="/demos/">Demos</a>
       <a href="https://github.com/Herakles-AI/nova-forge" target="_blank" rel="noopener">GitHub</a>
       <a href="https://amazon-nova.devpost.com/" target="_blank" rel="noopener">Amazon Nova Hackathon</a>
       <a href="/api/info">API</a>

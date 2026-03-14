@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expense Tracker — Built by Nova Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f0f1a;
+  --card-bg: #1a1a2e;
+  --card-hover: #1e1e36;
+  --accent: #a78bfa;
+  --accent-blue: #3498db;
+  --cyan: #67e8f9;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --green: #2ecc71;
+  --red: #e74c3c;
+  --border: rgba(255,255,255,0.06);
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+/* Banner */
+.forge-banner { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 48px; background: #0a0a14; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.75rem; }
+.forge-banner::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #a78bfa 0%, #67e8f9 50%, #a78bfa 100%); opacity: 0.6; }
+.forge-banner-left { display: flex; align-items: center; gap: 0.75rem; }
+.forge-banner-logo { font-size: 0.8rem; text-decoration: none; color: #e2e8f0; font-weight: 700; display: flex; align-items: center; gap: 0.35rem; }
+.forge-banner-logo span { opacity: 0.5; }
+.forge-banner-nav { display: flex; gap: 0.4rem; }
+.forge-banner-nav a { color: #7a7a94; text-decoration: none; font-size: 0.7rem; font-weight: 500; padding: 0.2rem 0.5rem; border-radius: 4px; transition: all 0.2s; }
+.forge-banner-nav a:hover { color: #a78bfa; background: rgba(167,139,250,0.08); }
+.forge-banner-center { display: flex; align-items: center; gap: 0.6rem; color: #94a3b8; }
+.forge-banner-model { display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.2); color: #a78bfa; padding: 0.15rem 0.55rem; border-radius: 5px; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.01em; }
+.forge-banner-grade { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; font-weight: 800; font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; }
+.forge-banner-grade.grade-s { background: linear-gradient(135deg, #a78bfa, #67e8f9); color: #0a0a14; }
+.forge-banner-grade.grade-a { background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.3); color: #4ade80; }
+.forge-banner-time { color: #67e8f9; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; }
+.forge-banner-sep { color: #2a2a3a; }
+.forge-banner-right { display: flex; align-items: center; gap: 0.75rem; }
+.forge-banner-tag { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.forge-banner-tag.easy { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; }
+.forge-banner-tag.hard { background: rgba(167,139,250,0.1); border: 1px solid rgba(167,139,250,0.2); color: #a78bfa; }
+.forge-banner-tag.nightmare { background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2); color: #fb923c; }
+.forge-banner-stat { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: #7a7a94; }
+.forge-banner-stat strong { color: #b8b8cc; font-weight: 600; }
+@media (max-width: 640px) { .forge-banner { height: auto; padding: 0.6rem 1rem; flex-wrap: wrap; gap: 0.5rem; justify-content: center; } .forge-banner-center { order: -1; width: 100%; justify-content: center; } }
+.container { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem; }
+header h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.25rem; }
+.summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+.summary-card { background: var(--card-bg); border-radius: var(--radius); padding: 1rem; border-top: 3px solid var(--accent); }
+.summary-card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.3rem; }
+.summary-card .value { font-size: 1.4rem; font-weight: 700; }
+.summary-card:nth-child(2) { border-color: var(--accent-blue); }
+.summary-card:nth-child(3) { border-color: var(--cyan); }
+.summary-card:nth-child(4) { border-color: var(--green); }
+.form-row { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.form-row input, .form-row select { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 0.55rem 0.75rem; border-radius: var(--radius); font-size: 0.85rem; font-family: inherit; flex: 1; min-width: 120px; }
+.form-row input:focus, .form-row select:focus { outline: none; border-color: var(--accent); }
+.form-row select option { background: var(--card-bg); }
+.btn-add { background: linear-gradient(135deg, var(--accent), var(--accent-blue)); color: #000; border: none; padding: 0.55rem 1.25rem; border-radius: var(--radius); font-weight: 700; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: var(--radius); overflow: hidden; margin-bottom: 1.5rem; }
+thead th { text-align: left; padding: 0.7rem 1rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+tbody td { padding: 0.65rem 1rem; font-size: 0.85rem; border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--card-hover); }
+.cat-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+.cat-food { background: rgba(167,139,250,0.15); color: var(--accent); }
+.cat-util { background: rgba(52,152,219,0.15); color: var(--accent-blue); }
+.cat-trans { background: rgba(103,232,249,0.15); color: var(--cyan); }
+.cat-ent { background: rgba(46,204,113,0.15); color: var(--green); }
+.cat-shop { background: rgba(230,126,34,0.15); color: #e67e22; }
+.amount { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.btn-del { background: none; border: 1px solid rgba(231,76,60,0.3); color: var(--red); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; cursor: pointer; }
+.chart-section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; }
+.bar-chart { display: flex; flex-direction: column; gap: 0.6rem; background: var(--card-bg); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+.bar-row { display: flex; align-items: center; gap: 0.75rem; }
+.bar-label { width: 120px; font-size: 0.8rem; color: var(--text-dim); text-align: right; flex-shrink: 0; }
+.bar-track { flex: 1; height: 24px; background: rgba(255,255,255,0.04); border-radius: 4px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 0.5rem; font-size: 0.7rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; transition: width 0.6s ease; }
+.bar-food .bar-fill { background: linear-gradient(90deg, var(--accent), #8b5cf6); width: 100%; }
+.bar-util .bar-fill { background: linear-gradient(90deg, var(--accent-blue), #2980b9); width: 35%; }
+.bar-trans .bar-fill { background: linear-gradient(90deg, var(--cyan), #06b6d4); width: 27%; }
+.bar-shop .bar-fill { background: linear-gradient(90deg, #e67e22, #d35400); width: 27%; }
+.bar-ent .bar-fill { background: linear-gradient(90deg, var(--green), #27ae60); width: 6%; }
+.source-info { padding: 1rem 0; border-top: 1px solid var(--border); margin-top: 0.5rem; }
+.source-info h3 { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--accent); }
+.file-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.file-tag { background: rgba(167,139,250,0.15); color: var(--accent); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; }
+.source-meta { font-size: 0.75rem; color: var(--text-dim); }
+.source-meta span { margin-right: 1.5rem; }
+@media (max-width: 768px) {
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  .form-row { flex-direction: column; }
+  .bar-label { width: 80px; font-size: 0.7rem; }
+  table { font-size: 0.8rem; }
+  thead th, tbody td { padding: 0.5rem; }
+}
+@media (max-width: 480px) {
+  .summary { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="forge-banner">
+  <div class="forge-banner-left">
+    <a href="/" class="forge-banner-logo">&#x2692;<span>Nova Forge</span></a>
+    <div class="forge-banner-nav"><a href="/demos/">Demos</a></div>
+  </div>
+  <div class="forge-banner-center">
+    <span class="forge-banner-model">Nova Lite</span>
+    <span class="forge-banner-grade grade-s">S</span>
+    <span class="forge-banner-sep">&middot;</span>
+    <span class="forge-banner-time">170s</span>
+    <span class="forge-banner-sep">&middot;</span>
+    <span>5 tasks, 5 files</span>
+  </div>
+  <div class="forge-banner-right">
+    <span class="forge-banner-tag easy">Easy</span>
+    <span class="forge-banner-stat"><strong>100%</strong> score</span>
+  </div>
+</div>
+
+<div class="container">
+  <header><h1>Expense Tracker</h1></header>
+
+  <div class="summary">
+    <div class="summary-card"><div class="label">Total Expenses</div><div class="value">$2,847.50</div></div>
+    <div class="summary-card"><div class="label">This Month</div><div class="value">$1,245.00</div></div>
+    <div class="summary-card"><div class="label">Top Category</div><div class="value">Food & Dining</div></div>
+    <div class="summary-card"><div class="label">Entries</div><div class="value">12</div></div>
+  </div>
+
+  <div class="form-row">
+    <input type="number" placeholder="Amount ($)" step="0.01">
+    <input type="text" placeholder="Description">
+    <select>
+      <option value="">Category...</option>
+      <option>Food & Dining</option>
+      <option>Utilities</option>
+      <option>Transportation</option>
+      <option>Entertainment</option>
+      <option>Shopping</option>
+    </select>
+    <input type="date" value="2026-03-14">
+    <button class="btn-add">Add Expense</button>
+  </div>
+
+  <table>
+    <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>Mar 14</td><td>Grocery Run</td><td><span class="cat-badge cat-food">Food & Dining</span></td><td class="amount">$156.42</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 13</td><td>Electric Bill</td><td><span class="cat-badge cat-util">Utilities</span></td><td class="amount">$89.50</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 13</td><td>Coffee Meeting</td><td><span class="cat-badge cat-food">Food & Dining</span></td><td class="amount">$12.75</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 12</td><td>Gas Station</td><td><span class="cat-badge cat-trans">Transportation</span></td><td class="amount">$45.00</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 11</td><td>Netflix</td><td><span class="cat-badge cat-ent">Entertainment</span></td><td class="amount">$15.99</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 10</td><td>Office Supplies</td><td><span class="cat-badge cat-shop">Shopping</span></td><td class="amount">$67.30</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 9</td><td>Restaurant</td><td><span class="cat-badge cat-food">Food & Dining</span></td><td class="amount">$84.25</td><td><button class="btn-del">Delete</button></td></tr>
+      <tr><td>Mar 8</td><td>Uber Ride</td><td><span class="cat-badge cat-trans">Transportation</span></td><td class="amount">$23.50</td><td><button class="btn-del">Delete</button></td></tr>
+    </tbody>
+  </table>
+
+  <div class="chart-section">
+    <h2>Monthly Summary</h2>
+    <div class="bar-chart">
+      <div class="bar-row bar-food"><span class="bar-label">Food & Dining</span><div class="bar-track"><div class="bar-fill">$253.42</div></div></div>
+      <div class="bar-row bar-util"><span class="bar-label">Utilities</span><div class="bar-track"><div class="bar-fill">$89.50</div></div></div>
+      <div class="bar-row bar-trans"><span class="bar-label">Transportation</span><div class="bar-track"><div class="bar-fill">$68.50</div></div></div>
+      <div class="bar-row bar-shop"><span class="bar-label">Shopping</span><div class="bar-track"><div class="bar-fill">$67.30</div></div></div>
+      <div class="bar-row bar-ent"><span class="bar-label">Entertainment</span><div class="bar-track"><div class="bar-fill">$15.99</div></div></div>
+    </div>
+  </div>
+
+  <div class="source-info">
+    <h3>Source Files (generated by Nova)</h3>
+    <div class="file-list">
+      <span class="file-tag">api.py</span>
+      <span class="file-tag">models.py</span>
+      <span class="file-tag">static/index.html</span>
+      <span class="file-tag">static/style.css</span>
+      <span class="file-tag">static/app.js</span>
+    </div>
+    <div class="source-meta">
+      <span>Model: Nova Lite (32K)</span>
+      <span>Grade: S (100%)</span>
+      <span>Duration: 170s</span>
+      <span>Turns: 24</span>
+      <span>Scenario: expense-tracker</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const tbody = document.querySelector('tbody');
+  const addBtn = document.querySelector('.btn-add');
+  const amountInput = document.querySelector('input[type="number"]');
+  const descInput = document.querySelector('input[type="text"]');
+  const catSelect = document.querySelector('select');
+  const dateInput = document.querySelector('input[type="date"]');
+  const summaryValues = document.querySelectorAll('.summary-card .value');
+  const catClasses = {'Food & Dining':'cat-food','Utilities':'cat-util','Transportation':'cat-trans','Entertainment':'cat-ent','Shopping':'cat-shop'};
+
+  function recalc() {
+    const rows = tbody.querySelectorAll('tr');
+    let total = 0;
+    const cats = {};
+    rows.forEach(r => {
+      const amt = parseFloat(r.querySelector('.amount').textContent.replace('$','').replace(',',''));
+      total += amt;
+      const cat = r.querySelector('.cat-badge').textContent;
+      cats[cat] = (cats[cat] || 0) + amt;
+    });
+    summaryValues[0].textContent = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    summaryValues[3].textContent = rows.length;
+    const topCat = Object.entries(cats).sort((a,b) => b[1]-a[1])[0];
+    if (topCat) summaryValues[2].textContent = topCat[0];
+  }
+
+  // Delete rows
+  tbody.addEventListener('click', function(e) {
+    if (e.target.closest('.btn-del')) {
+      e.target.closest('tr').remove();
+      recalc();
+    }
+  });
+
+  // Add expense
+  addBtn.addEventListener('click', function() {
+    const amt = parseFloat(amountInput.value);
+    const desc = descInput.value.trim();
+    const cat = catSelect.value;
+    if (!amt || !desc || !cat) return;
+    const d = dateInput.value ? new Date(dateInput.value + 'T12:00:00') : new Date();
+    const dateStr = d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    const cls = catClasses[cat] || 'cat-food';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${dateStr}</td><td>${desc}</td><td><span class="cat-badge ${cls}">${cat}</span></td><td class="amount">$${amt.toFixed(2)}</td><td><button class="btn-del">Delete</button></td>`;
+    tbody.prepend(tr);
+    amountInput.value = ''; descInput.value = '';
+    recalc();
+  });
+})();
+</script>
+</body>
+</html>

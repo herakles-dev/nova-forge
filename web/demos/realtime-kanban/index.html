@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Realtime Kanban — NIGHTMARE Scenario | Nova Forge</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; background: #0f0f1a; color: #e2e8f0; min-height: 100vh; }
+
+  /* Banner */
+  .forge-banner { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 48px; background: #0a0a14; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.75rem; }
+  .forge-banner::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #a78bfa 0%, #67e8f9 50%, #a78bfa 100%); opacity: 0.6; }
+  .forge-banner-left { display: flex; align-items: center; gap: 0.75rem; }
+  .forge-banner-logo { font-size: 0.8rem; text-decoration: none; color: #e2e8f0; font-weight: 700; display: flex; align-items: center; gap: 0.35rem; }
+  .forge-banner-logo span { opacity: 0.5; }
+  .forge-banner-nav { display: flex; gap: 0.4rem; }
+  .forge-banner-nav a { color: #7a7a94; text-decoration: none; font-size: 0.7rem; font-weight: 500; padding: 0.2rem 0.5rem; border-radius: 4px; transition: all 0.2s; }
+  .forge-banner-nav a:hover { color: #a78bfa; background: rgba(167,139,250,0.08); }
+  .forge-banner-center { display: flex; align-items: center; gap: 0.6rem; color: #94a3b8; }
+  .forge-banner-model { display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.2); color: #a78bfa; padding: 0.15rem 0.55rem; border-radius: 5px; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.01em; }
+  .forge-banner-grade { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; font-weight: 800; font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; }
+  .forge-banner-grade.grade-s { background: linear-gradient(135deg, #a78bfa, #67e8f9); color: #0a0a14; }
+  .forge-banner-grade.grade-a { background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.3); color: #4ade80; }
+  .forge-banner-time { color: #67e8f9; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; }
+  .forge-banner-sep { color: #2a2a3a; }
+  .forge-banner-right { display: flex; align-items: center; gap: 0.75rem; }
+  .forge-banner-tag { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+  .forge-banner-tag.easy { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.2); color: #4ade80; }
+  .forge-banner-tag.hard { background: rgba(167,139,250,0.1); border: 1px solid rgba(167,139,250,0.2); color: #a78bfa; }
+  .forge-banner-tag.nightmare { background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2); color: #fb923c; }
+  .forge-banner-stat { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: #7a7a94; }
+  .forge-banner-stat strong { color: #b8b8cc; font-weight: 600; }
+  @media (max-width: 640px) { .forge-banner { height: auto; padding: 0.6rem 1rem; flex-wrap: wrap; gap: 0.5rem; justify-content: center; } .forge-banner-center { order: -1; width: 100%; justify-content: center; } }
+
+  /* App shell */
+  .app { max-width: 1440px; margin: 0 auto; padding: 0 16px 40px; }
+
+  /* Header */
+  .app-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 0 14px; border-bottom: 1px solid #1e1e36; margin-bottom: 14px; }
+  .app-title { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 12px; }
+  .live-dot { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; display: inline-block; animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,222,128,0.5); } 50% { opacity: 0.7; box-shadow: 0 0 0 8px rgba(74,222,128,0); } }
+  .live-label { font-size: 12px; font-weight: 600; color: #4ade80; text-transform: uppercase; letter-spacing: 0.5px; }
+  .user-area { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #94a3b8; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #67e8f9); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #0f0f1a; }
+
+  /* Feature strip */
+  .features { display: flex; gap: 8px; padding: 10px 0 18px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #2a2a44 transparent; }
+  .features::-webkit-scrollbar { height: 4px; }
+  .features::-webkit-scrollbar-thumb { background: #2a2a44; border-radius: 2px; }
+  .pill { padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 500; white-space: nowrap; background: rgba(251,146,60,0.12); color: #fb923c; border: 1px solid rgba(251,146,60,0.25); }
+
+  /* Main layout */
+  .main-layout { display: flex; gap: 16px; }
+  .board-area { flex: 1; min-width: 0; }
+  .sidebar { width: 220px; flex-shrink: 0; }
+
+  /* Board */
+  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .column { background: #12121e; border-radius: 10px; padding: 14px; min-height: 280px; }
+  .col-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #1e1e36; }
+  .col-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
+  .col-count { font-size: 11px; font-weight: 600; background: #1e1e36; color: #94a3b8; padding: 2px 8px; border-radius: 100px; }
+
+  /* Cards */
+  .card { background: #1a1a2e; border-radius: 8px; padding: 14px; margin-bottom: 10px; border: 1px solid #252542; transition: border-color 0.2s, transform 0.15s; cursor: grab; }
+  .card:hover { border-color: #fb923c; transform: translateY(-1px); }
+  .card:last-child { margin-bottom: 0; }
+  .card-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; line-height: 1.4; }
+  .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .tag-critical { background: rgba(248,113,113,0.15); color: #f87171; }
+  .tag-high { background: rgba(251,146,60,0.15); color: #fb923c; }
+  .tag-medium { background: rgba(250,204,21,0.15); color: #facc15; }
+  .tag-backend { background: rgba(96,165,250,0.1); color: #60a5fa; }
+  .tag-frontend { background: rgba(52,211,153,0.1); color: #34d399; }
+  .tag-fullstack { background: rgba(167,139,250,0.1); color: #a78bfa; }
+  .tag-devops { background: rgba(244,114,182,0.1); color: #f472b6; }
+  .card-info { font-size: 11px; color: #64748b; display: flex; align-items: center; gap: 4px; }
+  .card-info svg { width: 12px; height: 12px; fill: currentColor; }
+  .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .progress-bar { height: 4px; width: 100%; background: #252542; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #fb923c, #f59e0b); border-radius: 2px; transition: width 0.3s; }
+  .done-card { opacity: 0.55; }
+  .done-card .card-title { text-decoration: line-through; }
+
+  /* Activity sidebar */
+  .activity-panel { background: #12121e; border-radius: 10px; padding: 14px; height: fit-content; max-height: 600px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #2a2a44 transparent; }
+  .activity-panel::-webkit-scrollbar { width: 4px; }
+  .activity-panel::-webkit-scrollbar-thumb { background: #2a2a44; border-radius: 2px; }
+  .activity-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #1e1e36; }
+  .activity-item { padding: 10px 0; border-bottom: 1px solid #1a1a2e; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-user { font-weight: 600; color: #a78bfa; font-size: 12px; }
+  .activity-text { font-size: 12px; color: #94a3b8; line-height: 1.5; margin-top: 2px; }
+  .activity-time { font-size: 10px; color: #4a4a6a; margin-top: 4px; }
+  .activity-system { color: #4ade80; font-style: italic; }
+
+  /* Schema section */
+  .schema-section { margin-top: 28px; }
+  .schema-heading { font-size: 14px; font-weight: 600; color: #94a3b8; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .schema-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .schema-card { background: #12121e; border-radius: 8px; padding: 14px; border: 1px solid #1e1e36; }
+  .schema-table { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; color: #fb923c; margin-bottom: 8px; }
+  .schema-cols { list-style: none; }
+  .schema-cols li { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #64748b; padding: 2px 0; }
+  .schema-cols li .col-name { color: #94a3b8; }
+  .schema-cols li .col-pk { color: #f87171; font-size: 9px; font-weight: 600; margin-left: 4px; }
+  .schema-cols li .col-fk { color: #a78bfa; font-size: 9px; font-weight: 600; margin-left: 4px; }
+
+  /* Source footer */
+  .source-footer { margin-top: 36px; background: #12121e; border-radius: 10px; padding: 20px 24px; border: 1px solid #1e1e36; }
+  .source-footer dl { display: grid; grid-template-columns: 120px 1fr; gap: 6px 16px; font-size: 13px; }
+  .source-footer dt { color: #64748b; font-weight: 500; }
+  .source-footer dd { color: #94a3b8; }
+  .source-footer dd code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #fb923c; background: rgba(251,146,60,0.08); padding: 1px 6px; border-radius: 4px; }
+  .source-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid #1e1e36; font-size: 12px; color: #64748b; line-height: 1.5; font-style: italic; }
+
+  /* Mobile */
+  @media (max-width: 1100px) {
+    .main-layout { flex-direction: column; }
+    .sidebar { width: 100%; }
+    .activity-panel { max-height: 260px; }
+  }
+  @media (max-width: 800px) {
+    .board { grid-template-columns: repeat(2, 1fr); }
+    .schema-grid { grid-template-columns: 1fr 1fr; }
+    .source-footer dl { grid-template-columns: 100px 1fr; }
+  }
+  @media (max-width: 520px) {
+    .board { grid-template-columns: 1fr; }
+    .schema-grid { grid-template-columns: 1fr; }
+    .source-footer dl { grid-template-columns: 1fr; }
+    .source-footer dt { margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="forge-banner">
+  <div class="forge-banner-left">
+    <a href="/" class="forge-banner-logo">&#x2692;<span>Nova Forge</span></a>
+    <div class="forge-banner-nav"><a href="/demos/">Demos</a></div>
+  </div>
+  <div class="forge-banner-center">
+    <span class="forge-banner-model">Scenario Preview</span>
+    <span class="forge-banner-sep">&middot;</span>
+    <span>8 tasks, 5 tables, SSE + uploads</span>
+  </div>
+  <div class="forge-banner-right">
+    <span class="forge-banner-tag nightmare">Nightmare</span>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <div class="app-header">
+    <div class="app-title">
+      Realtime Kanban
+      <span class="live-dot"></span>
+      <span class="live-label">Live</span>
+    </div>
+    <div class="user-area">
+      <span>alice@team</span>
+      <div class="avatar">A</div>
+    </div>
+  </div>
+
+  <!-- Feature strip -->
+  <div class="features">
+    <span class="pill">Server-Sent Events</span>
+    <span class="pill">File Attachments</span>
+    <span class="pill">Activity Log</span>
+    <span class="pill">5 Tables</span>
+    <span class="pill">User Auth</span>
+    <span class="pill">Real-time Sync</span>
+    <span class="pill">Drag &amp; Drop</span>
+    <span class="pill">8 Tasks</span>
+  </div>
+
+  <!-- Main layout -->
+  <div class="main-layout">
+
+    <!-- Board -->
+    <div class="board-area">
+      <div class="board">
+
+        <!-- Backlog -->
+        <div class="column">
+          <div class="col-header">
+            <span class="col-title">Backlog</span>
+            <span class="col-count">2</span>
+          </div>
+          <div class="card">
+            <div class="card-title">Implement SSE endpoint</div>
+            <div class="card-meta">
+              <span class="tag tag-critical">Critical</span>
+              <span class="tag tag-backend">Backend</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-info">
+                <svg viewBox="0 0 16 16"><path d="M14 11.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1 0-1H3V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v6h1V8a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3h.5a.5.5 0 0 1 .5.5z"/></svg>
+                2 files
+              </span>
+              <span class="card-info">Mar 14</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Design notification system</div>
+            <div class="card-meta">
+              <span class="tag tag-high">High</span>
+              <span class="tag tag-fullstack">Fullstack</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- In Progress -->
+        <div class="column">
+          <div class="col-header">
+            <span class="col-title">In Progress</span>
+            <span class="col-count">2</span>
+          </div>
+          <div class="card">
+            <div class="card-title">File upload service</div>
+            <div class="card-meta">
+              <span class="tag tag-high">High</span>
+              <span class="tag tag-backend">Backend</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-info">
+                <svg viewBox="0 0 16 16"><path d="M14 11.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1 0-1H3V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v6h1V8a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3h.5a.5.5 0 0 1 .5.5z"/></svg>
+                1 file
+              </span>
+              <span class="card-info">60%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 60%"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Activity feed component</div>
+            <div class="card-meta">
+              <span class="tag tag-medium">Medium</span>
+              <span class="tag tag-frontend">Frontend</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Review -->
+        <div class="column">
+          <div class="col-header">
+            <span class="col-title">Review</span>
+            <span class="col-count">2</span>
+          </div>
+          <div class="card">
+            <div class="card-title">User authentication</div>
+            <div class="card-meta">
+              <span class="tag tag-critical">Critical</span>
+              <span class="tag tag-fullstack">Fullstack</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-info">
+                <svg viewBox="0 0 16 16"><path d="M2 1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9.586a2 2 0 0 1 1.414.586l2 2V2a1 1 0 0 0-1-1H2z"/></svg>
+                3 comments
+              </span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Database migration scripts</div>
+            <div class="card-meta">
+              <span class="tag tag-high">High</span>
+              <span class="tag tag-backend">Backend</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Done -->
+        <div class="column">
+          <div class="col-header">
+            <span class="col-title">Done</span>
+            <span class="col-count">2</span>
+          </div>
+          <div class="card done-card">
+            <div class="card-title">Project setup &amp; config</div>
+            <div class="card-meta">
+              <span class="tag tag-high">High</span>
+              <span class="tag tag-devops">DevOps</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-info">Completed Mar 10</span>
+            </div>
+          </div>
+          <div class="card done-card">
+            <div class="card-title">Database schema design</div>
+            <div class="card-meta">
+              <span class="tag tag-critical">Critical</span>
+              <span class="tag tag-backend">Backend</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-info">Completed Mar 11</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- .board -->
+
+      <!-- Schema section -->
+      <div class="schema-section">
+        <div class="schema-heading">Database Schema (5 tables)</div>
+        <div class="schema-grid">
+          <div class="schema-card">
+            <div class="schema-table">users</div>
+            <ul class="schema-cols">
+              <li><span class="col-name">id</span> <span class="col-pk">PK</span></li>
+              <li><span class="col-name">username</span></li>
+              <li><span class="col-name">password_hash</span></li>
+              <li><span class="col-name">created_at</span></li>
+            </ul>
+          </div>
+          <div class="schema-card">
+            <div class="schema-table">projects</div>
+            <ul class="schema-cols">
+              <li><span class="col-name">id</span> <span class="col-pk">PK</span></li>
+              <li><span class="col-name">name</span></li>
+              <li><span class="col-name">owner_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">created_at</span></li>
+            </ul>
+          </div>
+          <div class="schema-card">
+            <div class="schema-table">tasks</div>
+            <ul class="schema-cols">
+              <li><span class="col-name">id</span> <span class="col-pk">PK</span></li>
+              <li><span class="col-name">title</span></li>
+              <li><span class="col-name">description</span></li>
+              <li><span class="col-name">status</span></li>
+              <li><span class="col-name">priority</span></li>
+              <li><span class="col-name">assignee_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">project_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">due_date</span></li>
+            </ul>
+          </div>
+          <div class="schema-card">
+            <div class="schema-table">attachments</div>
+            <ul class="schema-cols">
+              <li><span class="col-name">id</span> <span class="col-pk">PK</span></li>
+              <li><span class="col-name">task_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">filename</span></li>
+              <li><span class="col-name">filepath</span></li>
+              <li><span class="col-name">uploaded_by</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">created_at</span></li>
+            </ul>
+          </div>
+          <div class="schema-card">
+            <div class="schema-table">activity_log</div>
+            <ul class="schema-cols">
+              <li><span class="col-name">id</span> <span class="col-pk">PK</span></li>
+              <li><span class="col-name">project_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">user_id</span> <span class="col-fk">FK</span></li>
+              <li><span class="col-name">action</span></li>
+              <li><span class="col-name">target</span></li>
+              <li><span class="col-name">created_at</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .board-area -->
+
+    <!-- Activity sidebar -->
+    <div class="sidebar">
+      <div class="activity-panel">
+        <div class="activity-title">Activity Log</div>
+        <div class="activity-item">
+          <div class="activity-user">alice</div>
+          <div class="activity-text">moved "File upload" to In Progress</div>
+          <div class="activity-time">2m ago</div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-user">bob</div>
+          <div class="activity-text">attached design.pdf to "Notification system"</div>
+          <div class="activity-time">5m ago</div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-user">carol</div>
+          <div class="activity-text">commented on "User auth"</div>
+          <div class="activity-time">12m ago</div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-user">alice</div>
+          <div class="activity-text">created task "SSE endpoint"</div>
+          <div class="activity-time">1h ago</div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-text activity-system">System: SSE connection established</div>
+          <div class="activity-time">1h ago</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .main-layout -->
+
+  <!-- Source footer -->
+  <div class="source-footer">
+    <dl>
+      <dt>Scenario</dt>
+      <dd><code>realtime-kanban</code> (NIGHTMARE)</dd>
+      <dt>Description</dt>
+      <dd>Flask + SSE + SQLite, 8 tasks, 5 tables, file uploads, activity logging</dd>
+      <dt>Complexity</dt>
+      <dd>Nightmare — Multi-wave build, inter-dependent tasks, 4 waves</dd>
+    </dl>
+    <div class="source-note">
+      This scenario tests Nova's ability to handle complex, interconnected systems with real-time features.
+    </div>
+  </div>
+
+</div><!-- .app -->
+
+<script>
+(function(){
+  const board = document.querySelector('.kanban-board');
+  if (!board) return;
+  const columns = board.querySelectorAll('.column');
+  const activityLog = document.querySelector('.activity-list');
+
+  board.addEventListener('click', function(e) {
+    const card = e.target.closest('.card');
+    if (!card) return;
+    const col = card.closest('.column');
+    const idx = Array.from(columns).indexOf(col);
+    if (idx < columns.length - 1) {
+      const nextCol = columns[idx + 1];
+      const nextList = nextCol.querySelector('.task-list') || nextCol.querySelector('.card-list');
+      if (nextList) nextList.prepend(card);
+      // Add activity log entry
+      if (activityLog) {
+        const title = (card.querySelector('.card-title') || card.querySelector('h4') || {}).textContent || 'task';
+        const colName = (nextCol.querySelector('.col-header h3') || nextCol.querySelector('h3') || {}).textContent || 'next';
+        const li = document.createElement('li');
+        li.className = 'activity-item';
+        li.innerHTML = `<span class="activity-text">You moved "${title}" to ${colName}</span><span class="activity-time">just now</span>`;
+        activityLog.prepend(li);
+      }
+      updateCounts();
+    }
+  });
+
+  function updateCounts() {
+    columns.forEach(col => {
+      const countEl = col.querySelector('.col-count') || col.querySelector('.count');
+      if (countEl) countEl.textContent = col.querySelectorAll('.card').length;
+    });
+  }
+})();
+</script>
+</body>
+</html>
