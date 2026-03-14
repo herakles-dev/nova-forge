@@ -2877,6 +2877,29 @@ class ForgeShell:
 
             preview_url = self._preview_mgr.start(stack_info=si)
             is_local = preview_url.startswith("http://localhost")
+
+            # Verify root route works, auto-repair if 404
+            import urllib.request
+            import urllib.error
+            check_url = f"http://localhost:{si.port}/"
+            try:
+                req = urllib.request.Request(check_url, headers={"User-Agent": "NovaForge/1.0"})
+                resp = urllib.request.urlopen(req, timeout=5)
+                root_status = resp.status
+            except urllib.error.HTTPError as e:
+                root_status = e.code
+            except Exception:
+                root_status = 0
+
+            if root_status == 404:
+                repaired = self._auto_repair_file_refs()
+                if repaired:
+                    self._preview_mgr.stop()
+                    self._preview_mgr = PreviewManager(self.project_path)
+                    preview_url = self._preview_mgr.start(stack_info=si)
+                    is_local = preview_url.startswith("http://localhost")
+                    console.print("  [info]Auto-repaired file references[/]")
+
             title = "[bold green] Local Preview [/]" if is_local else "[bold green] Live Preview [/]"
             console.print(Panel(
                 f"[bold green]{preview_url}[/]\n\n"
@@ -2948,6 +2971,44 @@ class ForgeShell:
 
             preview_url = self._preview_mgr.start(stack_info=si)
             is_local = preview_url.startswith("http://localhost")
+
+            # Verify root route actually works before showing success
+            import urllib.request
+            import urllib.error
+            check_url = f"http://localhost:{si.port}/"
+            try:
+                req = urllib.request.Request(check_url, headers={"User-Agent": "NovaForge/1.0"})
+                resp = urllib.request.urlopen(req, timeout=5)
+                root_status = resp.status
+            except urllib.error.HTTPError as e:
+                root_status = e.code
+            except Exception:
+                root_status = 0
+
+            if root_status == 404:
+                console.print("  [warning]GET / returned 404 — attempting auto-repair...[/]")
+                repaired = self._auto_repair_file_refs()
+                if repaired:
+                    # Restart server with fixed code
+                    self._preview_mgr.stop()
+                    self._preview_mgr = PreviewManager(self.project_path)
+                    preview_url = self._preview_mgr.start(stack_info=si)
+                    is_local = preview_url.startswith("http://localhost")
+                    try:
+                        resp = urllib.request.urlopen(req, timeout=5)
+                        root_status = resp.status
+                    except urllib.error.HTTPError as e:
+                        root_status = e.code
+                    except Exception:
+                        root_status = 0
+                    if 200 <= root_status < 400:
+                        console.print("  [success]Auto-repair fixed the issue![/]")
+                    else:
+                        console.print(f"  [warning]Auto-repair applied but GET / still returns {root_status}[/]")
+                else:
+                    console.print("  [warning]Could not auto-repair — app may not serve correctly[/]")
+            elif root_status >= 500:
+                console.print(f"  [warning]GET / returned {root_status} — server error in app code[/]")
 
             console.print()
             if is_local:
