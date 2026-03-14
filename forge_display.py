@@ -479,6 +479,77 @@ class BuildDisplay:
 
         console.print(table)
 
+    def save_build_log(self, project_path: Path, model_id: str = "", goal: str = "") -> Path | None:
+        """Persist all task traces to a JSONL build log for proof-of-work.
+
+        Returns the path to the log file, or None on error.
+        """
+        import json
+        from datetime import datetime, timezone
+
+        log_dir = Path(project_path) / ".forge" / "builds"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        log_file = log_dir / f"build_{ts}.jsonl"
+
+        build_dur = time.monotonic() - self._build_start
+        passed = sum(1 for t in self.traces.values() if t.status == "passed")
+        failed = sum(1 for t in self.traces.values() if t.status == "failed")
+
+        try:
+            with open(log_file, "w") as f:
+                # Build summary header
+                header = {
+                    "type": "build_summary",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "model": model_id,
+                    "goal": goal[:200],
+                    "duration_s": round(build_dur, 1),
+                    "tasks_passed": passed,
+                    "tasks_failed": failed,
+                    "tasks_total": len(self.traces),
+                    "total_turns": sum(t.turns for t in self.traces.values()),
+                    "total_tool_calls": sum(t.tool_calls for t in self.traces.values()),
+                    "total_tokens_in": sum(t.tokens_in for t in self.traces.values()),
+                    "total_tokens_out": sum(t.tokens_out for t in self.traces.values()),
+                    "total_model_ms": sum(t.model_ms for t in self.traces.values()),
+                    "total_tool_ms": sum(t.tool_ms for t in self.traces.values()),
+                    "files_created": sorted(set(
+                        fp for t in self.traces.values() for fp in t.files_written
+                    )),
+                    "files_edited": sorted(set(
+                        fp for t in self.traces.values() for fp in t.files_edited
+                    )),
+                }
+                f.write(json.dumps(header) + "\n")
+
+                # Per-task detail
+                for task_id, trace in sorted(self.traces.items()):
+                    entry = {
+                        "type": "task_trace",
+                        "task_id": trace.task_id,
+                        "subject": trace.subject,
+                        "status": trace.status,
+                        "duration_s": round(trace.duration, 1),
+                        "turns": trace.turns,
+                        "tool_calls": trace.tool_calls,
+                        "tokens_in": trace.tokens_in,
+                        "tokens_out": trace.tokens_out,
+                        "model_ms": trace.model_ms,
+                        "tool_ms": trace.tool_ms,
+                        "files_written": trace.files_written,
+                        "files_read": trace.files_read,
+                        "files_edited": trace.files_edited,
+                        "commands_run": trace.commands_run[:10],
+                        "error": trace.error or "",
+                    }
+                    f.write(json.dumps(entry) + "\n")
+
+            return log_file
+        except Exception:
+            return None
+
 
 # ── Chat display ─────────────────────────────────────────────────────────────
 

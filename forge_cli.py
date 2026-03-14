@@ -294,6 +294,7 @@ HELP_TEXT = """
   [accent]/pwd[/]                Show current project location
   [accent]/formation[/]          View agent formations  [muted](interactive selector)[/]
   [accent]/audit[/]              View the build audit log
+  [accent]/builds[/]             Build history with proof-of-work detail
 
 [bold bright_white]General[/]
   [accent]/clear[/]              Clear the screen
@@ -985,6 +986,8 @@ class ForgeShell:
                 await self._cmd_formation(arg)
             case "/audit":
                 self._cmd_audit()
+            case "/builds":
+                self._cmd_builds(arg)
             case "/preview":
                 await self._cmd_preview(arg)
             case "/deploy":
@@ -2416,6 +2419,23 @@ class ForgeShell:
         except Exception:
             pass  # Non-critical — don't block build on profile update
 
+        # Save build log (proof-of-work)
+        if display and display.traces:
+            spec_text = ""
+            spec_path = self.project_path / "spec.md"
+            if spec_path.exists():
+                try:
+                    spec_text = spec_path.read_text()[:200]
+                except Exception:
+                    pass
+            log_path = display.save_build_log(
+                self.project_path,
+                model_id=self.model,
+                goal=spec_text,
+            )
+            if log_path:
+                console.print(f"  [muted]Build log: {log_path.relative_to(self.project_path)}[/]")
+
         # Auto-preview on successful build
         if not build_paused and passed > 0 and "--no-preview" not in arg:
             await self._auto_preview()
@@ -2906,6 +2926,144 @@ class ForgeShell:
         console.print(f"  [muted]Waves: {len(f.wave_order)}[/]")
         for i, wave in enumerate(f.wave_order):
             console.print(f"    Wave {i}: {', '.join(wave)}")
+
+    # ── /builds ──────────────────────────────────────────────────────────
+
+    def _cmd_builds(self, arg: str) -> None:
+        """Show past build logs with detailed proof-of-work."""
+        builds_dir = self.project_path / ".forge" / "builds"
+        if not builds_dir.exists():
+            console.print("  [muted]No build logs yet. Run /build first![/]")
+            return
+
+        log_files = sorted(builds_dir.glob("build_*.jsonl"), reverse=True)
+        if not log_files:
+            console.print("  [muted]No build logs found.[/]")
+            return
+
+        # Show specific build or list
+        if arg and arg.isdigit():
+            idx = int(arg) - 1
+            if idx < 0 or idx >= len(log_files):
+                console.print(f"  [error]Build #{arg} not found. Have {len(log_files)} builds.[/]")
+                return
+            self._show_build_detail(log_files[idx])
+        else:
+            console.print(f"  [info]Build History[/] ({len(log_files)} builds)")
+            console.print()
+            table = Table(
+                box=box.SIMPLE, show_header=True,
+                header_style="bold", padding=(0, 1),
+            )
+            table.add_column("#", width=3)
+            table.add_column("Date", width=19)
+            table.add_column("Result", width=12)
+            table.add_column("Tasks", width=6)
+            table.add_column("Duration", width=9)
+            table.add_column("Turns", width=6)
+            table.add_column("Tools", width=6)
+            table.add_column("Tokens", width=12)
+            table.add_column("Model", width=15)
+
+            for i, lf in enumerate(log_files[:20]):
+                try:
+                    first_line = lf.read_text().split("\n")[0]
+                    h = json.loads(first_line)
+                    if h.get("type") != "build_summary":
+                        continue
+                    ts = h.get("timestamp", "")[:19].replace("T", " ")
+                    p = h.get("tasks_passed", 0)
+                    f = h.get("tasks_failed", 0)
+                    result = f"[success]{p}p[/]" + (f" [error]{f}f[/]" if f else "")
+                    tok_in = h.get("total_tokens_in", 0)
+                    tok_out = h.get("total_tokens_out", 0)
+                    tok = f"{tok_in + tok_out:,}" if tok_in + tok_out > 0 else "-"
+                    model = h.get("model", "")
+                    if "/" in model:
+                        model = model.split("/")[-1][:15]
+                    table.add_row(
+                        str(i + 1),
+                        ts,
+                        result,
+                        str(h.get("tasks_total", "?")),
+                        f"{h.get('duration_s', 0):.0f}s",
+                        str(h.get("total_turns", "-")),
+                        str(h.get("total_tool_calls", "-")),
+                        tok,
+                        model,
+                    )
+                except Exception:
+                    continue
+
+            console.print(table)
+            console.print()
+            console.print("  [hint]Type /builds N for detailed view of build #N[/]")
+
+    def _show_build_detail(self, log_file: Path) -> None:
+        """Show detailed view of a single build log."""
+        lines = [ln for ln in log_file.read_text().strip().split("\n") if ln.strip()]
+        if not lines:
+            console.print("  [muted]Empty build log.[/]")
+            return
+
+        header = json.loads(lines[0])
+        console.print()
+        console.print(f"  [bold]Build Detail[/]  {header.get('timestamp', '')[:19]}")
+        console.print(f"  Model:    {header.get('model', '?')}")
+        console.print(f"  Duration: {header.get('duration_s', 0):.1f}s")
+        console.print(f"  Tasks:    {header.get('tasks_passed', 0)} passed, {header.get('tasks_failed', 0)} failed")
+        console.print(f"  Turns:    {header.get('total_turns', 0)}")
+        console.print(f"  Tools:    {header.get('total_tool_calls', 0)} calls")
+        tok_in = header.get("total_tokens_in", 0)
+        tok_out = header.get("total_tokens_out", 0)
+        if tok_in or tok_out:
+            console.print(f"  Tokens:   {tok_in:,} in / {tok_out:,} out")
+        model_ms = header.get("total_model_ms", 0)
+        tool_ms = header.get("total_tool_ms", 0)
+        if model_ms or tool_ms:
+            console.print(f"  Time:     LLM {model_ms/1000:.1f}s / Tools {tool_ms/1000:.1f}s")
+
+        files = header.get("files_created", [])
+        if files:
+            console.print(f"  Created:  {', '.join(files[:10])}")
+
+        # Per-task breakdown
+        console.print()
+        table = Table(
+            box=box.SIMPLE, show_header=True,
+            header_style="bold", padding=(0, 1),
+        )
+        table.add_column("Task", min_width=30)
+        table.add_column("Status", width=7)
+        table.add_column("Time", width=7)
+        table.add_column("Turns", width=6)
+        table.add_column("Tools", width=6)
+        table.add_column("Files", min_width=20)
+
+        for line in lines[1:]:
+            try:
+                t = json.loads(line)
+                if t.get("type") != "task_trace":
+                    continue
+                status = "[success]pass[/]" if t.get("status") == "passed" else "[error]fail[/]"
+                written = t.get("files_written", [])
+                edited = t.get("files_edited", [])
+                file_str = ", ".join(
+                    [f"+{f.split('/')[-1]}" for f in written[:3]] +
+                    [f"~{f.split('/')[-1]}" for f in edited[:2]]
+                )
+                table.add_row(
+                    t.get("subject", "?")[:35],
+                    status,
+                    f"{t.get('duration_s', 0):.0f}s",
+                    str(t.get("turns", "-")),
+                    str(t.get("tool_calls", "-")),
+                    file_str,
+                )
+            except Exception:
+                continue
+
+        console.print(table)
 
     # ── /audit ───────────────────────────────────────────────────────────
 
