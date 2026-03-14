@@ -2253,14 +2253,14 @@ class ForgeShell:
 
                 # Create integration tasks
                 issues_text = "\n".join(f"- {iss}" for iss in issues)
-                file_tree = "\n".join(f"  {f}" for f in all_gen_files)
+                file_tree_text = "\n".join(f"  {f}" for f in all_gen_files)
 
                 auditor_task = store.create(
                     subject="Audit cross-file integration",
                     description=(
                         f"Read ALL project files and identify cross-file issues.\n\n"
                         f"Known issues from static scan:\n{issues_text}\n\n"
-                        f"Project files:\n{file_tree}\n\n"
+                        f"Project files:\n{file_tree_text}\n\n"
                         f"Read each file listed above. For each issue, explain:\n"
                         f"1. What file has the problem\n"
                         f"2. What the code does (e.g. send_static_file('index.html'))\n"
@@ -2636,7 +2636,7 @@ class ForgeShell:
                 rel = f.relative_to(self.project_path)
                 files.append(str(rel))
 
-        file_tree = "\n".join(f"  {f}" for f in files[:30])
+        file_tree_text = "\n".join(f"  {f}" for f in files[:30])
 
         # Read server error log for actual traceback
         error_log = ""
@@ -2677,7 +2677,7 @@ class ForgeShell:
         prompt = (
             f"## Problem\n"
             f"This web app's GET / is broken. The server starts but returns an error.\n\n"
-            f"## Project Files\n{file_tree}\n"
+            f"## Project Files\n{file_tree_text}\n"
             f"{error_section}\n\n"
             f"## Your Task\n"
             f"1. Read app.py (or the main server file) to see how / is routed\n"
