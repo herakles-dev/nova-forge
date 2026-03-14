@@ -506,7 +506,10 @@ class ForgeAgent:
                             attempt + 1, MAX_API_RETRIES, exc,
                         )
                         if self.on_event:
-                            self.on_event(AgentEvent(kind="error", error=f"Retry {attempt + 1}: {exc}"))
+                            try:
+                                self.on_event(AgentEvent(kind="error", error=f"Retry {attempt + 1}: {exc}"))
+                            except Exception:
+                                pass
                         if attempt < MAX_API_RETRIES - 1:
                             delay = min(2 ** attempt + random.uniform(0, 1), 30)
                             logger.warning("Retrying in %.1fs", delay)
@@ -1518,14 +1521,16 @@ class ForgeAgent:
         """
         ext = path.suffix.lower()
 
-        # Shell-based checks
+        # Shell-based checks (shlex.quote prevents injection via crafted filenames)
+        import shlex
+        safe_path = shlex.quote(str(path))
         checks = {
-            '.py': f"python3 -c \"import py_compile; py_compile.compile('{path}', doraise=True)\"",
-            '.json': f"python3 -c \"import json; json.load(open('{path}'))\"",
-            '.yaml': f"python3 -c \"import yaml; yaml.safe_load(open('{path}'))\"",
-            '.yml': f"python3 -c \"import yaml; yaml.safe_load(open('{path}'))\"",
-            '.js': f"node --check '{path}'",
-            '.mjs': f"node --check '{path}'",
+            '.py': f"python3 -c \"import py_compile; py_compile.compile({safe_path}, doraise=True)\"",
+            '.json': f"python3 -c \"import json; json.load(open({safe_path}))\"",
+            '.yaml': f"python3 -c \"import yaml; yaml.safe_load(open({safe_path}))\"",
+            '.yml': f"python3 -c \"import yaml; yaml.safe_load(open({safe_path}))\"",
+            '.js': f"node --check {safe_path}",
+            '.mjs': f"node --check {safe_path}",
         }
         cmd = checks.get(ext)
         if cmd:

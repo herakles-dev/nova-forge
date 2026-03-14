@@ -632,6 +632,13 @@ class ChatDisplay:
                     description=f"[nova]Nova[/] [muted]turn {event.turn}...[/]",
                 )
 
+        elif event.kind == "turn_limit_warning":
+            if self._progress and self._task_id is not None:
+                self._progress.update(
+                    self._task_id,
+                    description="[warning]Turn limit reached — extending...[/]",
+                )
+
     def create_progress(self) -> Progress:
         """Create and return the Progress instance for use as context manager."""
         self._progress = Progress(

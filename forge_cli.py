@@ -295,6 +295,8 @@ HELP_TEXT = """
   [accent]/formation[/]          View agent formations  [muted](interactive selector)[/]
   [accent]/audit[/]              View the build audit log
   [accent]/builds[/]             Build history with proof-of-work detail
+  [accent]/health[/]             System health dashboard
+  [accent]/competition[/]        Hackathon submission readiness
 
 [bold bright_white]General[/]
   [accent]/clear[/]              Clear the screen
@@ -952,7 +954,7 @@ class ForgeShell:
             case "/clear" | "/cls":
                 console.clear()
                 console.print(LOGO)
-                console.print(f"  {TAGLINE}")
+                console.print(f"  {_TAGLINE_TEXT}")
             case "/pwd":
                 console.print(f"  [info]Project:[/] {self.project_path}")
             case "/cd":
@@ -2764,7 +2766,7 @@ class ForgeShell:
                        cf or "Install cloudflared for preview tunnels")
 
         # Model availability
-        model_id = self.model_id
+        model_id = self.model
         provider = get_provider(model_id)
         try:
             cfg = get_model_config(model_id)
@@ -3019,7 +3021,11 @@ class ForgeShell:
             console.print("  [muted]Empty build log.[/]")
             return
 
-        header = json.loads(lines[0])
+        try:
+            header = json.loads(lines[0])
+        except json.JSONDecodeError:
+            console.print("  [error]Corrupt build log — cannot parse header.[/]")
+            return
         console.print()
         console.print(f"  [bold]Build Detail[/]  {header.get('timestamp', '')[:19]}")
         console.print(f"  Model:    {header.get('model', '?')}")
