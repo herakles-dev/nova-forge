@@ -2098,6 +2098,7 @@ class ForgeShell:
         total_files = 0
         wave_results: list[tuple[int, str, str, float]] = []
         build_paused = False
+        self._build_total_cost = 0.0  # Reset cost tracking for this build
 
         # ── Live progress display ────────────────────────────────────────
         from forge_display import BuildDisplay

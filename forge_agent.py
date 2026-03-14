@@ -806,7 +806,7 @@ class ForgeAgent:
                     "then complete any remaining work."
                 )
 
-            escalated_result = await self.run(prompt=prompt, system=system, context=(context or "") + artifact_summary)
+            escalated_result = await self.run(prompt=prompt + artifact_summary, system=system, context=context)
             escalated_result.escalated = True
             escalated_result.tokens_in += _total_in
             escalated_result.tokens_out += _total_out
