@@ -1044,7 +1044,7 @@ class ForgeShell:
             case "/audit":
                 self._cmd_audit()
             case "/preview":
-                self._cmd_preview(arg)
+                await self._cmd_preview(arg)
             case "/deploy":
                 self._cmd_deploy(arg)
             case "/interview":
@@ -2358,7 +2358,7 @@ class ForgeShell:
 
         # Auto-preview on successful build
         if not build_paused and passed > 0 and "--no-preview" not in arg:
-            self._auto_preview()
+            await self._auto_preview()
 
         cancellation.uninstall()
 
@@ -2488,13 +2488,13 @@ class ForgeShell:
             completed = store.list(status="completed") if store else []
             vr = await verifier.verify(tasks=completed)
 
-            # Auto-repair file reference mismatches before reporting
-            repaired = False
+            # Agent-repair file reference mismatches before reporting
             failed_checks = [c for c in vr.checks if not c.passed and c.name in ("file_references", "root_route")]
             if failed_checks:
-                repaired = self._auto_repair_file_refs()
+                console.print("  [info]Running repair agent for file reference issues...[/]")
+                repaired = await self._agent_repair_preview(0)
                 if repaired:
-                    console.print("  [info]Auto-repaired file reference mismatches — re-verifying...[/]")
+                    console.print("  [info]Repair agent applied fixes — re-verifying...[/]")
                     vr = await verifier.verify(tasks=completed)
 
             if vr.status == "pass":
@@ -2513,63 +2513,53 @@ class ForgeShell:
         except Exception as exc:
             console.print(f"  [warning]Verify: SKIP[/] — {exc}")
 
-    def _auto_repair_file_refs(self) -> bool:
-        """Fix common file reference mismatches between code and file locations.
+    async def _agent_repair_preview(self, port: int) -> bool:
+        """Run a ForgeAgent to diagnose and fix why GET / returns 404.
 
-        Returns True if any repairs were made.
+        The agent reads the project files, identifies the mismatch between
+        code and file locations, and fixes it. Returns True if repair was attempted.
         """
-        import re as _re
-        import shutil as _shutil
+        from forge_agent import ForgeAgent
+        from config import get_model_config
 
-        repaired = False
-        app_py = self.project_path / "app.py"
-        if not app_py.exists():
-            return False
+        # Build a file tree for context
+        files = []
+        for f in sorted(self.project_path.rglob("*")):
+            if f.is_file() and not any(p in f.parts for p in (".forge", "__pycache__", "artifacts", ".git", "node_modules")):
+                rel = f.relative_to(self.project_path)
+                files.append(str(rel))
+
+        file_tree = "\n".join(f"  {f}" for f in files[:30])
+
+        prompt = (
+            f"## Problem\n"
+            f"This Flask/web app returns 404 on GET /. The server starts but the root route is broken.\n\n"
+            f"## Project Files\n{file_tree}\n\n"
+            f"## Your Task\n"
+            f"1. Read app.py (or the main server file) to see how / is routed\n"
+            f"2. Read the file it tries to serve (check both static/ and templates/)\n"
+            f"3. Fix the mismatch. Common issues:\n"
+            f"   - app.send_static_file('x.html') but file is in templates/ → change to render_template('x.html') and fix imports\n"
+            f"   - render_template('x.html') but file is in static/ → move/copy file to templates/\n"
+            f"   - No route for / at all → add one\n"
+            f"   - Missing import (e.g. render_template not imported from flask)\n"
+            f"4. Write the fixed file using edit_file or write_file\n\n"
+            f"IMPORTANT: Actually fix the code. Do NOT just describe what to do — use your tools to make the change."
+        )
+
+        task_mc = get_model_config(self.model, max_tokens=4096)
+        agent = ForgeAgent(
+            model_config=task_mc,
+            project_root=self.project_path,
+            max_turns=8,
+            agent_id="forge-preview-repair",
+        )
 
         try:
-            src = app_py.read_text()
+            result = await agent.run(prompt=prompt, system="You are a code repair agent. Fix the broken web app route. Be concise — read, diagnose, fix.")
+            return result.tool_calls_made > 0 and not result.error
         except Exception:
             return False
-
-        # Case 1: send_static_file('x') but file is in templates/
-        for m in _re.finditer(r"send_static_file\(\s*['\"]([^'\"]+)['\"]", src):
-            ref = m.group(1)
-            static_path = self.project_path / "static" / ref
-            templates_path = self.project_path / "templates" / ref
-            if not static_path.exists() and templates_path.exists():
-                # Fix: change send_static_file to render_template
-                old = m.group(0)
-                new = f"render_template('{ref}'"
-                src = src.replace(old, new)
-                # Ensure render_template is imported
-                if "render_template" not in src.split("\n")[0:10].__repr__():
-                    src = _re.sub(
-                        r"(from flask import .+)",
-                        lambda match: match.group(0) if "render_template" in match.group(0)
-                        else match.group(0).rstrip(")").rstrip() + ", render_template" +
-                            (")" if match.group(0).rstrip().endswith(")") else ""),
-                        src, count=1,
-                    )
-                repaired = True
-
-        # Case 2: render_template('x') but file is in static/
-        for m in _re.finditer(r"render_template\(\s*['\"]([^'\"]+)['\"]", src):
-            ref = m.group(1)
-            templates_path = self.project_path / "templates" / ref
-            static_path = self.project_path / "static" / ref
-            if not templates_path.exists() and static_path.exists():
-                # Fix: copy the file to templates/ (safer than changing code)
-                templates_path.parent.mkdir(parents=True, exist_ok=True)
-                _shutil.copy2(static_path, templates_path)
-                repaired = True
-
-        if repaired:
-            try:
-                app_py.write_text(src)
-            except Exception:
-                return False
-
-        return repaired
 
     # ── /status ──────────────────────────────────────────────────────────
 
@@ -2860,7 +2850,7 @@ class ForgeShell:
 
     # ── Auto-preview ──────────────────────────────────────────────────
 
-    def _auto_preview(self) -> None:
+    async def _auto_preview(self) -> None:
         """Automatically start preview after a successful build."""
         from forge_preview import PreviewManager, PreviewError, detect_stack
 
@@ -2878,7 +2868,7 @@ class ForgeShell:
             preview_url = self._preview_mgr.start(stack_info=si)
             is_local = preview_url.startswith("http://localhost")
 
-            # Verify root route works, auto-repair if 404
+            # Verify root route works, agent-repair if 404
             import urllib.request
             import urllib.error
             check_url = f"http://localhost:{si.port}/"
@@ -2892,13 +2882,14 @@ class ForgeShell:
                 root_status = 0
 
             if root_status == 404:
-                repaired = self._auto_repair_file_refs()
+                console.print("  [warning]GET / returned 404 — running repair agent...[/]")
+                repaired = await self._agent_repair_preview(si.port)
                 if repaired:
                     self._preview_mgr.stop()
                     self._preview_mgr = PreviewManager(self.project_path)
                     preview_url = self._preview_mgr.start(stack_info=si)
                     is_local = preview_url.startswith("http://localhost")
-                    console.print("  [info]Auto-repaired file references[/]")
+                    console.print("  [info]Repair agent fixed file references[/]")
 
             title = "[bold green] Local Preview [/]" if is_local else "[bold green] Live Preview [/]"
             console.print(Panel(
@@ -2916,7 +2907,7 @@ class ForgeShell:
 
     # ── /preview ────────────────────────────────────────────────────────
 
-    def _cmd_preview(self, arg: str) -> None:
+    async def _cmd_preview(self, arg: str) -> None:
         """Launch Cloudflare Tunnel for live preview."""
         from forge_preview import PreviewManager, PreviewError
 
@@ -2986,8 +2977,9 @@ class ForgeShell:
                 root_status = 0
 
             if root_status == 404:
-                console.print("  [warning]GET / returned 404 — attempting auto-repair...[/]")
-                repaired = self._auto_repair_file_refs()
+                console.print("  [warning]GET / returned 404 — running repair agent...[/]")
+                import asyncio
+                repaired = await self._agent_repair_preview(si.port)
                 if repaired:
                     # Restart server with fixed code
                     self._preview_mgr.stop()
@@ -2995,6 +2987,7 @@ class ForgeShell:
                     preview_url = self._preview_mgr.start(stack_info=si)
                     is_local = preview_url.startswith("http://localhost")
                     try:
+                        req = urllib.request.Request(check_url, headers={"User-Agent": "NovaForge/1.0"})
                         resp = urllib.request.urlopen(req, timeout=5)
                         root_status = resp.status
                     except urllib.error.HTTPError as e:
@@ -3002,11 +2995,11 @@ class ForgeShell:
                     except Exception:
                         root_status = 0
                     if 200 <= root_status < 400:
-                        console.print("  [success]Auto-repair fixed the issue![/]")
+                        console.print("  [success]Repair agent fixed the issue![/]")
                     else:
-                        console.print(f"  [warning]Auto-repair applied but GET / still returns {root_status}[/]")
+                        console.print(f"  [warning]Repair agent ran but GET / still returns {root_status}[/]")
                 else:
-                    console.print("  [warning]Could not auto-repair — app may not serve correctly[/]")
+                    console.print("  [warning]Repair agent could not fix — app may not serve correctly[/]")
             elif root_status >= 500:
                 console.print(f"  [warning]GET / returned {root_status} — server error in app code[/]")
 
