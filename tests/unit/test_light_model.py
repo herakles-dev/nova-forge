@@ -211,10 +211,11 @@ async def test_compact_preserves_write_file_paths():
     compacted = agent._compact_messages(messages)
 
     # The compacted summary should mention file paths
-    # Find the summary message (first user message after head)
-    summary_msg = compacted[1]["content"]
-    assert "file0.py" in summary_msg
-    assert "Files written so far" in summary_msg
+    # Find the summary in any user message (role-alternation fix may merge head + summary)
+    user_texts = [m["content"] for m in compacted if m.get("role") == "user" and isinstance(m.get("content"), str)]
+    combined = "\n".join(user_texts)
+    assert "file0.py" in combined
+    assert "Files written so far" in combined
 
 
 # ── Change 6: Decomposer size hint ──────────────────────────────────────────

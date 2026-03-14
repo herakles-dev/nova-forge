@@ -610,23 +610,32 @@ class WaveExecutor:
     # ── Failure propagation ───────────────────────────────────────────────────
 
     def _block_dependents(self, failed_task_ids: set[str]) -> None:
-        """Mark tasks that directly depend on any failed task as blocked."""
-        for task in self.store.list():
-            if task.status in ("pending", "in_progress"):
-                for dep_id in task.blocked_by:
-                    if dep_id in failed_task_ids:
-                        try:
-                            self.store.update(task.id, status="blocked")
-                            logger.info(
-                                "Blocked task %s because dependency %s failed",
-                                task.id,
-                                dep_id,
-                            )
-                        except (KeyError, ValueError) as exc:
-                            logger.warning(
-                                "Could not block task %s: %s", task.id, exc
-                            )
-                        break
+        """Block all tasks (direct AND transitive) that depend on failed tasks."""
+        blocked_ids = set()
+        to_process = list(failed_task_ids)
+
+        while to_process:
+            current_id = to_process.pop(0)
+            for task in self.store.list():
+                if task.id in blocked_ids:
+                    continue
+                if task.status not in ("pending", "in_progress"):
+                    continue
+                if current_id in (task.blocked_by or []):
+                    try:
+                        self.store.update(task.id, status="blocked")
+                        blocked_ids.add(task.id)
+                        to_process.append(task.id)  # Process this task's dependents too
+                        logger.info(
+                            "Blocked task %s (%s) — depends on failed %s",
+                            task.id,
+                            task.subject,
+                            current_id,
+                        )
+                    except (KeyError, ValueError) as exc:
+                        logger.warning(
+                            "Could not block task %s: %s", task.id, exc
+                        )
 
 
 # ── GateReviewer ──────────────────────────────────────────────────────────────

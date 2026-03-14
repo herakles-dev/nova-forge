@@ -485,6 +485,23 @@ class ForgeOrchestrator:
         pipeline_result = await executor.execute_all_waves()
         duration = time.time() - start
 
+        # Post-build integration check (matches _cmd_build)
+        from forge_verify import scan_file_references
+        issues = scan_file_references(self.project_path)
+        if issues:
+            logger.warning("Integration issues detected: %s", issues[:3])
+
+        # Verify expected files exist on disk
+        missing_files = []
+        for task_entry in store.list():
+            if task_entry.status == "completed":
+                for fpath in (task_entry.metadata or {}).get("files", []):
+                    full = self.project_path / fpath
+                    if not full.exists():
+                        missing_files.append(fpath)
+        if missing_files:
+            logger.warning("Missing files after build: %s", missing_files[:5])
+
         # Gate review
         gate_passed = False
         if pipeline_result.wave_results:

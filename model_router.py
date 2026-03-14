@@ -701,21 +701,11 @@ def _is_transient(exc: Exception) -> bool:
 
 
 async def _with_retry(coro_fn, *args, **kwargs) -> ModelResponse:
-    """Call ``coro_fn(*args, **kwargs)`` with exponential back-off (3 attempts)."""
-    delays = [1, 2, 4]
-    last_exc: Exception | None = None
-
-    for attempt, delay in enumerate(delays, start=1):
-        try:
-            return await coro_fn(*args, **kwargs)
-        except Exception as exc:
-            if _is_transient(exc) and attempt < len(delays):
-                await asyncio.sleep(delay)
-                last_exc = exc
-                continue
-            raise
-
-    raise RuntimeError("All retry attempts exhausted") from last_exc
+    """Forward call to provider. Retries handled at agent loop level."""
+    try:
+        return await coro_fn(*args, **kwargs)
+    except Exception:
+        raise  # Let agent loop handle retries with exponential backoff
 
 
 # ── Provider-agnostic tool-result formatters (no SDK imports needed) ──────────

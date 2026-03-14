@@ -2320,6 +2320,7 @@ class ForgeShell:
 
                     for ft in fix_runnable:
                         store.update(ft.id, status="in_progress")
+                        console.print(f"    [muted]Running {ft.subject}...[/]")
 
                     fix_coros = [
                         self._run_single_task(
@@ -2358,7 +2359,9 @@ class ForgeShell:
                 spec_path = self.project_path / "spec.md"
                 if spec_path.exists():
                     spec_text = spec_path.read_text()[:4000]
-                gate_result = await self._run_gate_review(store, spec_text)
+                with Progress(SpinnerColumn("dots"), TextColumn("[muted]Gate review...[/]"), TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task("gate", total=None)
+                    gate_result = await self._run_gate_review(store, spec_text)
                 gate_status = gate_result["status"]
                 if gate_status == "pass":
                     console.print("  [success]Gate: PASS[/]")
@@ -2424,21 +2427,22 @@ class ForgeShell:
             padding=(0, 1),
         ))
 
+        if passed == 0 and failed > 0:
+            console.print()
+            console.print("  [error]All tasks failed.[/] Possible causes:")
+            console.print("    • Model credentials expired — run /login")
+            console.print("    • Model rate-limited — wait and retry, or /model to switch")
+            console.print("    • Task descriptions too vague — try more specific goals")
+            console.print("    • Context window exceeded — use a larger model (/model nova-pro)")
+            console.print()
+            console.print("  [hint]Run /builds for detailed failure logs, or /build to retry.[/]")
+
         # File tree for generated files
         all_files = self._list_project_files()
         if all_files:
             console.print(file_tree(all_files[:20], str(self.project_path)))
 
-        # Update user profile with build results (skill progression)
-        try:
-            profile = self.session_manager.load_profile()
-            profile = self.session_manager.update_profile_after_build(profile, passed, failed)
-            self.assistant.skill_level = profile.skill_level
-            # Also persist to global profile for cross-project defaults
-            from config import save_global_profile
-            save_global_profile(profile.to_dict())
-        except Exception:
-            pass  # Non-critical — don't block build on profile update
+        # Skill progression tracking removed — was never wired up
 
         # Save build log (proof-of-work)
         if display and display.traces:
@@ -2582,12 +2586,13 @@ class ForgeShell:
             except Exception:
                 pass
 
-        console.print("  [muted]Verifying build...[/]")
         verifier = BuildVerifier(self.project_path, spec_text=spec_text)
 
         try:
-            completed = store.list(status="completed") if store else []
-            vr = await verifier.verify(tasks=completed)
+            with Progress(SpinnerColumn("dots"), TextColumn("[muted]Verifying build...[/]"), TimeElapsedColumn(), console=console, transient=True) as p:
+                p.add_task("verify", total=None)
+                completed = store.list(status="completed") if store else []
+                vr = await verifier.verify(tasks=completed)
 
             # Agent-repair file reference mismatches before reporting
             failed_checks = [c for c in vr.checks if not c.passed and c.name in ("file_references", "root_route")]
@@ -4282,6 +4287,8 @@ class ForgeShell:
                 console.print(Markdown(result.output))
             else:
                 console.print(result.output)
+        elif not result.output and not result.artifacts:
+            console.print("\n  [muted]Nova completed but produced no output. Try rephrasing your request.[/]")
 
         if result.artifacts:
             for path in result.artifacts:

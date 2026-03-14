@@ -398,6 +398,7 @@ class ForgeAgent:
         self.TOOL_CIRCUIT_THRESHOLD = 3
         # Self-correction: verify own output after completion
         self.auto_verify = True
+        self._awaiting_read_proof = False
         self._self_correction_count = 0
 
         # Auto-wire V11 hooks into the active HookSystem (provided or default)
@@ -447,6 +448,7 @@ class ForgeAgent:
         self._tool_failures = {}
         self._disabled_tools = set()
         self.auto_verify = True
+        self._awaiting_read_proof = False
         self._self_correction_count = 0
         _syntax_error_files: list[str] = []
 
@@ -559,7 +561,7 @@ class ForgeAgent:
             tool_calls = self.router.extract_tool_calls(response)
 
             # Clear read-proof flag when model uses tools (it's doing work)
-            if tool_calls and getattr(self, '_awaiting_read_proof', False):
+            if tool_calls and self._awaiting_read_proof:
                 self._awaiting_read_proof = False
 
             # Self-correction for malformed tool calls
@@ -619,7 +621,7 @@ class ForgeAgent:
                     continue
 
                 # Self-correction phase 2: model said "verified" without reading
-                if (getattr(self, '_awaiting_read_proof', False)
+                if (self._awaiting_read_proof
                         and self._self_correction_count < 3
                         and artifacts):
                     self._awaiting_read_proof = False
@@ -641,8 +643,7 @@ class ForgeAgent:
                     continue
 
                 # Clear read proof flag if model DID use tools (it read/fixed files)
-                if hasattr(self, '_awaiting_read_proof'):
-                    self._awaiting_read_proof = False
+                self._awaiting_read_proof = False
 
                 await self.hooks.on_stop(project=self.project_root.name)
                 return AgentResult(
@@ -791,7 +792,21 @@ class ForgeAgent:
             self.model_config = new_config
             self.provider = get_provider(new_config.model_id)
 
-            escalated_result = await self.run(prompt=prompt, system=system, context=context)
+            # Gather artifacts summary so escalated model knows about prior work
+            artifact_summary = ""
+            if artifacts:
+                artifact_lines = [f"- {fpath} ({info.get('action', 'written') if isinstance(info, dict) else 'written'})"
+                                  for fpath, info in list(artifacts.items())[:15]]
+                artifact_summary = (
+                    "\n\n## IMPORTANT: Prior Work Already Completed\n"
+                    "These files have ALREADY been written to disk by a previous model attempt. "
+                    "Read them before modifying — do NOT overwrite correct work.\n"
+                    + "\n".join(artifact_lines) + "\n"
+                    "Start by reading the existing files to understand what was done, "
+                    "then complete any remaining work."
+                )
+
+            escalated_result = await self.run(prompt=prompt, system=system, context=(context or "") + artifact_summary)
             escalated_result.escalated = True
             escalated_result.tokens_in += _total_in
             escalated_result.tokens_out += _total_out
@@ -1766,5 +1781,35 @@ class ForgeAgent:
                     continue
             break
         compacted.extend(tail[tail_start:])
+
+        # Ensure no consecutive same-role messages (Bedrock/Anthropic reject these)
+        final = []
+        for msg in compacted:
+            if final and msg.get("role") == final[-1].get("role"):
+                # Skip duplicate-role message or merge content
+                if msg.get("role") == "assistant":
+                    continue  # Skip synthetic assistant if tail starts with assistant
+                elif msg.get("role") == "user":
+                    # Merge user messages
+                    prev_content = final[-1].get("content", "")
+                    new_content = msg.get("content", "")
+                    if isinstance(prev_content, str) and isinstance(new_content, str):
+                        final[-1]["content"] = prev_content + "\n" + new_content
+                        continue
+            final.append(msg)
+        compacted = final
+
+        # Emit compact event with rough token estimates (chars / 4)
+        if self.on_event:
+            try:
+                original_chars = sum(len(json.dumps(m)) for m in messages)
+                compacted_chars = sum(len(json.dumps(m)) for m in compacted)
+                self.on_event(AgentEvent(
+                    kind="compact",
+                    tokens_in=original_chars // 4,
+                    tokens_out=compacted_chars // 4,
+                ))
+            except Exception:
+                pass
 
         return compacted

@@ -160,7 +160,6 @@ class BuildDisplay:
         result = await agent.run(...)
 
         display.end_task(1, passed=True, result=result)
-        display.print_summary()
     """
 
     def __init__(self, total_tasks: int = 0, verbose: bool = False):
@@ -334,6 +333,13 @@ class BuildDisplay:
                     self._current_task,
                     description="[warning]Turn limit reached — extending...[/]",
                 )
+        elif event.kind == "model_escalation":
+            if self._progress and self._current_task is not None:
+                self._progress.update(
+                    self._current_task,
+                    description="[warning]Escalating to stronger model...[/]",
+                )
+            console.print(f"    [warning]Model escalated[/] [muted]→ switching to more capable model[/]")
         elif event.kind == "error":
             trace.error = event.error
 
@@ -433,83 +439,7 @@ class BuildDisplay:
             if suggestion:
                 console.print(f"       [hint]{suggestion}[/]")
 
-    # ── Build summary ───────────────────────────────────────────────────
-
-    def print_summary(self, preview_url: str = "") -> None:
-        """Print the final build summary report."""
-        build_dur = time.monotonic() - self._build_start
-
-        passed = sum(1 for t in self.traces.values() if t.status == "passed")
-        failed = sum(1 for t in self.traces.values() if t.status == "failed")
-        blocked = self._blocked
-        total_tools = sum(t.tool_calls for t in self.traces.values())
-        total_tokens_in = sum(t.tokens_in for t in self.traces.values())
-        total_tokens_out = sum(t.tokens_out for t in self.traces.values())
-        total_model_ms = sum(t.model_ms for t in self.traces.values())
-        total_tool_ms = sum(t.tool_ms for t in self.traces.values())
-
-        all_written = []
-        all_edited = []
-        for t in self.traces.values():
-            all_written.extend(t.files_written)
-            all_edited.extend(t.files_edited)
-        files_created = sorted(set(all_written))
-        files_modified = sorted(set(all_edited))
-
-        console.print()
-
-        # ── Summary table ────────────────────────────────────────────────
-        table = Table(
-            box=box.ROUNDED, show_header=False, padding=(0, 2),
-            border_style=BRAND["accent"] if failed == 0 else BRAND["orange"],
-            title=f"[bold {BRAND['accent2']}] Build Summary [/]",
-        )
-        table.add_column("Key", style="bold", width=12)
-        table.add_column("Value")
-
-        # Status line
-        status_parts = []
-        if passed:
-            status_parts.append(f"[success]{passed} passed[/]")
-        if failed:
-            status_parts.append(f"[error]{failed} failed[/]")
-        if blocked:
-            status_parts.append(f"[blocked]{blocked} blocked[/]")
-        table.add_row("Result", " ".join(status_parts))
-        table.add_row("Duration", f"{build_dur:.1f}s")
-        table.add_row("Tool calls", str(total_tools))
-
-        # Token usage
-        if total_tokens_in or total_tokens_out:
-            table.add_row(
-                "Tokens",
-                f"{_format_tokens(total_tokens_in)} in / {_format_tokens(total_tokens_out)} out"
-            )
-
-        # Timing breakdown
-        if total_model_ms and total_tool_ms:
-            table.add_row(
-                "Time split",
-                f"LLM {_format_ms(total_model_ms)} | Tools {_format_ms(total_tool_ms)}"
-            )
-
-        # Files
-        if files_created:
-            names = [_short_path(f, 25) for f in files_created[:8]]
-            remainder = len(files_created) - 8
-            line = ", ".join(names)
-            if remainder > 0:
-                line += f" +{remainder} more"
-            table.add_row("Created", f"[file.write]{line}[/]")
-
-        if files_modified:
-            names = [_short_path(f, 25) for f in files_modified[:5]]
-            table.add_row("Modified", f"[file.edit]{', '.join(names)}[/]")
-
-        if preview_url:
-            table.add_row("Preview", f"[accent]{preview_url}[/]")
-
-        console.print(table)
+    # ── Build log ──────────────────────────────────────────────────────
 
     def save_build_log(self, project_path: Path, model_id: str = "", goal: str = "") -> Path | None:
         """Persist all task traces to a JSONL build log for proof-of-work.
@@ -581,7 +511,10 @@ class BuildDisplay:
                     f.write(json.dumps(entry) + "\n")
 
             return log_file
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger("forge.display").warning("Failed to save build log: %s", exc)
+            console.print(f"  [warning]Could not save build log: {exc}[/]")
             return None
 
 
