@@ -601,7 +601,7 @@ class ForgeShell:
     # ── Guided build flow (the magic) ────────────────────────────────────
 
     async def _guided_build(self, goal: str, scope_context: str | None = None) -> None:
-        """The full guided pipeline: goal → name → plan → confirm → build → celebrate."""
+        """The full guided pipeline: goal → interview → plan → confirm → build → celebrate."""
 
         # Step 1: Derive project name
         name = self._derive_project_name(goal)
@@ -638,7 +638,72 @@ class ForgeShell:
         console.print(f"  [success]Created[/] {project_dir}")
         console.print()
 
-        # Step 2: Plan
+        # Step 2: Deep interview (default) or quick plan (if scope_context already provided)
+        if scope_context is None:
+            # Run the interview to gather scope — this is the default path
+            from formations import FORMATIONS
+
+            console.print(Panel(
+                "Nova interviews you to understand your project in depth.\n"
+                f"  [phase.core]Phase 1: Core setup[/] \u00b7 [phase.deep]Phase 2: Deep dive[/] \u00b7 [phase.review]Phase 3: Review[/]\n"
+                "  [muted]Enter to accept defaults \u00b7 Esc to go back \u00b7 Ctrl-C to quit[/]",
+                title=f"[bold {BRAND['accent2']}] Interview [/]",
+                border_style=BRAND["accent2"],
+                padding=(0, 2),
+            ))
+
+            # Phase 1: Core 5 steps
+            console.print()
+            console.print(Rule(f"[phase.core] Phase 1: Core Setup [/]", style=BRAND["accent2"]))
+
+            answers: dict[str, str] = {"scope": goal}
+            steps = ["stack", "risk", "formation", "model"]
+            i = 0
+
+            while i < len(steps):
+                step = steps[i]
+                console.print()
+                console.print(Rule(f" Step {i + 1}/{len(steps)} ", style="dim", align="right"))
+
+                for prev in ["scope"] + steps[:i]:
+                    console.print(f"  [muted]{prev:12s}[/] {answers[prev]}")
+                console.print()
+
+                result = await self._interview_step(step, answers)
+                if result is None:
+                    console.print("  [muted]Interview cancelled.[/]")
+                    return
+                answers[step] = result
+                i += 1
+
+            # Phase 2: Deep Dive
+            console.print()
+            console.print(Rule(f"[phase.deep] Phase 2: Deep Dive [/]", style=BRAND["accent"]))
+            console.print("  [muted]Nova asks deeper questions to set the right scope.[/]")
+
+            deep_answers = await self._interview_deep_dive(answers)
+            if deep_answers is None:
+                console.print("  [muted]Interview cancelled.[/]")
+                return
+
+            # Phase 3: Review
+            console.print()
+            console.print(Rule(f"[phase.review] Phase 3: Scope Review [/]", style=BRAND["cyan"]))
+
+            scope_summary = self.assistant.build_scope_summary(
+                {"goal": answers["scope"], "stack": answers["stack"], "risk": answers["risk"]},
+                deep_answers,
+            )
+            scope_context = await self._scope_review_loop(scope_summary, answers, deep_answers)
+
+            if scope_context is None:
+                console.print("  [muted]Interview cancelled.[/]")
+                return
+
+            # Apply model from interview
+            self.model = resolve_model(answers.get("model", "nova-lite"))
+
+        # Step 3: Plan
         console.print(Rule(f"[bold {BRAND['accent']}] Planning [/]", style=BRAND["accent"]))
         console.print()
         await self._cmd_plan(goal, scope_context=scope_context)
