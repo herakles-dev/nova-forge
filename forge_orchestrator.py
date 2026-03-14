@@ -209,7 +209,7 @@ class ForgeOrchestrator:
             hooks=hooks,
             sandbox=sandbox,
             tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
-            max_turns=10,
+            max_turns=20,
             agent_id="forge-decomposer",
         )
 

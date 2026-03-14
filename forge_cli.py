@@ -638,70 +638,12 @@ class ForgeShell:
         console.print(f"  [success]Created[/] {project_dir}")
         console.print()
 
-        # Step 2: Deep interview (default) or quick plan (if scope_context already provided)
+        # Step 2: Smart planning — Nova proposes, user confirms
         if scope_context is None:
-            # Run the interview to gather scope — this is the default path
-            from formations import FORMATIONS
-
-            console.print(Panel(
-                "Nova interviews you to understand your project in depth.\n"
-                f"  [phase.core]Phase 1: Core setup[/] \u00b7 [phase.deep]Phase 2: Deep dive[/] \u00b7 [phase.review]Phase 3: Review[/]\n"
-                "  [muted]Enter to accept defaults \u00b7 Esc to go back \u00b7 Ctrl-C to quit[/]",
-                title=f"[bold {BRAND['accent2']}] Interview [/]",
-                border_style=BRAND["accent2"],
-                padding=(0, 2),
-            ))
-
-            # Phase 1: Core 5 steps
-            console.print()
-            console.print(Rule(f"[phase.core] Phase 1: Core Setup [/]", style=BRAND["accent2"]))
-
-            answers: dict[str, str] = {"scope": goal}
-            steps = ["stack", "risk", "formation", "model"]
-            i = 0
-
-            while i < len(steps):
-                step = steps[i]
-                console.print()
-                console.print(Rule(f" Step {i + 1}/{len(steps)} ", style="dim", align="right"))
-
-                for prev in ["scope"] + steps[:i]:
-                    console.print(f"  [muted]{prev:12s}[/] {answers[prev]}")
-                console.print()
-
-                result = await self._interview_step(step, answers)
-                if result is None:
-                    console.print("  [muted]Interview cancelled.[/]")
-                    return
-                answers[step] = result
-                i += 1
-
-            # Phase 2: Deep Dive
-            console.print()
-            console.print(Rule(f"[phase.deep] Phase 2: Deep Dive [/]", style=BRAND["accent"]))
-            console.print("  [muted]Nova asks deeper questions to set the right scope.[/]")
-
-            deep_answers = await self._interview_deep_dive(answers)
-            if deep_answers is None:
-                console.print("  [muted]Interview cancelled.[/]")
-                return
-
-            # Phase 3: Review
-            console.print()
-            console.print(Rule(f"[phase.review] Phase 3: Scope Review [/]", style=BRAND["cyan"]))
-
-            scope_summary = self.assistant.build_scope_summary(
-                {"goal": answers["scope"], "stack": answers["stack"], "risk": answers["risk"]},
-                deep_answers,
-            )
-            scope_context = await self._scope_review_loop(scope_summary, answers, deep_answers)
-
+            scope_context = await self._smart_planning(goal)
             if scope_context is None:
-                console.print("  [muted]Interview cancelled.[/]")
+                console.print("  [muted]Planning cancelled.[/]")
                 return
-
-            # Apply model from interview
-            self.model = resolve_model(answers.get("model", "nova-lite"))
 
         # Step 3: Plan
         console.print(Rule(f"[bold {BRAND['accent']}] Planning [/]", style=BRAND["accent"]))
@@ -3418,6 +3360,227 @@ class ForgeShell:
 
         console.print()
         await self._guided_build(goal)
+
+    # ── Smart Planning ─────────────────────────────────────────────────
+
+    async def _smart_planning(self, goal: str) -> str | None:
+        """LLM-driven planning: Nova analyzes the goal, proposes a plan, user confirms.
+
+        Returns scope context string, or None on cancel.
+        """
+        from config import get_model_config
+        from model_router import ModelRouter
+
+        console.print(Panel(
+            "Nova analyzes your idea and proposes a plan with recommended options.\n"
+            "  [muted]Press Enter to accept recommendations \u00b7 Ctrl-C to cancel[/]",
+            title=f"[bold {BRAND['accent2']}] Smart Planning [/]",
+            border_style=BRAND["accent2"],
+            padding=(0, 2),
+        ))
+        console.print()
+
+        # Step 1: Nova analyzes the goal and proposes recommendations
+        ctx = self.assistant.analyze_goal(goal)
+        stack_rec = "flask" if ctx.get("has_api") or ctx.get("has_data") else "static"
+        stack_label = "Python + Flask" if stack_rec == "flask" else "Static HTML/CSS/JS"
+
+        # Show Nova's analysis
+        console.print(f"  [step]Goal:[/]  {goal}")
+        console.print()
+
+        analysis_parts = []
+        if ctx.get("has_frontend"):
+            analysis_parts.append("frontend UI")
+        if ctx.get("has_api"):
+            analysis_parts.append("backend API")
+        if ctx.get("has_data"):
+            analysis_parts.append("data storage")
+        if ctx.get("has_auth"):
+            analysis_parts.append("authentication")
+        if ctx.get("has_realtime"):
+            analysis_parts.append("real-time features")
+        if analysis_parts:
+            console.print(f"  [muted]Detected:[/] {', '.join(analysis_parts)}")
+            console.print()
+
+        # Step 2: Propose recommendations with option to change
+        console.print(f"  [accent]Recommended plan:[/]")
+        console.print(f"    Stack:     [bold]{stack_label}[/]")
+        console.print(f"    Risk:      [bold]Low[/] (prototype)")
+        console.print(f"    Formation: [bold]Auto-select[/]")
+        console.print(f"    Model:     [bold]{next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), 'nova-lite')}[/]")
+        console.print()
+
+        # Quick confirm or customize
+        action = await ask_select("How does this look?", [
+            Choice(
+                title="Looks good — start building",
+                value="accept",
+                description="Accept recommendations and start planning",
+            ),
+            Choice(
+                title="Let me customize",
+                value="customize",
+                description="Change stack, model, or other options",
+            ),
+        ], default="accept")
+
+        if action is None:
+            return None
+
+        answers = {
+            "scope": goal,
+            "stack": stack_rec,
+            "risk": "low",
+            "model": next((a for a, fid in MODEL_ALIASES.items() if fid == self.model), "nova-lite"),
+        }
+
+        if action == "customize":
+            # Only ask the questions the user wants to change
+            console.print()
+            stack_result = await self._interview_step("stack", answers)
+            if stack_result is None:
+                return None
+            answers["stack"] = stack_result
+
+            model_result = await self._interview_step("model", answers)
+            if model_result is None:
+                return None
+            answers["model"] = model_result
+
+            risk_result = await self._interview_step("risk", answers)
+            if risk_result is None:
+                return None
+            answers["risk"] = risk_result
+
+        # Apply model choice
+        self.model = resolve_model(answers.get("model", "nova-lite"))
+
+        # Step 3: Generate dynamic deep-dive questions based on the goal
+        # Use the LLM to ask 2-4 smart questions instead of hardcoded categories
+        console.print()
+        console.print(Rule(f"[phase.deep] Quick Scope [/]", style=BRAND["accent"]))
+        console.print("  [muted]A few questions to nail the details.[/]")
+
+        deep_answers = await self._dynamic_deep_dive(goal, answers)
+        if deep_answers is None:
+            return None
+
+        # Step 4: Build scope summary and confirm
+        scope_summary = self.assistant.build_scope_summary(
+            {"goal": goal, "stack": answers["stack"], "risk": answers["risk"]},
+            deep_answers,
+        )
+
+        console.print()
+        console.print(Panel(
+            scope_summary,
+            title=f"[bold {BRAND['cyan']}] Project Scope [/]",
+            border_style=BRAND["cyan"],
+            padding=(1, 2),
+        ))
+        console.print()
+
+        confirmed = await ask_confirm("Ready to plan?", default=True)
+        if not confirmed:
+            return None
+
+        return scope_summary
+
+    async def _dynamic_deep_dive(self, goal: str, answers: dict) -> dict | None:
+        """LLM-driven deep dive — ask 2-4 targeted questions based on the goal.
+
+        Instead of hardcoded question categories, Nova picks what matters most
+        and proposes recommended answers the user can accept with Enter.
+        """
+        ctx = self.assistant.analyze_goal(goal, answers.get("stack", ""))
+        deep_answers: dict = {}
+
+        # Pick targeted questions from the catalog based on goal analysis
+        from forge_assistant import DEEP_DIVE_QUESTIONS, _feature_choices, _data_entity_choices
+
+        # Prioritize: features always, then only categories that apply
+        priority_categories = ["features"]
+        if ctx.get("has_frontend"):
+            priority_categories.append("visual_aesthetic")
+        if ctx.get("has_data"):
+            priority_categories.append("data")
+        if ctx.get("has_auth"):
+            priority_categories.append("auth")
+
+        # Limit to max 6 questions total for speed
+        questions = []
+        for cat in priority_categories:
+            cat_qs = DEEP_DIVE_QUESTIONS.get(cat, [])
+            for q in cat_qs:
+                if q["condition"](ctx) and len(questions) < 6:
+                    questions.append({**q, "category": cat})
+
+        if not questions:
+            console.print("  [muted]No additional questions needed — straightforward build.[/]")
+            return {}
+
+        q_num = 0
+        current_category = ""
+
+        for q in questions:
+            q_num += 1
+            cat = q["category"]
+
+            if cat != current_category:
+                current_category = cat
+                console.print()
+                cat_labels = {
+                    "features":         "\u2728 Features",
+                    "data":             "\U0001f4be Data",
+                    "auth":             "\U0001f512 Auth",
+                    "visual_aesthetic": "\U0001f3a8 Design",
+                }
+                label = cat_labels.get(cat, cat.replace("_", " ").title())
+                console.print(f"  [phase.deep]{label}[/]  [muted]({q_num}/{len(questions)})[/]")
+
+            key = q["key"]
+            q_type = q["type"]
+
+            if q_type == "select":
+                choices_raw = q.get("choices", [])
+                choices = [Choice(title=label, value=value) for label, value in choices_raw]
+                # Default to the recommended option (marked with *)
+                default = choices_raw[0][1] if choices_raw else None
+                for label, value in choices_raw:
+                    if "*" in label:
+                        default = value
+                        break
+                result = await ask_select(q["question"], choices, default=default)
+                if result is None:
+                    return None
+                deep_answers[key] = result
+
+            elif q_type == "checkbox":
+                choices_fn_name = q.get("choices_fn")
+                if choices_fn_name == "_feature_choices":
+                    choices_raw = _feature_choices(ctx)
+                elif choices_fn_name == "_data_entity_choices":
+                    choices_raw = _data_entity_choices(ctx)
+                else:
+                    choices_raw = q.get("choices", [])
+                choices = [Choice(title=label, value=value) for label, value in choices_raw]
+                result = await ask_checkbox(q["question"], choices)
+                if result is None:
+                    return None
+                deep_answers[key] = result
+
+            elif q_type == "text":
+                result = await ask_text_optional(q["question"])
+                deep_answers[key] = result or ""
+
+            elif q_type == "confirm":
+                default = q.get("default", True)
+                result = await ask_confirm(q["question"], default=default)
+                deep_answers[key] = "Yes" if result else "No"
+
+        return deep_answers
 
     # ── /interview ─────────────────────────────────────────────────────
 
