@@ -43,6 +43,7 @@ class AgentResult:
     tokens_in: int = 0        # total input tokens
     tokens_out: int = 0       # total output tokens
     escalated: bool = False   # was model escalated?
+    self_corrections: int = 0  # number of self-correction turns taken
 
 
 @dataclass
@@ -367,6 +368,7 @@ class ForgeAgent:
         streaming: bool = True,
         escalation_model: str | None = None,
         build_context: Any = None,
+        cancellation: Any = None,
     ) -> None:
         self.model_config = model_config
         self.project_root = Path(project_root).resolve()
@@ -387,6 +389,14 @@ class ForgeAgent:
         self.autonomy_manager: AutonomyManager | None = None
         self.build_context = build_context  # BuildContext for multi-agent coordination
         self._claimed_files: set[str] = set()  # Tracks files already claimed (suppresses duplicate events)
+        self._cancellation = cancellation  # BuildCancellation for cooperative Ctrl-C pause
+        # Circuit breaker: per-tool failure tracking
+        self._tool_failures: dict[str, int] = {}
+        self._disabled_tools: set[str] = set()
+        self.TOOL_CIRCUIT_THRESHOLD = 3
+        # Self-correction: verify own output after completion
+        self.auto_verify = True
+        self._self_correction_count = 0
 
         # Auto-wire V11 hooks into the active HookSystem (provided or default)
         if wire_v11_hooks:
@@ -431,14 +441,36 @@ class ForgeAgent:
         total_tool_calls = 0
         _total_in = 0
         _total_out = 0
+        # Reset circuit breaker state for each run
+        self._tool_failures = {}
+        self._disabled_tools = set()
+        self.auto_verify = True
+        self._self_correction_count = 0
+        _syntax_error_files: list[str] = []
 
         for turn in range(self.max_turns):
+            # Check for cooperative cancellation (Ctrl-C pause)
+            if self._cancellation and self._cancellation.is_paused():
+                return AgentResult(
+                    output="Build paused by user",
+                    turns=turn,
+                    artifacts=artifacts,
+                    tool_calls_made=total_tool_calls,
+                    error="paused",
+                    model_id=self.model_config.model_id,
+                    tokens_in=_total_in,
+                    tokens_out=_total_out,
+                )
+
             # Emit turn_start event
             if self.on_event:
                 try:
                     self.on_event(AgentEvent(kind="turn_start", turn=turn + 1))
                 except Exception:
                     pass
+
+            # Filter disabled tools (circuit breaker)
+            active_tools = [t for t in self.tools if t["name"] not in self._disabled_tools]
 
             # Call the model with retry logic for transient errors
             response = None
@@ -447,11 +479,11 @@ class ForgeAgent:
                 try:
                     if self.streaming:
                         response = await self.router.stream_send(
-                            messages, self.tools, self.model_config,
+                            messages, active_tools, self.model_config,
                             on_delta=self._on_stream_delta,
                         )
                     else:
-                        response = await self.router.send(messages, self.tools, self.model_config)
+                        response = await self.router.send(messages, active_tools, self.model_config)
                     break  # Success
                 except Exception as exc:
                     last_error = exc
@@ -512,6 +544,10 @@ class ForgeAgent:
 
             tool_calls = self.router.extract_tool_calls(response)
 
+            # Clear read-proof flag when model uses tools (it's doing work)
+            if tool_calls and getattr(self, '_awaiting_read_proof', False):
+                self._awaiting_read_proof = False
+
             # Self-correction for malformed tool calls
             if tool_calls:
                 valid_calls = []
@@ -544,8 +580,53 @@ class ForgeAgent:
 
                 tool_calls = valid_calls  # Use only valid calls
 
-            # No tool calls → agent is done
+            # No tool calls → agent is done (or needs self-correction)
             if not tool_calls:
+                # Self-correction phase 1: ask model to read back and verify files
+                if (self.auto_verify
+                        and self._self_correction_count < 3
+                        and total_tool_calls > 0
+                        and artifacts
+                        and response.text and response.text.strip()):
+                    self._self_correction_count += 1
+                    verify_prompt = (
+                        "Before finishing, read back the files you created or modified. "
+                        "Check: syntax correctness, imports match exports, no TODO/stub placeholders. "
+                        "If you find issues, fix them now. If everything looks correct, "
+                        "confirm by saying 'Verified — all files are correct.'"
+                    )
+                    adapter = self.router.route(self.model_config.model_id)
+                    messages.append(adapter.format_assistant_message(response))
+                    messages.append({"role": "user", "content": verify_prompt})
+                    self.auto_verify = False  # Don't re-inject phase 1
+                    self._awaiting_read_proof = True
+                    continue
+
+                # Self-correction phase 2: model said "verified" without reading
+                if (getattr(self, '_awaiting_read_proof', False)
+                        and self._self_correction_count < 3
+                        and artifacts):
+                    self._awaiting_read_proof = False
+                    # Model completed verification turn without tool calls (no read_file)
+                    self._self_correction_count += 1
+                    file_list = ", ".join(
+                        p.rsplit("/", 1)[-1] for p in list(artifacts.keys())[:6]
+                    )
+                    force_read = (
+                        f"You said files are correct but did NOT call read_file to verify. "
+                        f"You MUST call read_file on each file you created: {file_list}. "
+                        f"Read them now and check for syntax errors, wrong comment styles "
+                        f"(e.g. // in Python files), and incomplete code."
+                    )
+                    adapter = self.router.route(self.model_config.model_id)
+                    messages.append(adapter.format_assistant_message(response))
+                    messages.append({"role": "user", "content": force_read})
+                    continue
+
+                # Clear read proof flag if model DID use tools (it read/fixed files)
+                if hasattr(self, '_awaiting_read_proof'):
+                    self._awaiting_read_proof = False
+
                 await self.hooks.on_stop(project=self.project_root.name)
                 return AgentResult(
                     output=response.text,
@@ -555,6 +636,7 @@ class ForgeAgent:
                     model_id=self.model_config.model_id,
                     tokens_in=_total_in,
                     tokens_out=_total_out,
+                    self_corrections=self._self_correction_count,
                 )
 
             # Append assistant message to history
@@ -563,6 +645,19 @@ class ForgeAgent:
 
             # Execute each tool call
             for call in tool_calls:
+                # Check for cooperative cancellation between tool calls
+                if self._cancellation and self._cancellation.is_paused():
+                    return AgentResult(
+                        output="Build paused by user (mid-turn)",
+                        turns=turn + 1,
+                        artifacts=artifacts,
+                        tool_calls_made=total_tool_calls,
+                        error="paused",
+                        model_id=self.model_config.model_id,
+                        tokens_in=_total_in,
+                        tokens_out=_total_out,
+                    )
+
                 total_tool_calls += 1
 
                 # Emit tool_start event
@@ -580,6 +675,25 @@ class ForgeAgent:
 
                 _tool_t0 = time.monotonic()
                 result_str = await self._execute_tool_call(call, artifacts)
+
+                # Tool retry on failure: retry once after 1s delay
+                _is_error = result_str and ("ERROR" in result_str[:80] or "BLOCKED" in result_str[:80])
+                if _is_error and call.name not in self._disabled_tools:
+                    self._tool_failures[call.name] = self._tool_failures.get(call.name, 0) + 1
+                    if self._tool_failures[call.name] < self.TOOL_CIRCUIT_THRESHOLD:
+                        # Retry once
+                        await asyncio.sleep(1)
+                        retry_str = await self._execute_tool_call(call, artifacts)
+                        if retry_str and "ERROR" not in retry_str[:80]:
+                            result_str = retry_str  # Retry succeeded
+                            self._tool_failures[call.name] = max(0, self._tool_failures[call.name] - 1)
+                    # Circuit breaker: disable tool after threshold failures
+                    if self._tool_failures.get(call.name, 0) >= self.TOOL_CIRCUIT_THRESHOLD:
+                        self._disabled_tools.add(call.name)
+                        result_str += f"\n\nTool '{call.name}' disabled due to repeated failures."
+                        logger.warning("Circuit breaker: tool '%s' disabled after %d failures",
+                                       call.name, self.TOOL_CIRCUIT_THRESHOLD)
+
                 _tool_dur = int((time.monotonic() - _tool_t0) * 1000)
 
                 # Determine file action
@@ -607,6 +721,25 @@ class ForgeAgent:
                 messages.append(
                     adapter.format_tool_result(call.id, result_str)
                 )
+
+                # Track syntax errors for post-turn fix injection
+                if call.name in ("write_file", "append_file", "edit_file"):
+                    if result_str and "SYNTAX ERROR" in result_str:
+                        _file = call.args.get("path", "unknown") if isinstance(call.args, dict) else "unknown"
+                        _syntax_error_files.append(str(_file))
+
+            # RC1: If syntax errors were detected this turn, force the agent to fix them
+            if _syntax_error_files:
+                _deduped = list(dict.fromkeys(_syntax_error_files))
+                fix_msg = (
+                    f"SYNTAX ERROR detected in: {', '.join(_deduped)}. "
+                    f"You MUST fix these errors NOW. Read each file with read_file, "
+                    f"find the syntax error, and fix it with edit_file. "
+                    f"Do NOT proceed until all syntax errors are resolved."
+                )
+                messages.append({"role": "user", "content": fix_msg})
+                _syntax_error_files.clear()
+                continue  # Force another turn to fix
 
             # Context compaction — threshold from budget (60% for 32K, 75% for 200K, 80% for 1M+)
             estimated_tokens = self._estimate_tokens(messages)
@@ -872,20 +1005,25 @@ class ForgeAgent:
 
         Detects pattern like: "\\\"\\\"\\\"docstring..." and unescapes to: \"\"\"docstring...
         Also handles content wrapped in outer quotes: '"actual content"'
+        And content with \\n literals instead of actual newlines.
         """
         if not content:
             return content
         # Pattern: content starts with " and ends with " — model wrapped it as a JSON string
-        if len(content) > 2 and content[0] == '"' and content[-1] == '"' and '\\"' in content:
-            try:
-                import json
-                unescaped = json.loads(content)
-                if isinstance(unescaped, str):
-                    return unescaped
-            except (json.JSONDecodeError, ValueError):
-                pass
+        if len(content) > 2 and content[0] == '"' and content[-1] == '"':
+            if '\\"' in content or '\\n' in content or '\\/' in content:
+                try:
+                    import json
+                    unescaped = json.loads(content)
+                    if isinstance(unescaped, str):
+                        return unescaped
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        # Pattern: content has \\n literals (JSON-escaped newlines) but no outer quotes
+        if '\\n' in content and '\n' not in content:
+            content = content.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
         # Pattern: backslash-escaped quotes throughout (\"  ->  ")
-        if '\\"' in content and '\\n' not in content:
+        elif '\\"' in content:
             content = content.replace('\\"', '"')
         return content
 

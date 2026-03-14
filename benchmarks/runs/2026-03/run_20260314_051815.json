@@ -1,0 +1,528 @@
+{
+  "schema_version": 2,
+  "timestamp": "2026-03-14T05:18:15.322647",
+  "run_name": "",
+  "metadata": {
+    "git_commit": "2e5b8c1",
+    "git_branch": "main",
+    "git_dirty": true,
+    "git_changed_files": [
+      "CLAUDE.md",
+      "README.md",
+      "agents/spec-implementer.yml",
+      "agents/spec-recovery.yml",
+      "agents/spec-tester.yml",
+      "config.py",
+      "forge_agent.py",
+      "forge_assistant.py",
+      "forge_cli.py",
+      "forge_comms.py",
+      "forge_deployer.py",
+      "forge_display.py",
+      "forge_orchestrator.py",
+      "forge_preview.py",
+      "forge_prompt.py",
+      "forge_verify.py",
+      "forge_web.py",
+      "formations.py",
+      "model_router.py",
+      "prompt_builder.py",
+      "tests/unit/test_agent.py",
+      "tests/unit/test_agent_intelligence.py",
+      "tests/unit/test_autonomy_integration.py",
+      "tests/unit/test_env_prompt.py",
+      "tests/unit/test_formations.py",
+      "tests/unit/test_light_model.py",
+      "tests/unit/test_preview.py",
+      "tests/unit/test_prompt_builder.py",
+      "tests/unit/test_retry.py",
+      "tests/unit/test_token_efficiency.py"
+    ],
+    "python_version": "3.11.2",
+    "platform": "Linux-6.1.0-39-amd64-x86_64-with-glibc2.36",
+    "spec_hash": "a4f3406b442b",
+    "system_prompt_hash": "",
+    "models_run": [
+      "nova-pro"
+    ],
+    "trigger": ""
+  },
+  "summary": {
+    "models": [
+      "nova-pro"
+    ],
+    "grades": {
+      "nova-pro": "A"
+    },
+    "scores": {
+      "nova-pro": 90.4
+    },
+    "duration_total": 239.9,
+    "cost_total": 0.0
+  },
+  "results": [
+    {
+      "model_alias": "nova-pro",
+      "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+      "timestamp": "2026-03-14 05:14:13",
+      "duration_secs": 239.9,
+      "tasks_passed": 6,
+      "tasks_total": 7,
+      "retries": 1,
+      "total_turns": 62,
+      "total_tool_calls": 52,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_cost": 0.0,
+      "overall_score": 90.4,
+      "grade": "A",
+      "dimension_scores": {
+        "task_completion": 87.5,
+        "code_quality": 100.0,
+        "interface_fidelity": 100.0,
+        "runtime_viability": 100.0,
+        "efficiency": 41.7
+      },
+      "checks": [
+        {
+          "name": "File exists: config.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "86 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: auth.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "1102 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: models.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "7607 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: api.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4077 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/index.html",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2576 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/app.js",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "10040 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/style.css",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "1158 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "Not stub: config.py >= 30B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "86 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: auth.py >= 200B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "1102 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: models.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "7607 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: api.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4077 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/index.html >= 500B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2576 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/app.js >= 400B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "10040 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/style.css >= 150B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "1158 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "All 7 tasks passed",
+          "dimension": "task_completion",
+          "passed": false,
+          "detail": "6/7",
+          "weight": 3.0
+        },
+        {
+          "name": "Syntax OK: config.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: auth.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: models.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: api.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py uses sqlite3",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py avoids SQLAlchemy",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py exports functions (not classes)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "11 funcs, 0 classes",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has <form>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links app.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links style.css",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML has kanban columns (todo/in_progress/done)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has auth UI (login/register)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS uses fetch()",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS calls /api/ endpoints",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS has DOM manipulation",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "config.py has SECRET_KEY and DB_PATH",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "SECRET_KEY=yes, DB_PATH=yes",
+          "weight": 1.5
+        },
+        {
+          "name": "auth.py uses hashlib+hmac (not jwt/bcrypt)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "hashlib=yes, hmac=yes",
+          "weight": 2.0
+        },
+        {
+          "name": "Import/export names match",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all match",
+          "weight": 4.0
+        },
+        {
+          "name": "No ORM hallucination: .query()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: .to_dict()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: db.session",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "auth\u2192api import/export match",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all match",
+          "weight": 3.0
+        },
+        {
+          "name": "auth.py has required functions",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all 4 present",
+          "weight": 2.5
+        },
+        {
+          "name": "Required functions present",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all 10 present",
+          "weight": 3.0
+        },
+        {
+          "name": "Route defined: /api/auth",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/projects",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/tasks",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/projects/",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Stack detected",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "flask: api.py",
+          "weight": 1.0
+        },
+        {
+          "name": "Server starts",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "port=5021",
+          "weight": 2.0
+        },
+        {
+          "name": "GET /api/projects returns 200",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "status=200",
+          "weight": 2.0
+        },
+        {
+          "name": "POST /api/auth/register works",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "status=201",
+          "weight": 2.0
+        },
+        {
+          "name": "Zero retries needed",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "1 retries",
+          "weight": 2.0
+        },
+        {
+          "name": "Turns <= 45",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "62 turns",
+          "weight": 1.5
+        },
+        {
+          "name": "Duration <= 360s",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "240s",
+          "weight": 1.0
+        },
+        {
+          "name": "Cost <= $0.05",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "$0.00",
+          "weight": 1.5
+        }
+      ],
+      "task_results": [
+        {
+          "task_id": "1",
+          "subject": "Create configuration module",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 4,
+          "files_created": 1,
+          "retries": 1,
+          "duration": 15.9,
+          "cost": 0.0
+        },
+        {
+          "task_id": "2",
+          "subject": "Create authentication module",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 13.0,
+          "cost": 0.0
+        },
+        {
+          "task_id": "3",
+          "subject": "Create database models with 3 tables",
+          "status": "pass",
+          "turns": 10,
+          "tool_calls": 8,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 47.6,
+          "cost": 0.0
+        },
+        {
+          "task_id": "4",
+          "subject": "Create Flask API with auth and CRUD routes",
+          "status": "pass",
+          "turns": 5,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 22.5,
+          "cost": 0.0
+        },
+        {
+          "task_id": "5",
+          "subject": "Create kanban board HTML page",
+          "status": "pass",
+          "turns": 5,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 19.6,
+          "cost": 0.0
+        },
+        {
+          "task_id": "6",
+          "subject": "Create kanban CSS styling",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 16.5,
+          "cost": 0.0
+        },
+        {
+          "task_id": "7",
+          "subject": "Create kanban frontend JavaScript",
+          "status": "fail",
+          "turns": 30,
+          "tool_calls": 30,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 104.6,
+          "cost": 0.0
+        }
+      ],
+      "interface_issues": [],
+      "server_ok": true
+    }
+  ]
+}

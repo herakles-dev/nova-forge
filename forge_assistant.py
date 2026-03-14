@@ -1,22 +1,29 @@
 """Nova Forge Assistant Layer — smart session assistant with adaptive UX.
 
 Detects user skill level, recommends optimal config (autonomy, formation, model),
-provides contextual hints, and adapts verbosity to skill level.
+provides contextual hints, adapts verbosity to skill level, and drives deep
+planning interviews with domain-aware question banks.
 
 Usage:
     assistant = ForgeAssistant(shell)
     skill = assistant.detect_skill_level()
     hint = assistant.contextual_hint("after_plan")
     console.print(assistant.welcome_message())
+
+    # Deep planning interview
+    ctx = assistant.analyze_goal("A recipe sharing app with user accounts")
+    questions = assistant.get_deep_dive_questions(ctx)
+    summary = assistant.build_scope_summary(core_answers, deep_answers)
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     pass  # ForgeShell imported lazily to avoid circular imports
@@ -174,6 +181,293 @@ _HINTS: dict[str, str] = {
         "Back again. /status to see where you left off."
     ),
 }
+
+
+# ── Deep-dive question bank ──────────────────────────────────────────────────
+# Each question has:
+#   condition: callable(ctx) -> bool — whether to ask this question
+#   question:  str — prompt text
+#   type:      "select" | "checkbox" | "text" | "confirm"
+#   key:       str — storage key in deep_answers dict
+#   choices:   list of (label, value) or (label, value, rec_note) tuples
+#   followup:  optional text prompt key
+#
+# Recommendation is marked in the label with * suffix.
+
+DEEP_DIVE_QUESTIONS: dict[str, list[dict]] = {
+    "features": [
+        {
+            "condition": lambda ctx: True,
+            "question": "What are the main things a user can DO?",
+            "type": "checkbox",
+            "key": "features_main",
+            "choices_fn": "_feature_choices",  # dynamic, based on goal
+        },
+        {
+            "condition": lambda ctx: True,
+            "question": "Any additional features or nice-to-haves?",
+            "type": "text",
+            "key": "features_extra",
+        },
+    ],
+    "data": [
+        {
+            "condition": lambda ctx: ctx.get("has_data", False),
+            "question": "Database choice",
+            "type": "select",
+            "key": "database",
+            "choices": [
+                ("SQLite — simple, no setup (recommended for prototypes) *", "sqlite"),
+                ("PostgreSQL — production-grade (recommended for multi-user) *", "postgres"),
+                ("MongoDB — document store", "mongo"),
+                ("No database — in-memory / file-based", "none"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_data", False),
+            "question": "What data does the app manage?",
+            "type": "checkbox",
+            "key": "data_entities",
+            "choices_fn": "_data_entity_choices",
+        },
+    ],
+    "auth": [
+        {
+            "condition": lambda ctx: ctx.get("has_auth", False),
+            "question": "Authentication method",
+            "type": "select",
+            "key": "auth_method",
+            "choices": [
+                ("Session-based (cookies) — simpler, good for web apps *", "session"),
+                ("JWT tokens — good for API-first apps *", "jwt"),
+                ("OAuth2 (Google/GitHub login) — social login", "oauth"),
+                ("None — open access", "none"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_auth", False),
+            "question": "User roles",
+            "type": "select",
+            "key": "user_roles",
+            "choices": [
+                ("Single role — all users equal *", "single"),
+                ("Admin + User — basic role separation *", "admin_user"),
+                ("Custom roles — flexible permissions", "custom"),
+            ],
+        },
+    ],
+    "visual_aesthetic": [
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Color scheme preference",
+            "type": "select",
+            "key": "color_scheme",
+            "choices": [
+                ("Light clean — white backgrounds, sharp contrast *", "light"),
+                ("Dark modern — dark backgrounds, glowing accents *", "dark"),
+                ("Colorful vibrant — bold palette, playful", "colorful"),
+                ("Minimal monochrome — grayscale, elegant", "monochrome"),
+                ("Custom brand colors — I'll specify", "custom"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Layout style",
+            "type": "select",
+            "key": "layout_style",
+            "choices": [
+                ("Single-page with tabs — all content, no navigation *", "spa_tabs"),
+                ("Multi-page navigation — separate pages with nav bar", "multi_page"),
+                ("Dashboard grid — widgets/cards in a grid *", "dashboard"),
+                ("Sidebar + content — navigation sidebar", "sidebar"),
+                ("Card-based — content in cards/tiles", "cards"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "CSS approach",
+            "type": "select",
+            "key": "css_approach",
+            "choices": [
+                ("Vanilla CSS — no dependencies, full control", "vanilla"),
+                ("Tailwind CSS — utility-first, rapid styling *", "tailwind"),
+                ("Bootstrap — component library, quick layout", "bootstrap"),
+                ("Custom design system — bespoke components", "custom"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Dark mode support?",
+            "type": "confirm",
+            "key": "dark_mode",
+            "default": True,
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Mobile responsive?",
+            "type": "confirm",
+            "key": "responsive",
+            "default": True,
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Animation level",
+            "type": "select",
+            "key": "animation_level",
+            "choices": [
+                ("None — static, fast-loading", "none"),
+                ("Subtle transitions — hover effects, smooth fades *", "subtle"),
+                ("Rich animations — page transitions, micro-interactions", "rich"),
+                ("Full motion design — parallax, scroll effects", "full"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_frontend", False),
+            "question": "Visual inspiration (e.g., 'like Notion', 'like Stripe dashboard')",
+            "type": "text",
+            "key": "visual_inspiration",
+        },
+    ],
+    "api_design": [
+        {
+            "condition": lambda ctx: ctx.get("has_api", False),
+            "question": "API style",
+            "type": "select",
+            "key": "api_style",
+            "choices": [
+                ("REST — standard HTTP endpoints *", "rest"),
+                ("GraphQL — flexible queries", "graphql"),
+                ("RPC — function-call style", "rpc"),
+            ],
+        },
+        {
+            "condition": lambda ctx: ctx.get("has_api", False),
+            "question": "API authentication",
+            "type": "select",
+            "key": "api_auth",
+            "choices": [
+                ("API key — simple, good for internal use *", "api_key"),
+                ("JWT bearer — token-based, stateless *", "jwt"),
+                ("No auth — open API", "none"),
+            ],
+        },
+    ],
+    "realtime": [
+        {
+            "condition": lambda ctx: ctx.get("has_realtime", False),
+            "question": "Real-time approach",
+            "type": "select",
+            "key": "realtime_type",
+            "choices": [
+                ("WebSocket — bidirectional, persistent *", "websocket"),
+                ("Server-Sent Events — server push, simpler *", "sse"),
+                ("Polling — periodic refresh, simplest", "polling"),
+            ],
+        },
+    ],
+    "deployment": [
+        {
+            "condition": lambda ctx: True,
+            "question": "Deployment target",
+            "type": "select",
+            "key": "deployment",
+            "choices": [
+                ("Local only — runs on your machine", "local"),
+                ("Cloudflare Tunnel — shareable URL, no server needed *", "tunnel"),
+                ("Docker + domain — production deployment", "docker"),
+                ("Static hosting — GitHub Pages / Vercel / Netlify", "static"),
+            ],
+        },
+    ],
+    "testing": [
+        {
+            "condition": lambda ctx: True,
+            "question": "Testing approach",
+            "type": "select",
+            "key": "testing",
+            "choices": [
+                ("Manual only — I'll test it myself", "manual"),
+                ("Basic unit tests — core logic coverage *", "basic"),
+                ("Full test suite — unit + integration + E2E", "full"),
+                ("TDD — tests first, then implementation", "tdd"),
+            ],
+        },
+    ],
+}
+
+
+def _feature_choices(ctx: dict) -> list[tuple[str, str]]:
+    """Generate dynamic feature choices based on goal keywords."""
+    goal = ctx.get("goal", "").lower()
+    choices = []
+
+    # Always offer CRUD
+    choices.append(("Create / add new items", "create"))
+    choices.append(("View / browse / search items", "view"))
+    choices.append(("Edit / update existing items", "edit"))
+    choices.append(("Delete / remove items", "delete"))
+
+    # Context-aware additions
+    if any(kw in goal for kw in ["share", "social", "friend", "follow"]):
+        choices.append(("Share with others", "share"))
+        choices.append(("Follow / subscribe to users", "follow"))
+    if any(kw in goal for kw in ["comment", "review", "rate", "feedback"]):
+        choices.append(("Comment / review", "comment"))
+        choices.append(("Rate / score items", "rate"))
+    if any(kw in goal for kw in ["image", "photo", "upload", "file", "media"]):
+        choices.append(("Upload images / files", "upload"))
+    if any(kw in goal for kw in ["search", "filter", "find", "query"]):
+        choices.append(("Search / filter with criteria", "search"))
+    if any(kw in goal for kw in ["chart", "graph", "analytics", "stats", "dashboard", "trend"]):
+        choices.append(("Charts / analytics / trends", "analytics"))
+    if any(kw in goal for kw in ["export", "download", "csv", "pdf", "report"]):
+        choices.append(("Export / download data (CSV/PDF)", "export"))
+    if any(kw in goal for kw in ["import", "upload", "csv", "bulk"]):
+        choices.append(("Import data (CSV / bulk)", "import"))
+    if any(kw in goal for kw in ["notify", "alert", "remind", "notification"]):
+        choices.append(("Notifications / alerts", "notifications"))
+    if any(kw in goal for kw in ["setting", "config", "preference", "profile"]):
+        choices.append(("Settings / preferences", "settings"))
+    if any(kw in goal for kw in ["category", "tag", "label", "group", "organize"]):
+        choices.append(("Categories / tags / organization", "categories"))
+
+    # Always offer these common additions if not already present
+    values = {c[1] for c in choices}
+    if "search" not in values:
+        choices.append(("Search / filter", "search"))
+    if "export" not in values:
+        choices.append(("Export data", "export"))
+    if "settings" not in values:
+        choices.append(("Settings / preferences", "settings"))
+
+    return choices
+
+
+def _data_entity_choices(ctx: dict) -> list[tuple[str, str]]:
+    """Generate dynamic data entity choices based on goal keywords."""
+    goal = ctx.get("goal", "").lower()
+    choices = []
+
+    # Generic entities
+    choices.append(("Items / records (main content)", "items"))
+
+    if ctx.get("has_auth"):
+        choices.append(("Users / accounts", "users"))
+
+    if any(kw in goal for kw in ["category", "tag", "type", "group"]):
+        choices.append(("Categories / tags", "categories"))
+    if any(kw in goal for kw in ["comment", "review", "feedback"]):
+        choices.append(("Comments / reviews", "comments"))
+    if any(kw in goal for kw in ["image", "photo", "file", "media", "upload"]):
+        choices.append(("Media / file attachments", "media"))
+    if any(kw in goal for kw in ["order", "transaction", "payment", "purchase"]):
+        choices.append(("Transactions / orders", "transactions"))
+    if any(kw in goal for kw in ["setting", "config", "preference"]):
+        choices.append(("Settings / configuration", "settings"))
+    if any(kw in goal for kw in ["log", "history", "audit", "activity"]):
+        choices.append(("Activity log / history", "logs"))
+
+    return choices
 
 
 # ── ForgeAssistant ────────────────────────────────────────────────────────────
@@ -518,6 +812,187 @@ class ForgeAssistant:
             return int(data.get("level", 2))
         except (json.JSONDecodeError, OSError, ValueError):
             return 2
+
+    # ── Goal analysis & deep planning ─────────────────────────────────────────
+
+    def analyze_goal(self, goal: str, stack: str = "") -> dict[str, Any]:
+        """Classify a project goal into boolean signals that drive question selection.
+
+        Returns dict with: has_auth, has_data, has_frontend, has_api, has_realtime,
+        has_visual, complexity_hint, detected_keywords.
+        """
+        lower = (goal + " " + stack).lower()
+        words = re.findall(r'\w+', lower)
+
+        has_auth = any(kw in lower for kw in [
+            "user", "login", "account", "signup", "sign up", "register",
+            "auth", "password", "session", "role", "permission", "admin",
+        ])
+        has_data = any(kw in lower for kw in [
+            "store", "save", "track", "manage", "database", "record",
+            "history", "log", "inventory", "catalog", "archive", "list",
+        ])
+        has_frontend = any(kw in lower for kw in [
+            "ui", "dashboard", "page", "website", "app", "frontend",
+            "react", "vue", "svelte", "html", "interface", "display",
+            "form", "panel", "layout", "chart", "graph", "table", "view",
+        ])
+        has_api = any(kw in lower for kw in [
+            "api", "endpoint", "rest", "graphql", "webhook", "integration",
+            "microservice", "service", "server", "backend",
+            "flask", "fastapi", "django", "express",
+        ])
+        has_realtime = any(kw in lower for kw in [
+            "realtime", "real-time", "live", "chat", "notification",
+            "websocket", "socket", "stream", "push", "collaborative",
+        ])
+        has_visual = has_frontend or any(kw in lower for kw in [
+            "design", "beautiful", "styled", "theme", "dark mode",
+            "animation", "responsive", "mobile", "modern",
+        ])
+
+        # Complexity: count distinct feature signals
+        feature_count = sum([has_auth, has_data, has_frontend, has_api, has_realtime])
+        if feature_count >= 4 or len(words) > 30:
+            complexity = "ambitious"
+        elif feature_count >= 2 or len(words) > 15:
+            complexity = "medium"
+        else:
+            complexity = "simple"
+
+        return {
+            "goal": goal,
+            "stack": stack,
+            "has_auth": has_auth,
+            "has_data": has_data,
+            "has_frontend": has_frontend,
+            "has_api": has_api,
+            "has_realtime": has_realtime,
+            "has_visual": has_visual,
+            "complexity_hint": complexity,
+        }
+
+    def get_deep_dive_questions(self, ctx: dict[str, Any]) -> list[dict]:
+        """Return applicable deep-dive questions based on goal analysis context.
+
+        Each question dict has: category, question, type, choices, followup, condition_met.
+        """
+        applicable = []
+        for category, questions in DEEP_DIVE_QUESTIONS.items():
+            for q in questions:
+                if q["condition"](ctx):
+                    applicable.append({**q, "category": category, "condition_met": True})
+        return applicable
+
+    def build_scope_summary(
+        self,
+        core_answers: dict[str, Any],
+        deep_answers: dict[str, Any],
+    ) -> str:
+        """Build a structured scope summary (markdown) for the planning LLM.
+
+        Combines core interview answers + deep dive answers into a rich context
+        document that eliminates guesswork during spec generation.
+        """
+        sections = []
+
+        # User Intent
+        goal = core_answers.get("goal", "")
+        if goal:
+            sections.append(f"## User Intent\n{goal}")
+
+        # Tech Stack
+        stack = core_answers.get("stack", "")
+        if stack:
+            sections.append(f"## Tech Stack\n{stack}")
+
+        # Risk Level
+        risk = core_answers.get("risk", "")
+        if risk:
+            sections.append(f"## Risk Level\n{risk}")
+
+        # Core Features
+        features = deep_answers.get("features_main", [])
+        features_extra = deep_answers.get("features_extra", "")
+        if features or features_extra:
+            lines = ["## Core Features (user confirmed)"]
+            for f in features:
+                lines.append(f"- {f}")
+            if features_extra:
+                lines.append(f"- {features_extra}")
+            sections.append("\n".join(lines))
+
+        # Data Model
+        db = deep_answers.get("database", "")
+        data_entities = deep_answers.get("data_entities", [])
+        if db or data_entities:
+            lines = ["## Data Model Decisions"]
+            if db:
+                lines.append(f"- Database: {db}")
+            for entity in data_entities:
+                lines.append(f"- Entity: {entity}")
+            sections.append("\n".join(lines))
+
+        # Auth
+        auth_method = deep_answers.get("auth_method", "")
+        user_roles = deep_answers.get("user_roles", "")
+        if auth_method:
+            lines = ["## Authentication"]
+            lines.append(f"- Method: {auth_method}")
+            if user_roles:
+                lines.append(f"- Roles: {user_roles}")
+            sections.append("\n".join(lines))
+
+        # Visual Aesthetic (critical for UI projects)
+        visual_keys = [
+            ("color_scheme", "Color scheme"),
+            ("layout_style", "Layout"),
+            ("css_approach", "CSS framework"),
+            ("dark_mode", "Dark mode"),
+            ("responsive", "Mobile responsive"),
+            ("animation_level", "Animation"),
+            ("visual_inspiration", "Inspiration"),
+        ]
+        visual_lines = []
+        for key, label in visual_keys:
+            val = deep_answers.get(key)
+            if val is not None and val != "":
+                visual_lines.append(f"- {label}: {val}")
+        if visual_lines:
+            sections.append("## Visual Aesthetic\n" + "\n".join(visual_lines))
+
+        # API Design
+        api_style = deep_answers.get("api_style", "")
+        api_auth = deep_answers.get("api_auth", "")
+        if api_style or api_auth:
+            lines = ["## API Design"]
+            if api_style:
+                lines.append(f"- Style: {api_style}")
+            if api_auth:
+                lines.append(f"- Auth: {api_auth}")
+            sections.append("\n".join(lines))
+
+        # Realtime
+        realtime_type = deep_answers.get("realtime_type", "")
+        if realtime_type:
+            sections.append(f"## Real-time Features\n- Type: {realtime_type}")
+
+        # Deployment
+        deploy = deep_answers.get("deployment", "")
+        if deploy:
+            sections.append(f"## Deployment\n- Target: {deploy}")
+
+        # Testing
+        testing = deep_answers.get("testing", "")
+        if testing:
+            sections.append(f"## Testing Strategy\n- Approach: {testing}")
+
+        # Extra notes
+        extra = deep_answers.get("extra_notes", "")
+        if extra:
+            sections.append(f"## Additional Requirements\n{extra}")
+
+        return "\n\n".join(sections)
 
     def set_autonomy_level(self, level: int, reason: str = "user request") -> bool:
         """Set autonomy level via AutonomyManager's public API.

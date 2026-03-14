@@ -96,7 +96,7 @@ def get_prompt_budget(context_window: int) -> dict:
             "chat_history": 6_000,
             "memory": 2_000,
             "working_space": 108_000,
-            "compaction_threshold": 0.75,
+            "compaction_threshold": 0.65,   # was 0.75 — more headroom for tool history
         }
     else:
         return {
@@ -105,7 +105,7 @@ def get_prompt_budget(context_window: int) -> dict:
             "chat_history": 12_000,
             "memory": 4_000,
             "working_space": 260_000,
-            "compaction_threshold": 0.80,
+            "compaction_threshold": 0.65,   # was 0.80 — match lite's discipline
         }
 
 
@@ -135,11 +135,21 @@ def get_model_config(model_str: str, **overrides) -> ModelConfig:
     model_id = resolve_model(model_str)
     provider = get_provider(model_id)
     ctx = get_context_window(model_id)
+    # Scale max_tokens by context window — larger models need more output room
+    if "max_tokens" in overrides:
+        mt = overrides["max_tokens"]
+    elif ctx <= 32_000:
+        mt = 4096
+    elif ctx <= 200_000:
+        mt = 4096      # Claude-class: 4K is sufficient, good discipline
+    else:
+        mt = 8192      # 300K+ (Nova Pro, Premier, Gemini): allow longer writes
+
     return ModelConfig(
         model_id=model_id,
         provider=provider,
         context_window=ctx,
-        max_tokens=overrides.get("max_tokens", min(4096, ctx // 4)),
+        max_tokens=mt,
         temperature=overrides.get("temperature", 0.3),
     )
 

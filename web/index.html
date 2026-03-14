@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova Forge — AI Build Assistant</title>
+<meta name="description" content="Describe it. Nova builds it. Open-source AI agent orchestration framework powered by Amazon Nova.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.9.0/dist/bundle/asciinema-player.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x2692;</text></svg>">
+</head>
+<body>
+
+<!-- Navigation -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <span class="logo-icon">&#x2692;</span>
+      <span class="logo-text">Nova Forge</span>
+    </div>
+    <button class="mobile-close" id="mobile-close" aria-label="Close menu">&times;</button>
+  </div>
+  <ul class="nav-links">
+    <li><a href="#hero" class="active">Home</a></li>
+    <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#ask-nova">Ask Nova</a></li>
+    <li><a href="#prompts">Try It</a></li>
+    <li><a href="#pipeline">How It Works</a></li>
+    <li><a href="#formations">Formations</a></li>
+    <li><a href="#models">Models</a></li>
+    <li><a href="#autonomy">Autonomy</a></li>
+    <li><a href="#commands">Commands</a></li>
+    <li><a href="#api">API</a></li>
+    <li><a href="#gallery">Gallery</a></li>
+  </ul>
+  <div class="sidebar-footer">
+    <div class="sidebar-meta">
+      <span id="stat-version">v0.4.0</span>
+      <span id="stat-tests">1030 tests</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Mobile Header -->
+<header class="mobile-header" id="mobile-header">
+  <button class="hamburger" id="hamburger" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="mobile-logo">Nova Forge</span>
+</header>
+
+<!-- Main Content -->
+<main class="content">
+
+  <!-- 1. Hero -->
+  <section id="hero" class="section hero">
+    <div class="hero-badge">Amazon Nova AI Hackathon 2026</div>
+    <h1>
+      <span class="gradient-text">Describe it.</span>
+      <span class="hero-dim">Nova builds it.</span>
+    </h1>
+    <p class="hero-sub">Open-source AI agent orchestration framework. Multi-agent parallel builds, quality gates, live preview &amp; one-command deploy. Any LLM via <code>--model</code>.</p>
+
+    <div class="demo-player-wrap">
+      <div id="demo-player"></div>
+    </div>
+
+    <div class="hero-stats" id="hero-stats">
+      <div class="hero-stat">
+        <span class="hero-stat-value" id="s-models">7</span>
+        <span class="hero-stat-label">Models</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value" id="s-formations">10</span>
+        <span class="hero-stat-label">Formations</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value" id="s-tests">1030</span>
+        <span class="hero-stat-label">Tests</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value" id="s-tools">12</span>
+        <span class="hero-stat-label">Tools</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">3</span>
+        <span class="hero-stat-label">Providers</span>
+      </div>
+    </div>
+
+    <div class="hero-providers">
+      <span class="provider-badge">Amazon Bedrock</span>
+      <span class="provider-badge">OpenRouter</span>
+      <span class="provider-badge">Anthropic</span>
+    </div>
+
+    <div class="demo-result" id="demo-result">
+      <a href="https://demo.forge.herakles.dev" target="_blank" rel="noopener" class="demo-result-link">See what Nova built &rarr;</a>
+    </div>
+  </section>
+
+  <!-- 2. Quick Start -->
+  <section id="quickstart" class="section">
+    <h2 class="section-title">Quick Start</h2>
+    <p class="section-desc">Three steps to your first AI-powered build.</p>
+
+    <div class="steps">
+      <div class="step" data-step="1">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Install</h3>
+          <p>Clone the repo and install dependencies.</p>
+          <div class="code-block compact">
+            <code>git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt</code>
+            <button class="copy-btn" data-copy="git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge && pip install -r requirements.txt" aria-label="Copy">
+              <span class="copy-icon">&#x2398;</span>
+              <span class="copy-ok">&#x2713;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="step" data-step="2">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Configure Credentials</h3>
+          <p>Set up at least one AI provider. Nova Forge supports AWS Bedrock (Amazon Nova), OpenRouter (Gemini), and Anthropic (Claude).</p>
+          <div class="code-block">
+            <pre><code><span class="c"># AWS Bedrock (Nova models)</span>
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+export AWS_DEFAULT_REGION=us-east-1
+
+<span class="c"># Or OpenRouter (Gemini models)</span>
+export OPENROUTER_API_KEY=your-key
+
+<span class="c"># Or Anthropic (Claude models)</span>
+export ANTHROPIC_API_KEY=your-key</code></pre>
+            <button class="copy-btn" data-copy="export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+export AWS_DEFAULT_REGION=us-east-1" aria-label="Copy">
+              <span class="copy-icon">&#x2398;</span>
+              <span class="copy-ok">&#x2713;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="step" data-step="3">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Describe What You Want</h3>
+          <p>Launch the shell and type a natural language description. Nova plans, builds, reviews, and deploys.</p>
+          <div class="code-block">
+            <pre><code>python3 forge_cli.py
+
+<span class="p">&gt;</span> Build a REST API for recipes with user auth and a React frontend</code></pre>
+          </div>
+          <p class="hint">Nova asks a few questions (stack, risk, formation), then builds it with parallel AI agents.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Ask Nova (Inline Chat) -->
+  <section id="ask-nova" class="section section-wide">
+    <h2 class="section-title">Ask Nova</h2>
+    <p class="section-desc">Nova knows everything about this framework. Ask about setup, commands, models, formations, or how to build your project.</p>
+
+    <div class="chat-inline">
+      <div class="chat-main">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-msg assistant">
+            <p>Hi! I'm Nova, the AI behind Nova Forge. Ask me anything about the framework &mdash; setup, commands, models, formations, or how to build your project.</p>
+          </div>
+          <div class="chat-suggestions" id="chat-suggestions">
+            <button class="chat-suggest" data-q="How do I get started with Nova Forge?">How do I get started?</button>
+            <button class="chat-suggest" data-q="What's the difference between nova-lite and gemini-flash?">nova-lite vs gemini-flash?</button>
+            <button class="chat-suggest" data-q="How do formations work?">How do formations work?</button>
+            <button class="chat-suggest" data-q="How does the autonomy system work?">Explain autonomy levels</button>
+          </div>
+        </div>
+        <form class="chat-input" id="chat-form">
+          <input type="text" id="chat-input" placeholder="Ask about Nova Forge..." autocomplete="off">
+          <button type="submit" id="chat-send" aria-label="Send">&#x2192;</button>
+        </form>
+      </div>
+      <div class="chat-side">
+        <div class="chat-side-header">
+          <span class="chat-powered">Powered by Amazon Nova</span>
+        </div>
+        <p class="chat-side-desc">Try asking about:</p>
+        <ul class="chat-topics">
+          <li>Model selection &amp; pricing</li>
+          <li>Formation routing logic</li>
+          <li>Build pipeline stages</li>
+          <li>Autonomy levels &amp; safety</li>
+          <li>Deployment to production</li>
+          <li>The Python API</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Try It -->
+  <section id="prompts" class="section">
+    <h2 class="section-title">Try It</h2>
+    <p class="section-desc">Copy a prompt directly into the CLI. Each one generates a complete, working project.</p>
+
+    <div class="prompt-grid">
+      <div class="prompt-card" data-prompt="Build a REST API for a recipe book with user auth, CRUD endpoints for recipes, ingredient search, and a SQLite database">
+        <h4>Recipe API</h4>
+        <p>REST API with auth, CRUD, search, SQLite</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a real-time chat application with WebSocket support, multiple rooms, user nicknames, message history, and a clean dark UI">
+        <h4>Real-time Chat</h4>
+        <p>WebSocket chat with rooms and history</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a personal portfolio website with a hero section, project cards, a blog with markdown support, contact form, and dark/light theme toggle">
+        <h4>Portfolio Site</h4>
+        <p>Portfolio with blog, themes, contact</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a task management dashboard with drag-and-drop kanban board, priority labels, due dates, and local storage persistence">
+        <h4>Task Dashboard</h4>
+        <p>Kanban board with drag-and-drop</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build a weather dashboard that fetches data from OpenWeatherMap API, shows 5-day forecast, temperature charts, and location search">
+        <h4>Weather Dashboard</h4>
+        <p>5-day forecast with charts</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+
+      <div class="prompt-card" data-prompt="Build an expense tracker with categories, monthly charts, CSV export, budget limits with alerts, and a responsive mobile-first UI">
+        <h4>Expense Tracker</h4>
+        <p>Budget tracking with charts and export</p>
+        <button class="copy-prompt-btn">Copy prompt</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. How It Works (Pipeline Diagram) -->
+  <section id="pipeline" class="section section-wide">
+    <h2 class="section-title">How It Works</h2>
+    <p class="section-desc">A multi-agent pipeline from natural language to deployed application.</p>
+
+    <div class="pipeline-diagram" id="pipeline-diagram">
+      <div class="pipeline-node" data-node="interview">
+        <div class="pipeline-node-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="3" width="16" height="18" rx="2"/>
+            <line x1="8" y1="8" x2="16" y2="8"/>
+            <line x1="8" y1="12" x2="14" y2="12"/>
+            <line x1="8" y1="16" x2="12" y2="16"/>
+          </svg>
+        </div>
+        <h4>Interview</h4>
+        <div class="pipeline-tags"><span>scope</span><span>stack</span><span>risk</span></div>
+      </div>
+
+      <div class="pipeline-connector"><div class="pipeline-pulse"></div></div>
+
+      <div class="pipeline-node" data-node="plan">
+        <div class="pipeline-node-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7l-6-4z"/>
+            <path d="M14 3v4h4"/>
+            <line x1="8" y1="13" x2="16" y2="13"/>
+            <line x1="8" y1="17" x2="14" y2="17"/>
+          </svg>
+        </div>
+        <h4>Plan &amp; Decompose</h4>
+        <div class="pipeline-tags"><span>spec.md</span><span>tasks.json</span><span>topo-sort</span></div>
+      </div>
+
+      <div class="pipeline-connector"><div class="pipeline-pulse"></div></div>
+
+      <div class="pipeline-node build-node" data-node="build">
+        <div class="pipeline-node-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="6" height="12" rx="1"/>
+            <rect x="9" y="8" width="6" height="10" rx="1"/>
+            <rect x="16" y="6" width="6" height="12" rx="1"/>
+          </svg>
+        </div>
+        <h4>Parallel Build</h4>
+        <div class="pipeline-tags"><span>asyncio</span><span>waves</span><span>semaphores</span></div>
+        <div class="parallel-lanes">
+          <div class="lane"></div>
+          <div class="lane"></div>
+          <div class="lane"></div>
+        </div>
+      </div>
+
+      <div class="pipeline-connector"><div class="pipeline-pulse"></div></div>
+
+      <div class="pipeline-node" data-node="gate">
+        <div class="pipeline-node-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2l9 4.5v5.5c0 5.5-3.8 10.7-9 12-5.2-1.3-9-6.5-9-12V6.5L12 2z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+        </div>
+        <h4>Gate Review</h4>
+        <div class="pipeline-tags"><span>PASS/FAIL</span><span>auto-retry</span><span>adversarial</span></div>
+      </div>
+
+      <div class="pipeline-connector"><div class="pipeline-pulse"></div></div>
+
+      <div class="pipeline-node" data-node="deploy">
+        <div class="pipeline-node-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v12"/>
+            <path d="M8 9l4-4 4 4"/>
+            <path d="M20 21H4"/>
+            <path d="M20 17v4"/>
+            <path d="M4 17v4"/>
+          </svg>
+        </div>
+        <h4>Preview &amp; Deploy</h4>
+        <div class="pipeline-tags"><span>tunnel</span><span>docker+ssl</span><span>health</span></div>
+      </div>
+    </div>
+
+    <div class="pipeline-detail" id="pipeline-detail"></div>
+  </section>
+
+  <!-- 6. Formations -->
+  <section id="formations" class="section section-wide">
+    <h2 class="section-title">Formations</h2>
+    <p class="section-desc">Pre-configured multi-agent team layouts. Set with <code>/formation &lt;name&gt;</code>. Nova auto-selects based on your project.</p>
+
+    <div class="formation-grid">
+      <div class="formation-card recommended">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="22" y1="18" x2="40" y2="28" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="58" y1="18" x2="40" y2="28" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="40" y1="39" x2="40" y2="46" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="22" cy="12" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="58" cy="12" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="40" cy="33" r="6" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="40" cy="52" r="6" fill="rgba(74,222,128,0.2)" stroke="#4ade80" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header">
+          <h4>feature-impl</h4>
+          <span class="formation-badge">Recommended</span>
+        </div>
+        <div class="formation-roles">4 roles</div>
+        <p>Adding features to an existing project. Backend and frontend work in parallel, then integrator, then tester.</p>
+        <div class="formation-cmd"><code>/formation feature-impl</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="40" y1="20" x2="22" y2="38" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="40" y1="20" x2="58" y2="38" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="40" cy="14" r="6" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="22" cy="44" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="58" cy="44" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>new-project</h4></div>
+        <div class="formation-roles">3 roles</div>
+        <p>Greenfield project setup. Architect output unblocks implementers. Team lead reviews architecture first.</p>
+        <div class="formation-cmd"><code>/formation new-project</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <circle cx="40" cy="30" r="8" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>single-file</h4></div>
+        <div class="formation-roles">1 role</div>
+        <p>Small, focused file edits. 1-3 tasks, single file. Quick fixes and config changes.</p>
+        <div class="formation-cmd"><code>/formation single-file</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <circle cx="25" cy="30" r="7" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="55" cy="30" r="7" fill="rgba(74,222,128,0.2)" stroke="#4ade80" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>lightweight-feature</h4></div>
+        <div class="formation-roles">2 roles</div>
+        <p>Small, single-layer features (frontend-only OR backend-only). Implementer and tester in parallel.</p>
+        <div class="formation-cmd"><code>/formation lightweight-feature</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <circle cx="14" cy="30" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+          <circle cx="40" cy="30" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+          <circle cx="66" cy="30" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>bug-investigation</h4></div>
+        <div class="formation-roles">3 roles</div>
+        <p>Root cause unknown. Three parallel investigators with distinct strategies. First to find root cause creates fix.</p>
+        <div class="formation-cmd"><code>/formation bug-investigation</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="22" y1="22" x2="40" y2="38" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="58" y1="22" x2="40" y2="38" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="22" cy="16" r="6" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>
+          <circle cx="58" cy="16" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+          <circle cx="40" cy="44" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>security-review</h4></div>
+        <div class="formation-roles">3 roles</div>
+        <p>Security audit and threat modeling. Scanner and modeler in parallel, then fixer for critical findings.</p>
+        <div class="formation-cmd"><code>/formation security-review</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="40" y1="24" x2="40" y2="36" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="40" cy="18" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+          <circle cx="40" cy="42" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>perf-optimization</h4></div>
+        <div class="formation-roles">2 roles</div>
+        <p>Performance profiling and optimization. Sequential deep single-expert work with regression testing.</p>
+        <div class="formation-cmd"><code>/formation perf-optimization</code></div>
+      </div>
+
+      <div class="formation-card">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <circle cx="14" cy="30" r="6" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>
+          <circle cx="40" cy="30" r="6" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1.5"/>
+          <circle cx="66" cy="30" r="6" fill="rgba(74,222,128,0.2)" stroke="#4ade80" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header"><h4>code-review</h4></div>
+        <div class="formation-roles">3 roles</div>
+        <p>PR review and quality assessment. Three reviewers (security, performance, coverage) in parallel. Read-only.</p>
+        <div class="formation-cmd"><code>/formation code-review</code></div>
+      </div>
+
+      <div class="formation-card new-badge">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="40" y1="14" x2="40" y2="26" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="40" y1="34" x2="40" y2="46" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="40" cy="10" r="6" fill="rgba(248,113,113,0.2)" stroke="#f87171" stroke-width="1.5"/>
+          <circle cx="40" cy="30" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="40" cy="50" r="6" fill="rgba(74,222,128,0.2)" stroke="#4ade80" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header">
+          <h4>recovery</h4>
+          <span class="formation-badge new">New</span>
+        </div>
+        <div class="formation-roles">3 roles</div>
+        <p>Post-failure diagnosis. Investigator traces root cause, fixer applies the fix, validator confirms it works.</p>
+        <div class="formation-cmd"><code>/formation recovery</code></div>
+      </div>
+
+      <div class="formation-card new-badge">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="10" y1="20" x2="40" y2="42" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="30" y1="20" x2="40" y2="42" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="50" y1="20" x2="40" y2="42" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="70" y1="20" x2="40" y2="42" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="10" cy="14" r="5" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="30" cy="14" r="5" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="50" cy="14" r="5" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="70" cy="14" r="5" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="40" cy="48" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header">
+          <h4>all-hands-planning</h4>
+          <span class="formation-badge new">New</span>
+        </div>
+        <div class="formation-roles">5 roles</div>
+        <p>Spec review with 4 parallel reviewers (architecture, feasibility, security, UX) then synthesizer combines findings.</p>
+        <div class="formation-cmd"><code>/formation all-hands-planning</code></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Models -->
+  <section id="models" class="section">
+    <h2 class="section-title">Models</h2>
+    <p class="section-desc">Switch models with <code>/model &lt;alias&gt;</code>. Same pipeline, different brain.</p>
+
+    <div class="benchmark-scorecard">
+      <h3 style="margin-bottom:0.5rem;color:var(--accent)">Benchmark Results (Sprint 14)</h3>
+      <p style="color:var(--dim);font-size:0.85rem;margin-bottom:1rem">Expense Tracker: 5 tasks, 25+ verification checks, real HTTP testing</p>
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Lite</span><span class="score-detail">100% · 170s · 24 turns</span></div>
+        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Pro</span><span class="score-detail">99% · 130s · 13 turns</span></div>
+        <div class="score-badge"><span class="score-grade">S</span><span class="score-label">Nova Premier</span><span class="score-detail">100% · 443s · 10 turns</span></div>
+      </div>
+    </div>
+
+    <div class="model-grid" id="model-grid">
+      <div class="model-group">
+        <div class="model-group-header">
+          <span class="provider-dot bedrock"></span> Amazon Bedrock
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-lite</code>
+            <span class="model-ctx">32K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">speed</span>
+            <span class="tag">low-cost</span>
+            <span class="tag">reasoning</span>
+          </div>
+          <p class="model-desc">Fast and affordable. Great for learning and quick tasks. Best with focused, single-file builds.</p>
+          <div class="model-cost">$0.00006 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-pro</code>
+            <span class="model-ctx">300K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">reasoning</span>
+            <span class="tag">code</span>
+            <span class="tag">analysis</span>
+          </div>
+          <p class="model-desc">Strong all-rounder. Handles complex coding tasks and reads large codebases. Good balance of capability and cost.</p>
+          <div class="model-cost">$0.0008 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">nova-premier</code>
+            <span class="model-ctx">1M</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">deep-reasoning</span>
+            <span class="tag">code</span>
+            <span class="tag">long-context</span>
+          </div>
+          <p class="model-desc">Most powerful Nova model. Best for complex multi-file projects and deep reasoning.</p>
+          <div class="model-cost">$0.002 / 1K input</div>
+        </div>
+      </div>
+
+      <div class="model-group">
+        <div class="model-group-header">
+          <span class="provider-dot openrouter"></span> Google (via OpenRouter)
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">gemini-flash</code>
+            <span class="model-ctx">1M</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">speed</span>
+            <span class="tag">code</span>
+            <span class="tag">multimodal</span>
+          </div>
+          <p class="model-desc">Lightning fast with a huge context window. Best value for code generation tasks.</p>
+          <div class="model-cost">$0.0001 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">gemini-pro</code>
+            <span class="model-ctx">1M</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">deep-reasoning</span>
+            <span class="tag">code</span>
+            <span class="tag">analysis</span>
+          </div>
+          <p class="model-desc">Top-tier reasoning and coding. Handles the most complex architectural decisions.</p>
+          <div class="model-cost">$0.00125 / 1K input</div>
+        </div>
+      </div>
+
+      <div class="model-group">
+        <div class="model-group-header">
+          <span class="provider-dot anthropic"></span> Anthropic
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">claude-sonnet</code>
+            <span class="model-ctx">200K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">code</span>
+            <span class="tag">reasoning</span>
+            <span class="tag">instruction-following</span>
+          </div>
+          <p class="model-desc">Excellent at following instructions precisely. Premium quality for exact specifications.</p>
+          <div class="model-cost">$0.003 / 1K input</div>
+        </div>
+        <div class="model-card">
+          <div class="model-header">
+            <code class="model-name">claude-haiku</code>
+            <span class="model-ctx">200K</span>
+          </div>
+          <div class="model-strengths">
+            <span class="tag">speed</span>
+            <span class="tag">low-cost</span>
+            <span class="tag">code</span>
+          </div>
+          <p class="model-desc">Fast and affordable. Good for straightforward coding tasks where speed matters.</p>
+          <div class="model-cost">$0.0008 / 1K input</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. Autonomy -->
+  <section id="autonomy" class="section">
+    <h2 class="section-title">Autonomy System</h2>
+    <p class="section-desc">Six trust levels control what Nova can do without asking. Set with <code>/autonomy &lt;0-5&gt;</code>.</p>
+
+    <div class="autonomy-matrix-wrap">
+      <table class="autonomy-matrix">
+        <thead>
+          <tr>
+            <th class="level-col"></th>
+            <th>Read</th>
+            <th>Write</th>
+            <th>Bash</th>
+            <th>Deploy</th>
+            <th>Delete</th>
+            <th class="desc-col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="level-name">
+              <span class="level-label">A0 Manual</span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:0%"></div></div>
+            </td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="level-desc">ask for all</td>
+          </tr>
+          <tr>
+            <td class="level-name">
+              <span class="level-label">A1 Guided</span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:20%"></div></div>
+            </td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="level-desc"></td>
+          </tr>
+          <tr class="level-default">
+            <td class="level-name">
+              <span class="level-label">A2 Supervised <span class="default-badge">Default</span></span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:40%"></div></div>
+            </td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-cond">~</td>
+            <td class="perm-no">&middot;</td>
+            <td class="perm-no">&middot;</td>
+            <td class="level-desc"></td>
+          </tr>
+          <tr>
+            <td class="level-name">
+              <span class="level-label">A3 Trusted</span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:60%"></div></div>
+            </td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-cond">~</td>
+            <td class="perm-no">&middot;</td>
+            <td class="level-desc"></td>
+          </tr>
+          <tr>
+            <td class="level-name">
+              <span class="level-label">A4 Autonomous</span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:80%"></div></div>
+            </td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-cond">~</td>
+            <td class="level-desc">explicit opt-in</td>
+          </tr>
+          <tr>
+            <td class="level-name">
+              <span class="level-label">A5 Unattended</span>
+              <div class="autonomy-bar-mini"><div class="autonomy-fill-mini" style="width:100%"></div></div>
+            </td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="perm-yes">&#x2713;</td>
+            <td class="level-desc">full audit</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="autonomy-legend">
+        <span><span class="perm-yes">&#x2713;</span> auto-allowed</span>
+        <span><span class="perm-cond">~</span> conditional (low/med risk)</span>
+        <span><span class="perm-no">&middot;</span> ask first</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. CLI Commands -->
+  <section id="commands" class="section">
+    <h2 class="section-title">CLI Commands</h2>
+    <p class="section-desc">Interactive shell commands. Launch with <code>python3 forge_cli.py</code> or the <code>forge</code> command.</p>
+
+    <div class="cmd-tabs">
+      <button class="cmd-tab active" data-tab="core">Core</button>
+      <button class="cmd-tab" data-tab="build">Build</button>
+      <button class="cmd-tab" data-tab="config">Config</button>
+      <button class="cmd-tab" data-tab="click">CLI (forge)</button>
+    </div>
+
+    <div class="cmd-panel active" id="tab-core">
+      <table class="cmd-table">
+        <tbody>
+          <tr><td><code class="cmd-name">/interview</code></td><td>Start guided project setup (scope, stack, risk, formation, model)</td><td><button class="copy-btn-sm" data-copy="/interview">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/plan</code></td><td>Generate task plan from spec.md</td><td><button class="copy-btn-sm" data-copy="/plan">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/build</code></td><td>Execute all pending tasks with AI agents</td><td><button class="copy-btn-sm" data-copy="/build">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/status</code></td><td>View current build progress and task states</td><td><button class="copy-btn-sm" data-copy="/status">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/tasks</code></td><td>List all tasks with status, wave, and dependencies</td><td><button class="copy-btn-sm" data-copy="/tasks">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/preview</code></td><td>Launch dev server with shareable Cloudflare Tunnel URL (auto-retry)</td><td><button class="copy-btn-sm" data-copy="/preview">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/deploy</code></td><td>Production deployment (Docker + nginx + SSL)</td><td><button class="copy-btn-sm" data-copy="/deploy">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/health</code></td><td>System health dashboard — preview, model, project, disk</td><td><button class="copy-btn-sm" data-copy="/health">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/competition</code></td><td>Hackathon submission readiness validator (8 checks)</td><td><button class="copy-btn-sm" data-copy="/competition">Copy</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cmd-panel" id="tab-build">
+      <table class="cmd-table">
+        <tbody>
+          <tr><td><code class="cmd-name">/build --no-review</code></td><td>Skip the gate review step</td><td><button class="copy-btn-sm" data-copy="/build --no-review">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/build --no-verify</code></td><td>Skip runtime verification</td><td><button class="copy-btn-sm" data-copy="/build --no-verify">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/guide</code></td><td>Interactive project wizard (skill level + all steps)</td><td><button class="copy-btn-sm" data-copy="/guide">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/resume</code></td><td>Resume a previous session</td><td><button class="copy-btn-sm" data-copy="/resume">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/new &lt;name&gt;</code></td><td>Create a new project directory</td><td><button class="copy-btn-sm" data-copy="/new my-project">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/audit</code></td><td>View JSONL audit trail of all builds</td><td><button class="copy-btn-sm" data-copy="/audit">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/preview stop</code></td><td>Stop the preview server</td><td><button class="copy-btn-sm" data-copy="/preview stop">Copy</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cmd-panel" id="tab-config">
+      <table class="cmd-table">
+        <tbody>
+          <tr><td><code class="cmd-name">/model &lt;alias&gt;</code></td><td>Switch the active model (e.g., nova-lite, gemini-flash)</td><td><button class="copy-btn-sm" data-copy="/model gemini-flash">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/models</code></td><td>Compare all models &mdash; cost, context, strengths</td><td><button class="copy-btn-sm" data-copy="/models">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/formation &lt;name&gt;</code></td><td>View or set agent formation</td><td><button class="copy-btn-sm" data-copy="/formation feature-impl">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/autonomy &lt;0-5&gt;</code></td><td>Set agent autonomy level (A0-A5)</td><td><button class="copy-btn-sm" data-copy="/autonomy 2">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/login</code></td><td>Set up or change API provider credentials</td><td><button class="copy-btn-sm" data-copy="/login">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/config</code></td><td>View or modify all settings</td><td><button class="copy-btn-sm" data-copy="/config">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">/cd &lt;path&gt;</code></td><td>Change project directory</td><td><button class="copy-btn-sm" data-copy="/cd ~/projects/my-app">Copy</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cmd-panel" id="tab-click">
+      <table class="cmd-table">
+        <tbody>
+          <tr><td><code class="cmd-name">forge plan "desc"</code></td><td>Plan a project from the command line</td><td><button class="copy-btn-sm" data-copy='forge plan "weather dashboard" --model nova-lite'>Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge build</code></td><td>Execute the plan with AI agents</td><td><button class="copy-btn-sm" data-copy="forge build --model gemini-flash">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge deploy</code></td><td>Deploy to production</td><td><button class="copy-btn-sm" data-copy="forge deploy --domain app.example.com">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge preview</code></td><td>Launch preview with tunnel</td><td><button class="copy-btn-sm" data-copy="forge preview">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge status</code></td><td>View build status</td><td><button class="copy-btn-sm" data-copy="forge status">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge models</code></td><td>List all models</td><td><button class="copy-btn-sm" data-copy="forge models">Copy</button></td></tr>
+          <tr><td><code class="cmd-name">forge chat</code></td><td>Launch interactive shell</td><td><button class="copy-btn-sm" data-copy="forge chat">Copy</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10. API -->
+  <section id="api" class="section">
+    <h2 class="section-title">Programmatic API</h2>
+    <p class="section-desc">Use Nova Forge as a library, not just a CLI.</p>
+
+    <div class="code-block">
+      <pre><code><span class="kw">from</span> forge_pipeline <span class="kw">import</span> WaveExecutor, ArtifactManager, GateReviewer
+<span class="kw">from</span> forge_agent <span class="kw">import</span> ForgeAgent
+<span class="kw">from</span> model_router <span class="kw">import</span> ModelRouter
+
+<span class="c"># Create a build agent with Nova</span>
+router = ModelRouter(<span class="s">"bedrock/us.amazon.nova-2-lite-v1:0"</span>)
+agent = ForgeAgent(
+    project_root=<span class="s">"./my-project"</span>,
+    router=router,
+    max_turns=<span class="n">30</span>,
+)
+
+<span class="c"># Run a task</span>
+result = <span class="kw">await</span> agent.run(
+    prompt=<span class="s">"Create a Flask REST API with /health endpoint"</span>,
+    system=<span class="s">"You are a Python developer. Write working code."</span>,
+)
+
+<span class="kw">print</span>(result.output)
+<span class="kw">print</span>(result.artifacts)  <span class="c"># {"/path/to/app.py": "# code..."}</span></code></pre>
+      <button class="copy-btn" data-copy="from forge_pipeline import WaveExecutor, ArtifactManager, GateReviewer
+from forge_agent import ForgeAgent
+from model_router import ModelRouter
+
+router = ModelRouter('bedrock/us.amazon.nova-2-lite-v1:0')
+agent = ForgeAgent(project_root='./my-project', router=router, max_turns=30)
+result = await agent.run(prompt='Create a Flask REST API', system='Write working code.')
+print(result.output)" aria-label="Copy">
+        <span class="copy-icon">&#x2398;</span>
+        <span class="copy-ok">&#x2713;</span>
+      </button>
+    </div>
+
+    <div class="api-endpoints">
+      <h3>Web API Endpoints</h3>
+      <table class="cmd-table">
+        <tbody>
+          <tr><td><code>GET /api/info</code></td><td>Project metadata, models, formations, tools</td></tr>
+          <tr><td><code>POST /api/docs/chat</code></td><td>Ask questions about Nova Forge (powered by Nova)</td></tr>
+          <tr><td><code>GET /health</code></td><td>Health check</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 11. Built With Nova Forge -->
+  <section id="gallery" class="section section-wide">
+    <h2 class="section-title">Built with Nova Forge</h2>
+    <p class="section-desc">Real projects built by Nova in a single session. Each one: describe it, build, preview, deploy.</p>
+
+    <div class="gallery-grid">
+      <div class="gallery-card">
+        <div class="gallery-icon">&#x1f4b0;</div>
+        <h4>Expense Tracker</h4>
+        <p>Full-stack expense manager with categories, monthly charts, CSV export, and responsive UI.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Flask</span>
+          <span class="gallery-tag">SQLite</span>
+          <span class="gallery-tag">Chart.js</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Nova Lite</span>
+          <span>170s</span>
+          <span>5 files</span>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-icon">&#x2705;</div>
+        <h4>Todo App</h4>
+        <p>Task management with priority levels, filters, and a clean dark UI. FastAPI backend.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">FastAPI</span>
+          <span class="gallery-tag">SQLite</span>
+          <span class="gallery-tag">Vanilla JS</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Nova Pro</span>
+          <span>130s</span>
+          <span>4 files</span>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-icon">&#x1f4ac;</div>
+        <h4>Real-time Chat</h4>
+        <p>WebSocket chat with multiple rooms, nicknames, message history, and dark theme.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Node.js</span>
+          <span class="gallery-tag">Socket.io</span>
+          <span class="gallery-tag">HTML/CSS</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Gemini Flash</span>
+          <span>90s</span>
+          <span>6 files</span>
+        </div>
+      </div>
+
+      <div class="gallery-card">
+        <div class="gallery-icon">&#x1f4c1;</div>
+        <h4>Recipe API</h4>
+        <p>REST API with auth, CRUD for recipes, ingredient search, and SQLite persistence.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Flask</span>
+          <span class="gallery-tag">JWT Auth</span>
+          <span class="gallery-tag">SQLite</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Nova Premier</span>
+          <span>200s</span>
+          <span>5 files</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-links">
+      <a href="https://github.com/Herakles-AI/nova-forge" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://amazon-nova.devpost.com/" target="_blank" rel="noopener">Amazon Nova Hackathon</a>
+      <a href="/api/info">API</a>
+    </div>
+    <p class="footer-copy">Built with Amazon Nova, Gemini &amp; Claude &mdash; Open Source under MIT</p>
+  </footer>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.9.0/dist/bundle/asciinema-player.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

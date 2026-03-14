@@ -22,6 +22,7 @@ def make_agent(tmp_path: Path) -> ForgeAgent:
         project_root=tmp_path,
         hooks=hooks,
         max_turns=5,
+        streaming=False,
     )
 
 
@@ -59,6 +60,52 @@ async def test_agent_no_tool_calls(tmp_path):
     assert result.tool_calls_made == 0
     assert result.turns == 1
     mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_disables_tool_after_threshold(tmp_path):
+    """Tool fails TOOL_CIRCUIT_THRESHOLD times → tool disabled for rest of run."""
+    agent = make_agent(tmp_path)
+    agent.TOOL_CIRCUIT_THRESHOLD = 2  # Lower threshold for test
+
+    call_count = 0
+    exec_count = 0
+
+    async def mock_send(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 3:
+            return tool_call_response("bash", {"command": "exit 1"}, call_id=f"tc_{call_count}")
+        return text_response("Done after circuit breaker.")
+
+    original_execute = agent._execute_tool_call
+
+    async def failing_execute(call, artifacts):
+        nonlocal exec_count
+        exec_count += 1
+        return "ERROR: command failed with exit code 1"
+
+    with patch.object(agent.router, "send", side_effect=mock_send):
+        with patch.object(agent, "_execute_tool_call", side_effect=failing_execute):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await agent.run("Try a command")
+
+    assert "bash" in agent._disabled_tools
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_resets_on_new_run(tmp_path):
+    """_tool_failures and _disabled_tools are reset on each run()."""
+    agent = make_agent(tmp_path)
+    agent._tool_failures = {"bash": 5}
+    agent._disabled_tools = {"bash"}
+
+    with patch.object(agent.router, "send", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = text_response("Done.")
+        await agent.run("Simple task")
+
+    assert agent._tool_failures == {}
+    assert agent._disabled_tools == set()
 
 
 @pytest.mark.asyncio

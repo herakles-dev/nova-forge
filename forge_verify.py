@@ -184,7 +184,9 @@ class BuildVerifier:
 
         si = detect_stack(self.project_path)
         if si.kind == "unknown":
-            result.add("server_start", False, "No servable entry point detected")
+            result.add("server_start", False,
+                       "No servable entry point detected. Supported: Streamlit, FastAPI, "
+                       "Flask, Django, Next.js, Vite, Node.js, Go, Rust, Rails, PHP, Docker, Static.")
             return False, None, None
 
         mgr = PreviewManager(self.project_path)

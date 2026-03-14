@@ -159,6 +159,57 @@ _SECTION_CODE_QUALITY = """\
 - Security basics: parameterized SQL queries (never f-strings), escape HTML output, validate user input.\
 """
 
+_SECTION_PREVIEWABILITY = """\
+## Previewability
+Your app MUST work with `/preview` (Cloudflare Tunnel) after build:
+- Bind to `0.0.0.0`, never `127.0.0.1` or `localhost`
+- Accept port from `PORT` env var with sensible default (5000 Python, 3000 Node)
+- Flask: `app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))`
+- FastAPI: add `if __name__` block with `uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))`
+- Express: `app.listen(process.env.PORT || 3000, '0.0.0.0')`
+- Put main app in `app.py` or `main.py`. Export `app` variable at module level.
+- Always create `requirements.txt` (Python) or `package.json` with `start` script (Node).
+- For static sites, put `index.html` in root or `public/` directory.\
+"""
+
+_SECTION_PREVIEWABILITY_SLIM = (
+    "- Bind 0.0.0.0. Accept PORT env. Put app in app.py. Create requirements.txt or package.json."
+)
+
+# ── Focused system prompt for 300K models (Pro/Premier) ──────────────────────
+# Not as terse as SLIM (32K) but avoids the 5K-char full prompt.
+# Key additions over SLIM: self-verify, read-before-write, chunking guidance.
+
+_SECTION_FOCUSED = """\
+## Identity
+You are Nova, an AI build assistant. You ACT — don't chat. Write working, production-quality code using tools.
+
+## Rules
+- CRITICAL: You MUST call the write_file tool to create files. Do NOT describe code in text. A task is NOT done until every required file is written to disk via write_file.
+- For files over ~120 lines: write_file (first section) then append_file (remaining). Never leave files incomplete.
+- ALWAYS read existing files with read_file BEFORE writing code that depends on them. Use their ACTUAL interface — never assume or hallucinate function names, class names, or APIs.
+- After writing, check the tool output for SYNTAX ERROR — fix immediately before proceeding.
+- If a tool fails, try a different approach. Don't repeat the same failing call.
+- Write complete code — no stubs, placeholders, or TODOs.
+- Only write files assigned to YOUR task. If you get a CONFLICT error, skip that file.
+
+## Verification
+After writing each file:
+1. Check for SYNTAX ERROR in tool output — fix immediately.
+2. Python: run bash("python3 -c 'import MODULE'") to verify imports work.
+3. If upstream files exist, read them first to match their exact interface.
+
+## Code Quality
+- Use parameterized SQL queries, never f-strings for SQL.
+- For SQLite with Flask: use per-request connections (not module-level) to avoid threading issues.
+- Handle errors: validate inputs, return proper status codes, catch exceptions.
+- Be concise. Minimize unnecessary tool calls.
+
+## Self-Correction
+Before finishing, read back files you created. Check: syntax, imports match exports, no TODO/stubs.
+If you find issues, fix them now. Do not leave broken code for a downstream agent.\
+"""
+
 # ── Autonomy-aware prompt sections ───────────────────────────────────────────
 
 _SECTION_AUTONOMY_GUIDANCE: dict[int, str] = {
@@ -469,6 +520,21 @@ class PromptBuilder:
                 # First 3 lines of role profile only
                 short_profile = "\n".join(profile.strip().splitlines()[:3])
                 sections.append(short_profile)
+            sections.append(_SECTION_PREVIEWABILITY_SLIM)
+        elif ctx <= 1_100_000:
+            # Focused prompt for medium/large models (~1,500 chars)
+            # Avoids the 5K-char full prompt that dilutes instructions
+            sections: list[str] = [_SECTION_FOCUSED]
+            profile = ROLE_PROFILES.get(role)
+            if profile:
+                short_profile = "\n".join(profile.strip().splitlines()[:5])
+                sections.append(short_profile)
+            else:
+                sections.append(
+                    f"## Role: {role}\n"
+                    "Complete assigned tasks precisely and report results clearly."
+                )
+            sections.append(_SECTION_PREVIEWABILITY)
         else:
             sections: list[str] = [
                 _SECTION_IDENTITY,
@@ -477,6 +543,7 @@ class PromptBuilder:
                 _SECTION_ERROR_HANDLING,
                 _SECTION_SELF_VERIFY,
                 _SECTION_CODE_QUALITY,
+                _SECTION_PREVIEWABILITY,
             ]
 
             # Role-specific profile
@@ -564,6 +631,7 @@ class PromptBuilder:
             project_context=env.get("forge_md", ""),
             memory_context=env.get("memory", ""),
             index_context=env.get("project_index", ""),
+            model_id=model_id,
             autonomy_level=autonomy_level,
         )
 

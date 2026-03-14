@@ -44,7 +44,7 @@ User Goal → Interview (scope, stack, risk)
 | **TaskStore** | CRUD + JSON persistence + topological sort for wave computation |
 | **WaveExecutor** | `asyncio.gather()` with semaphore throttling for parallel agents |
 | **BuildDisplay** | Rich live UI: real-time tool calls, per-task results, build summary with tokens/timing |
-| **8 Formations** | Pre-built team patterns (feature-impl, code-review, security-review, etc.) |
+| **10 Formations** | Pre-built team patterns (feature-impl, code-review, security-review, etc.) |
 | **GateReviewer** | LLM-backed quality gate producing PASS/FAIL/CONDITIONAL verdicts |
 | **HookSystem** | 12 pre/post/stop hooks compatible with V11's shell hook protocol |
 | **PathSandbox** | Defense-in-depth file access control |
@@ -208,7 +208,7 @@ Real-time visibility into what the agent is doing:
 | `static-site` | nginx + HTML/CSS | Landing page |
 | `nova-chat` | Flask + Bedrock | AI chat app powered by Nova |
 
-## 8 Formations
+## 10 Formations
 
 Formations are pre-built Agent Team patterns for common workflows:
 
@@ -228,7 +228,7 @@ DAAO routing automatically selects a formation based on project scope and comple
 ## Testing
 
 ```bash
-# Run all 303 tests
+# Run all 1050+ tests
 pytest tests/ -v
 
 # Run specific test module

@@ -118,12 +118,17 @@ def update_registry_entry(port: int, service: str, domain: str, status: str) -> 
 # ── Dockerfile generation ─────────────────────────────────────────────────────
 
 def _detect_stack(project: ForgeProject) -> str:
-    root = project.root
-    if (root / "requirements.txt").exists() or list(root.glob("*.py")):
-        return "flask"
-    if (root / "package.json").exists():
-        return "node"
-    return "static"
+    """Detect stack kind via unified detector, mapped to deployer categories."""
+    from forge_preview import detect_stack as _unified_detect_stack
+    si = _unified_detect_stack(project.root)
+    _DEPLOYER_MAP = {
+        "flask": "flask", "fastapi": "fastapi", "django": "django",
+        "streamlit": "streamlit",
+        "node": "node", "nextjs": "node", "vite": "static",
+        "go": "go", "rust": "rust", "rails": "rails", "php": "php",
+        "docker": "docker", "static": "static", "python": "flask",
+    }
+    return _DEPLOYER_MAP.get(si.kind, "static")
 
 
 def _dockerfile_for_stack(stack: str, internal_port: int) -> str:
@@ -137,6 +142,77 @@ def _dockerfile_for_stack(stack: str, internal_port: int) -> str:
             f"EXPOSE {internal_port}\n"
             f'CMD ["gunicorn", "--bind", "0.0.0.0:{internal_port}", "--workers", "2", "app:app"]\n'
         )
+    if stack == "fastapi":
+        return (
+            f"FROM python:3.11-slim\n"
+            f"WORKDIR /app\n"
+            f"COPY requirements.txt* ./\n"
+            f"RUN pip install --no-cache-dir -r requirements.txt uvicorn 2>/dev/null || pip install --no-cache-dir uvicorn\n"
+            f"COPY . .\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "{internal_port}"]\n'
+        )
+    if stack == "streamlit":
+        return (
+            f"FROM python:3.11-slim\n"
+            f"WORKDIR /app\n"
+            f"COPY requirements.txt* ./\n"
+            f"RUN pip install --no-cache-dir -r requirements.txt streamlit 2>/dev/null || pip install --no-cache-dir streamlit\n"
+            f"COPY . .\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["streamlit", "run", "app.py", "--server.port={internal_port}", "--server.address=0.0.0.0", "--server.headless=true"]\n'
+        )
+    if stack == "django":
+        return (
+            f"FROM python:3.11-slim\n"
+            f"WORKDIR /app\n"
+            f"COPY requirements.txt* ./\n"
+            f"RUN pip install --no-cache-dir -r requirements.txt gunicorn 2>/dev/null || pip install --no-cache-dir gunicorn\n"
+            f"COPY . .\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["gunicorn", "--bind", "0.0.0.0:{internal_port}", "--workers", "2", "wsgi:application"]\n'
+        )
+    if stack == "go":
+        return (
+            f"FROM golang:1.22-alpine AS builder\n"
+            f"WORKDIR /app\n"
+            f"COPY go.* ./\n"
+            f"RUN go mod download 2>/dev/null || true\n"
+            f"COPY . .\n"
+            f"RUN go build -o server .\n"
+            f"FROM alpine:3.19\n"
+            f"COPY --from=builder /app/server /server\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["/server"]\n'
+        )
+    if stack == "rust":
+        return (
+            f"FROM rust:1.77-slim AS builder\n"
+            f"WORKDIR /app\n"
+            f"COPY Cargo.* ./\n"
+            f"COPY src/ src/\n"
+            f"RUN cargo build --release\n"
+            f"FROM debian:bookworm-slim\n"
+            f"COPY --from=builder /app/target/release/* /usr/local/bin/\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["app"]\n'
+        )
+    if stack == "rails":
+        return (
+            f"FROM ruby:3.3-slim\n"
+            f"WORKDIR /app\n"
+            f"COPY Gemfile* ./\n"
+            f"RUN bundle install\n"
+            f"COPY . .\n"
+            f"EXPOSE {internal_port}\n"
+            f'CMD ["bundle", "exec", "rails", "s", "-b", "0.0.0.0", "-p", "{internal_port}"]\n'
+        )
+    if stack == "php":
+        return (
+            f"FROM php:8.3-apache\n"
+            f"COPY . /var/www/html/\n"
+            f"EXPOSE {internal_port}\n"
+        )
     if stack == "node":
         return (
             f"FROM node:20-slim\n"
@@ -147,7 +223,7 @@ def _dockerfile_for_stack(stack: str, internal_port: int) -> str:
             f"EXPOSE {internal_port}\n"
             f'CMD ["npm", "start"]\n'
         )
-    # static fallback
+    # static fallback (includes vite build output)
     return (
         f"FROM nginx:alpine\n"
         f"COPY . /usr/share/nginx/html\n"
@@ -290,9 +366,17 @@ class ForgeDeployer:
     """Deploy a ForgeProject as a Docker container behind nginx."""
 
     INTERNAL_PORT_MAP = {
-        "flask":  8000,
-        "node":   3000,
-        "static": 80,
+        "flask":     8000,
+        "fastapi":   8000,
+        "django":    8000,
+        "streamlit": 8501,
+        "node":      3000,
+        "go":        8080,
+        "rust":      8080,
+        "rails":     3000,
+        "php":       80,
+        "docker":    8080,
+        "static":    80,
     }
 
     async def deploy(

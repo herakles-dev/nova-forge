@@ -28,11 +28,17 @@ import signal
 import socket
 import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
 __all__ = ["PreviewManager", "PreviewError", "StackInfo"]
+
+# ── Resilience constants ──────────────────────────────────────────────────
+TUNNEL_RETRIES = 3
+TUNNEL_BACKOFF_BASE = 2.0
+HEALTH_CACHE_TTL = 5.0
 
 
 class PreviewError(Exception):
@@ -42,11 +48,15 @@ class PreviewError(Exception):
 @dataclass
 class StackInfo:
     """Detected stack for the project."""
-    kind: str            # "flask" | "node" | "static" | "unknown"
+    kind: str            # "flask" | "node" | "static" | "unknown" | ...
     entry: str           # e.g. "app.py", "package.json", "index.html"
     cwd: Path            # Working directory for the server command
     server_cmd: str      # Shell command to start the server
     port: int            # Port the server will listen on
+    startup_timeout: int = 8
+    needs_install: bool = False
+    install_cmd: str = ""
+    health_path: str = "/"
 
 
 # ── Singleton registry for cleanup ──────────────────────────────────────────
@@ -73,13 +83,16 @@ def _register_atexit():
 
 # ── Port utilities ──────────────────────────────────────────────────────────
 
-def find_free_port(start: int, count: int = 20) -> int:
+def find_free_port(start: int, count: int = 100) -> int:
     """Find the first free port starting from `start`."""
     for p in range(start, start + count):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("127.0.0.1", p)) != 0:
                 return p
-    return start + count
+    # Fallback: bind to port 0 to let the OS pick
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def port_is_listening(port: int) -> bool:
@@ -88,25 +101,115 @@ def port_is_listening(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-# ── Stack detection ────────────────────────────────────────────────────────
+# ── Stack detection helpers ────────────────────────────────────────────────
 
-def detect_stack(project_path: Path) -> StackInfo:
-    """Auto-detect the project stack and build a server command.
-
-    Searches root + common subdirectories for:
-      1. Flask/Python app (app.py, main.py, etc. with Flask import)
-      2. Node.js app (package.json)
-      3. Static site (index.html)
-    """
-    pp = project_path.resolve()
-
-    search_dirs = [pp]
+def _build_search_dirs(pp: Path) -> list[Path]:
+    """Root + common backend subdirectories."""
+    dirs = [pp]
     for sub in ("backend", "server", "api", "src", "app"):
         sd = pp / sub
         if sd.is_dir():
-            search_dirs.append(sd)
+            dirs.append(sd)
+    return dirs
 
-    # 1. Flask
+
+def _frontend_dirs(pp: Path) -> list[Path]:
+    """Frontend subdirectories."""
+    return [pp / s for s in ("frontend", "client", "web", "ui") if (pp / s).is_dir()]
+
+
+def _static_dirs(pp: Path) -> list[Path]:
+    """Static asset subdirectories."""
+    return [pp / s for s in ("static", "public", "dist", "build") if (pp / s).is_dir()]
+
+
+def _read_pkg_deps(pkg_file: Path) -> set[str]:
+    """Return set of all dependency names from a package.json."""
+    import json
+    try:
+        pkg = json.loads(pkg_file.read_text())
+        deps = set(pkg.get("dependencies", {}).keys())
+        deps |= set(pkg.get("devDependencies", {}).keys())
+        return deps
+    except Exception:
+        return set()
+
+
+def _extract_expose_port(dockerfile: Path) -> int:
+    """Parse EXPOSE line from Dockerfile, return port or 8080 default."""
+    try:
+        for line in dockerfile.read_text().splitlines():
+            line = line.strip()
+            if line.upper().startswith("EXPOSE"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    port_str = parts[1].split("/")[0]  # handle EXPOSE 8080/tcp
+                    return int(port_str)
+    except Exception:
+        pass
+    return 8080
+
+
+# ── Individual stack detectors ─────────────────────────────────────────────
+# Each takes (pp: Path, search_dirs: list[Path]) -> StackInfo | None
+# Return None if not detected.  Order: most specific → least specific.
+
+def _detect_streamlit(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Streamlit app — .py files with `import streamlit`."""
+    for d in search_dirs:
+        for f in sorted(d.glob("*.py")):
+            try:
+                src = f.read_text()
+                if "import streamlit" in src or "from streamlit" in src:
+                    port = find_free_port(5000)
+                    return StackInfo(
+                        kind="streamlit",
+                        entry=f.name,
+                        cwd=d,
+                        server_cmd=(
+                            f"streamlit run {f.name} --server.port={port} "
+                            f"--server.address=0.0.0.0 --server.headless=true"
+                        ),
+                        port=port,
+                        startup_timeout=15,
+                        needs_install=True,
+                        install_cmd="pip install -r requirements.txt",
+                    )
+            except Exception:
+                pass
+    return None
+
+
+def _detect_fastapi(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect FastAPI app — .py files with `from fastapi` or `import fastapi`."""
+    for d in search_dirs:
+        for f in sorted(d.glob("*.py")):
+            try:
+                src = f.read_text()
+                if "from fastapi" in src or "import fastapi" in src:
+                    port = find_free_port(5000)
+                    module = f.name[:-3]
+                    app_var = "app"
+                    m = re.search(r'(\w+)\s*=\s*FastAPI\s*\(', src)
+                    if m:
+                        app_var = m.group(1)
+                    return StackInfo(
+                        kind="fastapi",
+                        entry=f.name,
+                        cwd=d,
+                        server_cmd=f"uvicorn {module}:{app_var} --host 0.0.0.0 --port {port}",
+                        port=port,
+                        startup_timeout=10,
+                        needs_install=True,
+                        install_cmd="pip install -r requirements.txt",
+                    )
+            except Exception:
+                pass
+    return None
+
+
+def _detect_flask(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Flask app — factory pattern + app variable extraction."""
     for d in search_dirs:
         for fname in ("api.py", "app.py", "main.py", "server.py", "wsgi.py", "run.py"):
             fp = d / fname
@@ -116,9 +219,8 @@ def detect_stack(project_path: Path) -> StackInfo:
                     if "flask" in src.lower() or "Flask" in src:
                         port = find_free_port(5000)
                         module = fname[:-3]
-                        import re as _re
                         # Detect factory pattern: def create_app() with Flask inside
-                        factory_match = _re.search(
+                        factory_match = re.search(
                             r'def\s+(create_app|make_app)\s*\(', src
                         )
                         if factory_match:
@@ -133,7 +235,7 @@ def detect_stack(project_path: Path) -> StackInfo:
                         else:
                             # Direct app variable: app = Flask(__name__)
                             app_var = "app"
-                            m = _re.search(r'(\w+)\s*=\s*Flask\s*\(', src)
+                            m = re.search(r'(\w+)\s*=\s*Flask\s*\(', src)
                             if m:
                                 app_var = m.group(1)
                             server_cmd = (
@@ -148,12 +250,94 @@ def detect_stack(project_path: Path) -> StackInfo:
                             cwd=d,
                             server_cmd=server_cmd,
                             port=port,
+                            startup_timeout=8,
+                            needs_install=True,
+                            install_cmd="pip install -r requirements.txt",
                         )
                 except Exception:
                     pass
+    return None
 
-    # 2. Node.js
-    for d in list(search_dirs) + [pp / s for s in ("frontend", "client", "web", "ui")]:
+
+def _detect_django(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Django project — manage.py with 'django' in content."""
+    for d in search_dirs:
+        manage = d / "manage.py"
+        if manage.exists():
+            try:
+                src = manage.read_text()
+                if "django" in src.lower():
+                    port = find_free_port(5000)
+                    return StackInfo(
+                        kind="django",
+                        entry="manage.py",
+                        cwd=d,
+                        server_cmd=f"python3 manage.py runserver 0.0.0.0:{port} --noreload",
+                        port=port,
+                        startup_timeout=12,
+                        needs_install=True,
+                        install_cmd="pip install -r requirements.txt",
+                    )
+            except Exception:
+                pass
+    return None
+
+
+def _detect_nextjs(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Next.js — package.json with 'next' dependency."""
+    for d in list(search_dirs) + _frontend_dirs(pp):
+        pkg_file = d / "package.json"
+        if d.is_dir() and pkg_file.exists():
+            deps = _read_pkg_deps(pkg_file)
+            if "next" in deps:
+                port = find_free_port(3000)
+                return StackInfo(
+                    kind="nextjs",
+                    entry="package.json",
+                    cwd=d,
+                    server_cmd=f"PORT={port} npx next dev -p {port}",
+                    port=port,
+                    startup_timeout=30,
+                    needs_install=True,
+                    install_cmd="npm install",
+                )
+    return None
+
+
+def _detect_vite(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Vite — devDeps with 'vite' or vite.config.{ts,js,mjs}."""
+    for d in list(search_dirs) + _frontend_dirs(pp):
+        if not d.is_dir():
+            continue
+        pkg_file = d / "package.json"
+        has_vite = False
+        if pkg_file.exists():
+            deps = _read_pkg_deps(pkg_file)
+            if "vite" in deps:
+                has_vite = True
+        if not has_vite:
+            for ext in ("ts", "js", "mjs"):
+                if (d / f"vite.config.{ext}").exists():
+                    has_vite = True
+                    break
+        if has_vite:
+            port = find_free_port(3000)
+            return StackInfo(
+                kind="vite",
+                entry="package.json",
+                cwd=d,
+                server_cmd=f"npx vite --host 0.0.0.0 --port {port}",
+                port=port,
+                startup_timeout=20,
+                needs_install=True,
+                install_cmd="npm install",
+            )
+    return None
+
+
+def _detect_node(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect generic Node.js — package.json exists (after nextjs/vite)."""
+    for d in list(search_dirs) + _frontend_dirs(pp):
         if d.is_dir() and (d / "package.json").exists():
             port = find_free_port(3000)
             return StackInfo(
@@ -162,10 +346,137 @@ def detect_stack(project_path: Path) -> StackInfo:
                 cwd=d,
                 server_cmd=f"PORT={port} npm start",
                 port=port,
+                startup_timeout=15,
+                needs_install=True,
+                install_cmd="npm install",
             )
+    return None
 
-    # 3. Static
-    for d in list(search_dirs) + [pp / s for s in ("static", "frontend", "client", "web", "public", "dist", "build")]:
+
+def _detect_go(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Go project — go.mod or main.go."""
+    for d in search_dirs:
+        if (d / "go.mod").exists() or (d / "main.go").exists():
+            entry = "go.mod" if (d / "go.mod").exists() else "main.go"
+            port = find_free_port(8080)
+            return StackInfo(
+                kind="go",
+                entry=entry,
+                cwd=d,
+                server_cmd=f"PORT={port} go run .",
+                port=port,
+                startup_timeout=20,
+            )
+    return None
+
+
+def _detect_rust(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Rust project — Cargo.toml."""
+    for d in search_dirs:
+        if (d / "Cargo.toml").exists():
+            port = find_free_port(8080)
+            return StackInfo(
+                kind="rust",
+                entry="Cargo.toml",
+                cwd=d,
+                server_cmd=f"PORT={port} cargo run",
+                port=port,
+                startup_timeout=45,
+            )
+    return None
+
+
+def _detect_rails(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Rails — Gemfile with 'rails' AND config.ru."""
+    for d in search_dirs:
+        gemfile = d / "Gemfile"
+        config_ru = d / "config.ru"
+        if gemfile.exists() and config_ru.exists():
+            try:
+                src = gemfile.read_text()
+                if "rails" in src.lower():
+                    port = find_free_port(8080)
+                    return StackInfo(
+                        kind="rails",
+                        entry="config.ru",
+                        cwd=d,
+                        server_cmd=f"bundle exec rails s -b 0.0.0.0 -p {port}",
+                        port=port,
+                        startup_timeout=25,
+                        needs_install=True,
+                        install_cmd="bundle install",
+                    )
+            except Exception:
+                pass
+    return None
+
+
+def _detect_php(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect PHP — index.php or composer.json."""
+    for d in search_dirs:
+        if (d / "index.php").exists() or (d / "composer.json").exists():
+            entry = "index.php" if (d / "index.php").exists() else "composer.json"
+            port = find_free_port(8080)
+            return StackInfo(
+                kind="php",
+                entry=entry,
+                cwd=d,
+                server_cmd=f"php -S 0.0.0.0:{port}",
+                port=port,
+                startup_timeout=5,
+            )
+    return None
+
+
+def _detect_generic_python(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect generic Python server — .py with __main__ + server patterns."""
+    server_patterns = re.compile(
+        r'http\.server|socket|\.listen\(|\.serve|BaseHTTPServer|HTTPServer|uvicorn|gunicorn'
+    )
+    for d in search_dirs:
+        for f in sorted(d.glob("*.py")):
+            try:
+                src = f.read_text()
+                if 'if __name__' in src and server_patterns.search(src):
+                    port = find_free_port(5000)
+                    return StackInfo(
+                        kind="python",
+                        entry=f.name,
+                        cwd=d,
+                        server_cmd=f"PORT={port} python3 {f.name}",
+                        port=port,
+                        startup_timeout=10,
+                    )
+            except Exception:
+                pass
+    return None
+
+
+def _detect_dockerfile(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect Dockerfile — build and run container."""
+    for d in search_dirs:
+        dockerfile = d / "Dockerfile"
+        if dockerfile.exists():
+            exposed = _extract_expose_port(dockerfile)
+            port = find_free_port(8080)
+            return StackInfo(
+                kind="docker",
+                entry="Dockerfile",
+                cwd=d,
+                server_cmd=(
+                    f"docker build -t forge-preview . && "
+                    f"docker run --rm -p {port}:{exposed} forge-preview"
+                ),
+                port=port,
+                startup_timeout=60,
+            )
+    return None
+
+
+def _detect_static(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
+    """Detect static site — index.html in root, subdirs, frontend, or static dirs."""
+    all_dirs = list(search_dirs) + _frontend_dirs(pp) + _static_dirs(pp)
+    for d in all_dirs:
         if d.is_dir() and (d / "index.html").exists():
             port = find_free_port(8080)
             return StackInfo(
@@ -174,8 +485,32 @@ def detect_stack(project_path: Path) -> StackInfo:
                 cwd=d,
                 server_cmd=f"python3 -m http.server {port}",
                 port=port,
+                startup_timeout=3,
             )
+    return None
 
+
+# ── Detector registry ──────────────────────────────────────────────────────
+
+_STACK_DETECTORS: list = [
+    _detect_streamlit, _detect_fastapi, _detect_flask, _detect_django,
+    _detect_nextjs, _detect_vite, _detect_node,
+    _detect_go, _detect_rust, _detect_rails, _detect_php,
+    _detect_generic_python, _detect_dockerfile, _detect_static,
+]
+
+
+def detect_stack(project_path: Path) -> StackInfo:
+    """Auto-detect the project stack and build a server command.
+
+    Checks 14 detector functions in priority order; first match wins.
+    """
+    pp = project_path.resolve()
+    search_dirs = _build_search_dirs(pp)
+    for detector in _STACK_DETECTORS:
+        result = detector(pp, search_dirs)
+        if result is not None:
+            return result
     return StackInfo(kind="unknown", entry="", cwd=pp, server_cmd="", port=0)
 
 
@@ -193,6 +528,7 @@ class PreviewManager:
 
     TUNNEL_TIMEOUT = 15   # seconds to wait for cloudflared URL
     SERVER_TIMEOUT = 5    # seconds to wait for server to start listening
+    _health_cache: tuple[float, bool] | None = None  # (timestamp, healthy)
 
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path).resolve()
@@ -253,8 +589,10 @@ class PreviewManager:
         if si.kind == "unknown":
             raise PreviewError(
                 "No servable entry point found. "
-                "Looked for: Flask app (app.py with Flask import), "
-                "Node app (package.json), Static site (index.html)"
+                "Supported: Streamlit, FastAPI, Flask, Django, Next.js, Vite, Node.js, "
+                "Go, Rust, Rails, PHP, Docker, Static. "
+                "Hint: create app.py (Flask/FastAPI/Streamlit), package.json with start script, "
+                "index.html, or a Dockerfile."
             )
         self._stack = si
         self._port = si.port
@@ -267,6 +605,10 @@ class PreviewManager:
                 "Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
             )
 
+        # Install deps if needed
+        if si.needs_install and si.install_cmd:
+            self._run_install(si)
+
         # Start server
         err_log = self.project_path / ".forge" / "preview-stderr.log"
         err_log.parent.mkdir(parents=True, exist_ok=True)
@@ -277,8 +619,8 @@ class PreviewManager:
             stdout=subprocess.DEVNULL, stderr=self._err_log_fh,
         )
 
-        # Wait for server to listen
-        if not self._wait_for_server(si.port):
+        # Wait for server to listen (per-stack timeout)
+        if not self._wait_for_server(si.port, timeout=si.startup_timeout):
             # Server may have crashed — read stderr
             self._err_log_fh.close()
             err_text = err_log.read_text().strip()
@@ -289,19 +631,30 @@ class PreviewManager:
                 msg += f": {err_text[-300:]}"
             raise PreviewError(msg)
 
-        # Start tunnel pointing at the exact port we just verified
-        self._tunnel_proc = subprocess.Popen(
-            [cf_path, "tunnel", "--url", f"http://localhost:{si.port}"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        )
+        # Start tunnel with retry + exponential backoff
+        tunnel_url = None
+        last_err = "timed out"
+        for attempt in range(TUNNEL_RETRIES):
+            self._tunnel_proc = subprocess.Popen(
+                [cf_path, "tunnel", "--url", f"http://localhost:{si.port}"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            tunnel_url = self._wait_for_tunnel()
+            if tunnel_url:
+                break
+            # Kill failed tunnel before retrying
+            self._kill_proc(self._tunnel_proc)
+            self._tunnel_proc = None
+            if attempt < TUNNEL_RETRIES - 1:
+                delay = TUNNEL_BACKOFF_BASE * (2 ** attempt)
+                time.sleep(delay)
 
-        # Extract tunnel URL
-        tunnel_url = self._wait_for_tunnel()
         if not tunnel_url:
             self.stop()
-            raise PreviewError("Could not establish Cloudflare tunnel (timed out)")
+            raise PreviewError(f"Could not establish Cloudflare tunnel after {TUNNEL_RETRIES} attempts ({last_err})")
 
         self._url = tunnel_url
+        self._health_cache = None
         return tunnel_url
 
     def _start_server_only(self, stack_info: StackInfo | None = None) -> int:
@@ -318,6 +671,10 @@ class PreviewManager:
         self._stack = si
         self._port = si.port
 
+        # Install deps if needed
+        if si.needs_install and si.install_cmd:
+            self._run_install(si)
+
         err_log = self.project_path / ".forge" / "preview-stderr.log"
         err_log.parent.mkdir(parents=True, exist_ok=True)
         self._err_log_fh = open(err_log, "w")
@@ -327,7 +684,7 @@ class PreviewManager:
             stdout=subprocess.DEVNULL, stderr=self._err_log_fh,
         )
 
-        if not self._wait_for_server(si.port):
+        if not self._wait_for_server(si.port, timeout=si.startup_timeout):
             self._err_log_fh.close()
             err_text = err_log.read_text().strip()
             self._kill_proc(self._server_proc)
@@ -377,11 +734,162 @@ class PreviewManager:
             "stack": self._stack.kind if self._stack else None,
         }
 
+    def ensure_healthy(self) -> bool:
+        """Check server + tunnel health. Auto-restart components if dead.
+
+        Returns True if preview is healthy (or was successfully recovered).
+        Returns False if recovery failed.
+        """
+        if not self._stack or not self._port:
+            return False
+
+        server_alive = self._server_proc is not None and self._server_proc.poll() is None
+        tunnel_alive = self._tunnel_proc is not None and self._tunnel_proc.poll() is None
+        http_ok = self._http_health_ok()
+
+        # Everything healthy
+        if server_alive and tunnel_alive and http_ok:
+            return True
+
+        # Server died — restart it
+        if not server_alive or not http_ok:
+            try:
+                self._restart_server()
+            except PreviewError:
+                return False
+
+        # Tunnel died — reconnect
+        if not tunnel_alive:
+            try:
+                self._reconnect_tunnel()
+            except PreviewError:
+                return False
+
+        return True
+
+    def _restart_server(self) -> None:
+        """Restart the dev server using the same StackInfo."""
+        if not self._stack:
+            raise PreviewError("No stack info — cannot restart server")
+
+        self._kill_proc(self._server_proc)
+        self._server_proc = None
+
+        si = self._stack
+        err_log = self.project_path / ".forge" / "preview-stderr.log"
+        err_log.parent.mkdir(parents=True, exist_ok=True)
+        if self._err_log_fh:
+            try:
+                self._err_log_fh.close()
+            except Exception:
+                pass
+        self._err_log_fh = open(err_log, "w")
+
+        self._server_proc = subprocess.Popen(
+            si.server_cmd, shell=True, cwd=str(si.cwd),
+            stdout=subprocess.DEVNULL, stderr=self._err_log_fh,
+        )
+
+        if not self._wait_for_server(si.port, timeout=si.startup_timeout):
+            self._err_log_fh.close()
+            err_text = err_log.read_text().strip()
+            self._kill_proc(self._server_proc)
+            self._server_proc = None
+            msg = f"Server restart failed on port {si.port}"
+            if err_text:
+                msg += f": {err_text[-300:]}"
+            raise PreviewError(msg)
+
+    def _reconnect_tunnel(self) -> None:
+        """Kill old tunnel and start a new one, extracting the new URL."""
+        self._kill_proc(self._tunnel_proc)
+        self._tunnel_proc = None
+
+        cf_path = shutil.which("cloudflared")
+        if not cf_path:
+            raise PreviewError("cloudflared not found — cannot reconnect tunnel")
+
+        tunnel_url = None
+        for attempt in range(TUNNEL_RETRIES):
+            self._tunnel_proc = subprocess.Popen(
+                [cf_path, "tunnel", "--url", f"http://localhost:{self._port}"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            tunnel_url = self._wait_for_tunnel()
+            if tunnel_url:
+                break
+            self._kill_proc(self._tunnel_proc)
+            self._tunnel_proc = None
+            if attempt < TUNNEL_RETRIES - 1:
+                time.sleep(TUNNEL_BACKOFF_BASE * (2 ** attempt))
+
+        if not tunnel_url:
+            raise PreviewError(f"Tunnel reconnection failed after {TUNNEL_RETRIES} attempts")
+
+        self._url = tunnel_url
+
+    def _http_health_ok(self) -> bool:
+        """HTTP GET to server health_path. Result cached for HEALTH_CACHE_TTL seconds."""
+        if not self._port:
+            return False
+
+        # Return cached result if fresh
+        if self._health_cache is not None:
+            ts, result = self._health_cache
+            if time.time() - ts < HEALTH_CACHE_TTL:
+                return result
+
+        health_path = self._stack.health_path if self._stack else "/"
+        try:
+            url = f"http://127.0.0.1:{self._port}{health_path}"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                ok = resp.status < 500
+        except Exception:
+            ok = False
+
+        self._health_cache = (time.time(), ok)
+        return ok
+
     # ── Internal helpers ────────────────────────────────────────────────
 
-    def _wait_for_server(self, port: int) -> bool:
+    def _run_install(self, si: StackInfo) -> None:
+        """Install dependencies if needed. Smart skip if already installed."""
+        # Skip if node_modules exists for JS stacks
+        if si.kind in ("node", "nextjs", "vite") and (si.cwd / "node_modules").is_dir():
+            return
+        # Skip if Python package already importable
+        if si.kind in ("flask", "fastapi", "streamlit", "django"):
+            pkg = {"streamlit": "streamlit", "fastapi": "fastapi",
+                   "flask": "flask", "django": "django"}[si.kind]
+            r = subprocess.run(
+                ["python3", "-c", f"import {pkg}"],
+                capture_output=True, timeout=5,
+            )
+            if r.returncode == 0:
+                return
+        # Run install
+        r = subprocess.run(
+            si.install_cmd, shell=True, cwd=str(si.cwd),
+            capture_output=True, text=True, timeout=120,
+        )
+        if r.returncode != 0:
+            # PEP 668: retry with --break-system-packages for pip commands
+            if "externally-managed" in r.stderr.lower() and "pip" in si.install_cmd:
+                cmd_retry = si.install_cmd.replace(
+                    "pip install", "pip install --break-system-packages"
+                )
+                r = subprocess.run(
+                    cmd_retry, shell=True, cwd=str(si.cwd),
+                    capture_output=True, text=True, timeout=120,
+                )
+                if r.returncode == 0:
+                    return
+            raise PreviewError(f"Install failed ({si.install_cmd}): {r.stderr[-300:]}")
+
+    def _wait_for_server(self, port: int, timeout: int | None = None) -> bool:
         """Wait for the server to start listening."""
-        deadline = time.time() + self.SERVER_TIMEOUT
+        deadline = time.time() + (timeout or self.SERVER_TIMEOUT)
         while time.time() < deadline:
             time.sleep(0.3)
             if port_is_listening(port):

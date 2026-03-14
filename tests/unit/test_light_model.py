@@ -161,7 +161,7 @@ def test_slim_system_prompt_for_32k_model():
 
 
 def test_full_system_prompt_for_large_model():
-    """Large-context models should get the full V11 system prompt."""
+    """Large-context models should get a focused system prompt (not slim)."""
     from prompt_builder import PromptBuilder
 
     pb = PromptBuilder("/tmp")
@@ -170,8 +170,9 @@ def test_full_system_prompt_for_large_model():
         model_id="openrouter/google/gemini-2.0-flash-001",
     )
 
-    # Should contain the full identity section
-    assert "You are NOT a chatbot" in prompt
+    # Focused prompt should include key directives and be larger than slim
+    assert "You ACT" in prompt
+    assert "SYNTAX ERROR" in prompt
     assert len(prompt) > 1500
 
 

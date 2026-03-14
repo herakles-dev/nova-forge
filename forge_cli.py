@@ -25,18 +25,24 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style as PTStyle
 
-from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
-from rich.theme import Theme
 from rich import box
 from rich.columns import Columns
 from rich.rule import Rule
 
-from forge_prompt import ask_select, ask_confirm, ask_text
+from forge_theme import (
+    console, gradient_text, status_bar, file_tree, wave_header,
+    SPINNERS, BRAND,
+)
+
+from forge_prompt import (
+    ask_select, ask_confirm, ask_text, ask_checkbox,
+    ask_text_optional, build_model_choices, Separator,
+)
 from questionary import Choice
 from forge_assistant import ForgeAssistant
 
@@ -51,29 +57,14 @@ from config import (
 
 logger = logging.getLogger("forge.cli")
 
-# ── Theme ────────────────────────────────────────────────────────────────────
-
-THEME = Theme({
-    "info": "cyan",
-    "success": "bold green",
-    "warning": "bold yellow",
-    "error": "bold red",
-    "muted": "dim",
-    "accent": "bold cyan",
-    "nova": "bold magenta",
-    "hint": "italic dim cyan",
-    "brand": "bold bright_magenta",
-    "step": "bold white",
-})
-
-console = Console(theme=THEME)
+# ── Theme (from forge_theme.py) ──────────────────────────────────────────────
 
 PT_STYLE = PTStyle.from_dict({
-    "prompt": "#ff66ff bold",
-    "": "#e0e0e0",
+    "prompt": "#c084fc bold",
+    "": "#e4e4f0",
 })
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 # ── Concurrency limits per provider ──────────────────────────────────────────
 
@@ -225,7 +216,7 @@ def _try_load_env_file(path: str) -> bool:
 
 # ── ASCII Art & Branding ─────────────────────────────────────────────────────
 
-LOGO = r"""[bold bright_magenta]
+LOGO = r"""[#c084fc]
     _   __                  ______
    / | / /___ _   ______ _ / ____/___  _________ ____
   /  |/ / __ \ | / / __ `// /_  / __ \/ ___/ __ `/ _ \
@@ -233,7 +224,7 @@ LOGO = r"""[bold bright_magenta]
 /_/ |_/\____/|___/\__,_//_/    \____/_/   \__, /\___/
                                          /____/[/]"""
 
-TAGLINE = "[muted]Describe it. Nova builds it.[/]"
+_TAGLINE_TEXT = "AI Build Orchestrator"
 
 WELCOME_FIRST_RUN = """
 [bold bright_white]Welcome to Nova Forge![/]
@@ -291,17 +282,17 @@ HELP_TEXT = """
   [accent]/tasks[/]              See all tasks with status and dependencies
 
 [bold bright_white]Configuration[/]
-  [accent]/model[/] [muted]<name>[/]        Switch AI model  [muted](e.g. /model gemini-flash)[/]
+  [accent]/model[/]               Switch AI model  [muted](interactive selector, or /model nova-lite)[/]
   [accent]/models[/]             Show all available models + credential status
-  [accent]/config[/]             View or change settings
+  [accent]/config[/]             Edit settings  [muted](interactive, or /config key value)[/]
   [accent]/login[/]              Set up API credentials for a provider
 
 [bold bright_white]Project[/]
-  [accent]/resume[/] [muted]<n>[/]         Resume a recent project  [muted](e.g. /resume 1)[/]
+  [accent]/resume[/]             Resume a recent project  [muted](interactive, or /resume 1)[/]
   [accent]/new[/] [muted]<name>[/]          Start a fresh project directory
   [accent]/cd[/] [muted]<path>[/]           Switch project directory
   [accent]/pwd[/]                Show current project location
-  [accent]/formation[/]          Agent team configurations
+  [accent]/formation[/]          View agent formations  [muted](interactive selector)[/]
   [accent]/audit[/]              View the build audit log
 
 [bold bright_white]General[/]
@@ -366,7 +357,9 @@ class ForgeShell:
         """Main REPL — welcome, onboard, build."""
         console.clear()
         console.print(LOGO)
-        console.print(f"  {TAGLINE}")
+        subtitle = gradient_text(f"  {_TAGLINE_TEXT}")
+        console.print(subtitle)
+        console.print(f"  [dim]v{VERSION}[/]")
         console.print()
 
         # Try auto-loading credentials from known locations
@@ -424,11 +417,24 @@ class ForgeShell:
         skill_choice = await ask_select(
             "How would you describe your experience level?",
             [
-                Choice(title="New to coding (or new to Nova Forge)", value="beginner"),
-                Choice(title="Comfortable with code and CLIs", value="intermediate"),
-                Choice(title="Experienced developer — keep it brief", value="expert"),
+                Choice(
+                    title="Beginner",
+                    value="beginner",
+                    description="New to coding or new to Nova Forge — extra guidance and explanations",
+                ),
+                Choice(
+                    title="Intermediate",
+                    value="intermediate",
+                    description="Comfortable with code and CLIs — balanced guidance",
+                ),
+                Choice(
+                    title="Expert",
+                    value="expert",
+                    description="Experienced developer — minimal explanations, just build",
+                ),
             ],
             default="beginner",
+            use_shortcuts=True,
         )
         if skill_choice:
             self.assistant.set_skill_level(skill_choice)
@@ -594,7 +600,7 @@ class ForgeShell:
 
     # ── Guided build flow (the magic) ────────────────────────────────────
 
-    async def _guided_build(self, goal: str) -> None:
+    async def _guided_build(self, goal: str, scope_context: str | None = None) -> None:
         """The full guided pipeline: goal → name → plan → confirm → build → celebrate."""
 
         # Step 1: Derive project name
@@ -633,9 +639,9 @@ class ForgeShell:
         console.print()
 
         # Step 2: Plan
-        console.print(Rule("[step] Step 1: Planning [/]", style="cyan"))
+        console.print(Rule(f"[bold {BRAND['accent']}] Planning [/]", style=BRAND["accent"]))
         console.print()
-        await self._cmd_plan(goal)
+        await self._cmd_plan(goal, scope_context=scope_context)
 
         # Step 3: Confirm build
         if not self._has_tasks():
@@ -659,7 +665,7 @@ class ForgeShell:
             console.print(f"  [hint]{guidance}[/]")
 
         console.print()
-        console.print(Rule("[step] Step 2: Build [/]", style="cyan"))
+        console.print(Rule(f"[bold {BRAND['cyan']}] Build [/]", style=BRAND["cyan"]))
         console.print()
 
         if not await ask_confirm("Ready to build?"):
@@ -692,28 +698,39 @@ class ForgeShell:
         console.print()
 
         if failed == 0 and done == total:
+            # Show file tree of the built project
+            all_files = self._list_project_files()
+            tree_str = ""
+            if all_files:
+                tree = file_tree(all_files[:15], str(self.project_path))
+                from io import StringIO
+                from rich.console import Console as _C
+                buf = StringIO()
+                _C(file=buf, force_terminal=True, theme=console._theme).print(tree)
+                tree_str = "\n" + buf.getvalue()
+
             console.print(Panel(
-                f"[bold green]Build complete![/]\n\n"
-                f"  [success]{done}/{total}[/] tasks finished\n"
-                f"  Project: [bold]{self.project_path}[/]\n\n"
-                f"  [step]What's next?[/]\n"
-                f"    [accent]cd {self.project_path}[/]  and explore your new project\n"
-                f"    Tell me to add features, fix bugs, or write tests\n"
-                f"    Or just describe your next idea!",
-                border_style="green",
-                title="[bold green] Done! [/]",
+                f"[bold {BRAND['green']}]\u2713 Build complete![/]\n\n"
+                f"  {status_bar(done, total, 20)}\n"
+                f"{tree_str}\n"
+                f"  [step]Quick actions:[/]\n"
+                f"    [{BRAND['accent2']}]/preview[/]  \u2192  Share a live URL\n"
+                f"    [{BRAND['cyan']}]/deploy[/]   \u2192  Ship to production\n"
+                f"    [{BRAND['accent']}]/tasks[/]    \u2192  Review task details",
+                border_style=BRAND["green"],
+                title=f"[bold {BRAND['green']}] Done! [/]",
                 padding=(1, 2),
             ))
         elif done > 0:
             console.print(Panel(
-                f"[bold yellow]Build partially complete[/]\n\n"
+                f"[bold {BRAND['orange']}]Build partially complete[/]\n\n"
+                f"  {status_bar(done, total, 20)}\n"
                 f"  [success]{done}[/] passed  [error]{failed}[/] failed  "
                 f"out of {total} tasks\n\n"
-                f"  The core functionality is likely working.\n"
-                f"  Type [accent]/build[/] to retry failed tasks,\n"
+                f"  Type [{BRAND['cyan']}]/build[/] to retry failed tasks,\n"
                 f"  or tell me what to fix.",
-                border_style="yellow",
-                title="[bold yellow] Almost there [/]",
+                border_style=BRAND["orange"],
+                title=f"[bold {BRAND['orange']}] Almost there [/]",
                 padding=(1, 2),
             ))
         else:
@@ -727,9 +744,9 @@ class ForgeShell:
         builds = self.state.get("builds_completed", 0)
         console.print()
         if builds > 0:
-            console.print(f"  [muted]See you next time. {builds} project{'s' if builds != 1 else ''} built and counting.[/]")
+            console.print(f"  [{BRAND['accent2']}]\u2728[/] [muted]{builds} project{'s' if builds != 1 else ''} built. See you next time.[/]")
         else:
-            console.print(f"  [muted]Come back when you're ready to build something.[/]")
+            console.print(f"  [{BRAND['accent2']}]\u2728[/] [muted]Come back when you're ready to build.[/]")
         console.print()
 
     # ── Credential management ────────────────────────────────────────────
@@ -824,10 +841,14 @@ class ForgeShell:
         console.print()
 
         provider_choices = [
-            Choice(title=PROVIDER_CREDS[name]["display"], value=name)
+            Choice(
+                title=PROVIDER_CREDS[name]["display"],
+                value=name,
+                description=f"Models: {', '.join(PROVIDER_CREDS[name]['models'])}",
+            )
             for name in unconfigured
         ]
-        provider = await ask_select("Set up a provider", provider_choices)
+        provider = await ask_select("Set up a provider", provider_choices, use_shortcuts=True)
         if provider is None:
             console.print("  [muted]Skipped. You can run /login anytime.[/]")
             console.print()
@@ -929,7 +950,7 @@ class ForgeShell:
             case "/cd":
                 self._cmd_cd(arg)
             case "/resume":
-                self._cmd_resume(arg)
+                await self._cmd_resume(arg)
             case "/new":
                 await self._cmd_new(arg)
             case "/plan":
@@ -946,7 +967,7 @@ class ForgeShell:
             case "/tasks":
                 self._cmd_tasks()
             case "/model":
-                self._cmd_model(arg)
+                await self._cmd_model(arg)
             case "/models":
                 self._cmd_models()
             case "/config":
@@ -954,7 +975,7 @@ class ForgeShell:
             case "/login":
                 await self._cmd_login(arg)
             case "/formation":
-                self._cmd_formation(arg)
+                await self._cmd_formation(arg)
             case "/audit":
                 self._cmd_audit()
             case "/preview":
@@ -967,6 +988,10 @@ class ForgeShell:
                 await self._cmd_autonomy(arg)
             case "/guide":
                 await self._cmd_guide(arg)
+            case "/health":
+                self._cmd_health()
+            case "/competition":
+                self._cmd_competition()
             case _:
                 console.print(f"  [warning]Unknown command:[/] {cmd}")
                 console.print(f"  [hint]Type /help for commands, or just describe what you want.[/]")
@@ -995,7 +1020,7 @@ class ForgeShell:
 
     # ── /resume ───────────────────────────────────────────────────────────
 
-    def _cmd_resume(self, arg: str) -> None:
+    async def _cmd_resume(self, arg: str) -> None:
         """Resume a recent project."""
         recent = self.state.get("recent_projects", [])
         if not recent:
@@ -1020,93 +1045,114 @@ class ForgeShell:
                 console.print(f"  [error]Project not found:[/] {arg}")
                 console.print(f"  [hint]Use /resume to see the list[/]")
                 return
+        else:
+            # No argument — interactive project selection
+            choices: list[Choice | Separator] = []
+            for proj in recent[:10]:
+                p = Path(proj["path"])
+                if not p.exists():
+                    choices.append(Choice(
+                        title=proj["name"],
+                        value=proj["name"],
+                        disabled="directory deleted",
+                    ))
+                    continue
 
-            p = Path(target["path"])
-            if not p.exists():
-                console.print(f"  [error]Directory deleted:[/] {target['path']}")
+                summary = self._get_task_summary_for(p)
+                if summary and summary["total"] > 0:
+                    done = summary["completed"]
+                    total = summary["total"]
+                    if done == total:
+                        status = "complete"
+                    else:
+                        remaining = total - done
+                        status = f"{done}/{total} done, {remaining} to go"
+                else:
+                    status = "no tasks"
+
+                is_active = p == self.project_path
+                title = f"{proj['name']:30s}  {status}"
+                if is_active:
+                    title += "  (current)"
+
+                choices.append(Choice(
+                    title=title,
+                    value=proj["name"],
+                    description=str(p),
+                ))
+
+            if not choices:
+                console.print("  [muted]No recent projects.[/]")
                 return
 
-            self.project_path = p
-            self._ensure_project()
-            console.print(f"  [success]Resumed[/] [bold]{target['name']}[/]")
-            console.print(f"  [muted]{p}[/]")
+            selected = await ask_select(
+                "Resume project",
+                choices,
+                use_search_filter=len(choices) > 5,
+            )
+            if selected is None:
+                return
 
-            summary = self._get_task_summary()
-            if summary:
-                done = summary["completed"]
-                total = summary["total"]
-                failed = summary["failed"]
-                pending = summary["pending"]
-                in_prog = summary.get("in_progress", 0)
-                remaining = pending + failed + in_prog
-                console.print(f"  {done}/{total} tasks done", end="")
-                if remaining > 0:
-                    console.print(f", {remaining} remaining")
-                    console.print()
-                    console.print(f"  [hint]Type [accent]/build[/] to continue[/]")
-                else:
-                    console.print(" [success](all complete)[/]")
-                    self._suggest_next_action()
+            target = None
+            for proj in recent:
+                if proj["name"] == selected:
+                    target = proj
+                    break
+            if not target:
+                return
+
+        p = Path(target["path"])
+        if not p.exists():
+            console.print(f"  [error]Directory deleted:[/] {target['path']}")
             return
 
-        # No argument — show list
-        console.print()
-        console.print("  [step]Recent projects:[/]")
-        console.print()
+        self.project_path = p
+        self._ensure_project()
+        console.print(f"  [success]Resumed[/] [bold]{target['name']}[/]")
+        console.print(f"  [muted]{p}[/]")
 
-        for i, proj in enumerate(recent[:10], 1):
-            p = Path(proj["path"])
-            if not p.exists():
-                console.print(f"  [accent]{i}.[/] [muted]{proj['name']}  (deleted)[/]")
-                continue
-
-            summary = self._get_task_summary_for(p)
-            if summary and summary["total"] > 0:
-                done = summary["completed"]
-                total = summary["total"]
-                failed = summary["failed"]
-                pending = summary["pending"]
-                if done == total:
-                    tag = "[success]complete[/]"
-                elif failed > 0 or pending > 0:
-                    remaining = pending + failed
-                    tag = f"[yellow]{done}/{total} done, {remaining} to go[/]"
-                else:
-                    tag = f"[cyan]{done}/{total}[/]"
+        summary = self._get_task_summary()
+        if summary:
+            done = summary["completed"]
+            total = summary["total"]
+            failed = summary["failed"]
+            pending = summary["pending"]
+            in_prog = summary.get("in_progress", 0)
+            remaining = pending + failed + in_prog
+            console.print(f"  {done}/{total} tasks done", end="")
+            if remaining > 0:
+                console.print(f", {remaining} remaining")
+                console.print()
+                console.print(f"  [hint]Type [accent]/build[/] to continue[/]")
             else:
-                tag = "[muted]no tasks[/]"
-
-            active = " [accent]<-[/]" if p == self.project_path else ""
-            console.print(f"  [accent]{i}.[/] {proj['name']:30s} {tag}{active}")
-
-        console.print()
-        console.print(f"  [hint]Usage: /resume 1  or  /resume project-name[/]")
+                console.print(" [success](all complete)[/]")
+                self._suggest_next_action()
 
     # ── /model ────────────────────────────────────────────────────────────
 
-    def _cmd_model(self, arg: str) -> None:
+    async def _cmd_model(self, arg: str) -> None:
         """Switch the active model."""
         if not arg:
-            # Show current model and available options
+            # Interactive model selection with arrow keys
             current_alias = _short_model(self.model)
             console.print(f"  [step]Active model:[/] [accent]{current_alias}[/]  [muted]({self.model})[/]")
             console.print()
 
-            avail = _available_models()
-            all_aliases = list(MODEL_ALIASES.keys())
             providers = _check_all_providers()
+            choices = build_model_choices(
+                available_providers=providers,
+                current_model=current_alias,
+            )
 
-            console.print("  [step]Available models:[/]")
-            for alias in all_aliases:
-                prov = _provider_for_model(alias)
-                ready = providers.get(prov, False)
-                marker = "[success]*[/]" if self.model == resolve_model(alias) else " "
-                status = "" if ready else "  [muted](needs /login)[/]"
-                console.print(f"  {marker} [accent]{alias:18s}[/]{status}")
-
-            console.print()
-            console.print(f"  [hint]Usage: /model nova-lite[/]")
-            return
+            selected = await ask_select(
+                "Switch model",
+                choices,
+                default=current_alias,
+                use_search_filter=True,
+            )
+            if selected is None or selected == current_alias:
+                return
+            arg = selected
 
         # Switch model
         if arg not in MODEL_ALIASES:
@@ -1132,16 +1178,7 @@ class ForgeShell:
     async def _cmd_config(self, arg: str) -> None:
         """View or modify configuration."""
         if not arg:
-            # Show current config
-            console.print()
-            console.print("  [step]Configuration[/]  [muted](~/.forge/config.json)[/]")
-            console.print()
-
-            table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", padding=(0, 1))
-            table.add_column("Setting", min_width=20)
-            table.add_column("Value", min_width=30)
-            table.add_column("Default", width=15, style="dim")
-
+            # Interactive config editor
             config_descriptions = {
                 "default_model": ("Default AI model", DEFAULT_CONFIG["default_model"]),
                 "model_preset": ("Model preset (nova/mixed/premium)", DEFAULT_CONFIG["model_preset"]),
@@ -1152,23 +1189,81 @@ class ForgeShell:
                 "show_tips": ("Show tips on startup", DEFAULT_CONFIG["show_tips"]),
             }
 
+            choices: list[Choice | Separator] = []
             for key, (desc, default) in config_descriptions.items():
                 current = self.config.get(key, default)
-                is_default = current == default
-                val_str = str(current)
                 if isinstance(current, bool):
-                    val_str = "[success]on[/]" if current else "[muted]off[/]"
-                table.add_row(f"{key}", val_str, str(default))
+                    val_str = "on" if current else "off"
+                else:
+                    val_str = str(current)
+                choices.append(Choice(
+                    title=f"{key:20s}  = {val_str}",
+                    value=key,
+                    description=desc,
+                ))
 
-            console.print(table)
-            console.print()
+            selected_key = await ask_select(
+                "Edit setting",
+                choices,
+                use_search_filter=True,
+            )
+            if selected_key is None:
+                return
 
-            # Show provider status
-            self._check_credentials_status(quiet=False)
+            # Now prompt for the new value based on the setting type
+            current_val = self.config.get(selected_key, DEFAULT_CONFIG[selected_key])
 
-            console.print(f"  [hint]Set a value: /config default_model gemini-flash[/]")
-            console.print(f"  [hint]Toggle:      /config auto_build off[/]")
-            return
+            if selected_key == "default_model":
+                providers = _check_all_providers()
+                model_choices = build_model_choices(
+                    available_providers=providers,
+                    current_model=_short_model(self.model),
+                )
+                new_val = await ask_select(
+                    f"Set {selected_key}",
+                    model_choices,
+                    default=_short_model(self.model),
+                    use_search_filter=True,
+                )
+                if new_val is None:
+                    return
+                arg = f"{selected_key} {new_val}"
+            elif selected_key == "model_preset":
+                from forge_models import MODEL_PRESETS
+                preset_choices = [
+                    Choice(title=name, value=name, description=p["description"])
+                    for name, p in MODEL_PRESETS.items()
+                ]
+                new_val = await ask_select(
+                    f"Set {selected_key}",
+                    preset_choices,
+                    default=str(current_val) if current_val else None,
+                )
+                if new_val is None:
+                    return
+                arg = f"{selected_key} {new_val}"
+            elif isinstance(current_val, bool):
+                toggle_choices = [
+                    Choice(title="on", value="on", description="Enable this setting"),
+                    Choice(title="off", value="off", description="Disable this setting"),
+                ]
+                new_val = await ask_select(
+                    f"Set {selected_key}",
+                    toggle_choices,
+                    default="on" if current_val else "off",
+                )
+                if new_val is None:
+                    return
+                arg = f"{selected_key} {new_val}"
+            else:
+                new_val = await ask_text(
+                    f"Set {selected_key}",
+                    default=str(current_val),
+                    instruction=f"(current: {current_val})",
+                )
+                if new_val is None:
+                    return
+                arg = f"{selected_key} {new_val}"
 
         # Parse "key value"
         parts = arg.split(None, 1)
@@ -1266,12 +1361,13 @@ class ForgeShell:
 
         login_choices = [
             Choice(
-                title=f"{info['display']:40s} ({'ready' if configured else 'not set up'})",
+                title=f"{info['display']}  {'[ready]' if configured else '[not set up]'}",
                 value=name,
+                description=f"Models: {', '.join(info['models'])}",
             )
             for name, configured in providers.items()
         ]
-        chosen = await ask_select("Set up which provider?", login_choices)
+        chosen = await ask_select("Set up which provider?", login_choices, use_shortcuts=True)
         if chosen is None:
             console.print("  [muted]Cancelled.[/]")
             return
@@ -1304,7 +1400,7 @@ class ForgeShell:
 
     # ── /plan ────────────────────────────────────────────────────────────
 
-    async def _cmd_plan(self, goal: str) -> None:
+    async def _cmd_plan(self, goal: str, scope_context: str | None = None) -> None:
         if not goal:
             return
 
@@ -1322,7 +1418,7 @@ class ForgeShell:
 
             from forge_orchestrator import ForgeOrchestrator
             orch = ForgeOrchestrator(self.project_path, model=self.model)
-            result = await orch.plan(goal, model=self.model)
+            result = await orch.plan(goal, model=self.model, extra_context=scope_context)
 
         if result.error and not result.spec_path:
             console.print(f"  [error]Planning failed:[/] {result.error}")
@@ -1381,6 +1477,7 @@ class ForgeShell:
         formation: Any,
         semaphore: asyncio.Semaphore,
         build_ctx: Any = None,
+        cancellation: Any = None,
     ) -> tuple[int, str, str, float, int, int, float, str]:
         """Execute a single task inside a semaphore-limited slot.
 
@@ -1447,6 +1544,7 @@ class ForgeShell:
                 agent_id=f"forge-{role_name}-{task.id}",
                 escalation_model=escalation,
                 build_context=build_ctx,
+                cancellation=cancellation,
             )
 
             spec_text = ""
@@ -1641,7 +1739,10 @@ class ForgeShell:
                 task_cost = estimate_cost(task_mc.model_id, result.tokens_in, result.tokens_out)
                 model_used = result.model_id or task_mc.model_id
 
-                if result.error:
+                if result.error == "paused":
+                    store.update(task.id, status="pending", artifacts=result.artifacts)
+                    return (wave_idx, task.subject, "paused", duration, tc, fc, task_cost, model_used)
+                elif result.error:
                     store.update(task.id, status="failed", artifacts=result.artifacts)
                     return (wave_idx, task.subject, "fail", duration, tc, fc, task_cost, model_used)
                 else:
@@ -1915,26 +2016,46 @@ class ForgeShell:
             console.print()
 
         # ── Build context for multi-agent coordination ────────────────────
-        from forge_comms import BuildContext
+        from forge_comms import BuildContext, BuildCancellation
         build_ctx = BuildContext(self.project_path)
+
+        # ── Cooperative cancellation (Ctrl-C -> pause menu) ──────────────
+        cancellation = BuildCancellation()
+        cancellation.install()
 
         # ── Execute waves ─────────────────────────────────────────────────
         console.print(f"  [nova]Nova[/] is building your project...")
-        console.print(f"  [muted]{len(retryable)} tasks to complete[/]")
+        console.print(f"  [muted]{len(retryable)} tasks to complete  (Ctrl-C to pause)[/]")
         console.print()
 
         try:
             waves = store.compute_waves()
         except ValueError as exc:
             console.print(f"  [error]Dependency issue:[/] {exc}")
+            cancellation.uninstall()
             return
 
         total_start = time.time()
         total_tool_calls = 0
         total_files = 0
         wave_results: list[tuple[int, str, str, float]] = []
+        build_paused = False
 
-        for wave_idx, wave_tasks in enumerate(waves):
+        wave_idx = 0
+        while wave_idx < len(waves):
+            # Check for pause at wave boundary
+            if cancellation.is_paused():
+                choice = await self._show_pause_menu(store)
+                if choice == "resume":
+                    cancellation.reset()
+                    waves = store.compute_waves()
+                    wave_idx = 0  # restart; existing filter skips completed
+                    continue
+                else:  # cancel or None
+                    build_paused = True
+                    break
+
+            wave_tasks = waves[wave_idx]
             runnable = [
                 t for t in wave_tasks
                 if store.get(t.id) and store.get(t.id).status not in ("completed", "blocked")
@@ -1942,6 +2063,7 @@ class ForgeShell:
             if not runnable:
                 for t in wave_tasks:
                     wave_results.append((wave_idx, t.subject, "skip", 0.0))
+                wave_idx += 1
                 continue
 
             # Determine concurrency limit based on provider
@@ -1949,10 +2071,12 @@ class ForgeShell:
             max_concurrent = PROVIDER_CONCURRENCY.get(provider, 4)
             semaphore = asyncio.Semaphore(min(max_concurrent, len(runnable)))
 
+            console.print()
+            console.print(f"  ", end="")
+            console.print(wave_header(wave_idx, len(waves), len(runnable)))
             if len(runnable) > 1:
                 console.print(
-                    f"  [accent]Wave {wave_idx}:[/] {len(runnable)} tasks in parallel "
-                    f"(max {semaphore._value} concurrent)"
+                    f"  [muted]({len(runnable)} tasks in parallel, max {semaphore._value} concurrent)[/]"
                 )
 
             # Mark all runnable tasks as in_progress before launching
@@ -1961,13 +2085,14 @@ class ForgeShell:
 
             # Launch all tasks in this wave concurrently
             coros = [
-                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore, build_ctx)
+                self._run_single_task(task, store, tasks, wave_idx, formation, semaphore, build_ctx, cancellation)
                 for task in runnable
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
 
             # Process results
             total_cost = getattr(self, '_build_total_cost', 0.0)
+            any_paused = False
             for i, result in enumerate(results):
                 task = runnable[i]
                 if isinstance(result, Exception):
@@ -1987,12 +2112,29 @@ class ForgeShell:
                     cost_str = f"  {format_cost(cost)}" if cost > 0 else ""
                     model_str = f"  {short_m}" if short_m else ""
                     if status == "pass":
-                        console.print(f"  [success]{name}[/]  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
+                        console.print(f"  [success]\u2713[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
                     elif status == "fail":
-                        console.print(f"  [error]{name}[/]  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
+                        console.print(f"  [error]\u2717[/] {name}  [muted]{dur:.0f}s{model_str}{cost_str}[/]")
+                    elif status == "paused":
+                        console.print(f"  [warning]\u23f8[/] {name}  [muted](paused)[/]")
+                        any_paused = True
                     else:
-                        console.print(f"  [muted]{name}  (skipped)[/]")
+                        console.print(f"  [muted]\u2022 {name}  (skipped)[/]")
             self._build_total_cost = total_cost
+
+            # If any task was paused, check cancellation at wave boundary
+            if any_paused and cancellation.is_paused():
+                choice = await self._show_pause_menu(store)
+                if choice == "resume":
+                    cancellation.reset()
+                    waves = store.compute_waves()
+                    wave_idx = 0
+                    continue
+                else:
+                    build_paused = True
+                    break
+
+            wave_idx += 1
 
         total_duration = time.time() - total_start
         self._sync_task_state()
@@ -2013,24 +2155,26 @@ class ForgeShell:
                 json.dumps(artifact_manifest, indent=2)
             )
 
-        # Gate review (skip with --no-review)
-        if "--no-review" not in arg:
-            spec_text = ""
-            spec_path = self.project_path / "spec.md"
-            if spec_path.exists():
-                spec_text = spec_path.read_text()[:4000]
-            gate_result = await self._run_gate_review(store, spec_text)
-            gate_status = gate_result["status"]
-            if gate_status == "pass":
-                console.print("  [success]Gate: PASS[/]")
-            elif gate_status == "fail":
-                console.print(f"  [error]Gate: FAIL[/] — {gate_result['summary']}")
-            else:
-                console.print(f"  [warning]Gate: CONDITIONAL[/] — {gate_result['summary']}")
+        # Skip gate review and verification if build was paused
+        if not build_paused:
+            # Gate review (skip with --no-review)
+            if "--no-review" not in arg:
+                spec_text = ""
+                spec_path = self.project_path / "spec.md"
+                if spec_path.exists():
+                    spec_text = spec_path.read_text()[:4000]
+                gate_result = await self._run_gate_review(store, spec_text)
+                gate_status = gate_result["status"]
+                if gate_status == "pass":
+                    console.print("  [success]Gate: PASS[/]")
+                elif gate_status == "fail":
+                    console.print(f"  [error]Gate: FAIL[/] — {gate_result['summary']}")
+                else:
+                    console.print(f"  [warning]Gate: CONDITIONAL[/] — {gate_result['summary']}")
 
-        # Runtime verification (skip with --no-verify)
-        if "--no-verify" not in arg:
-            await self._run_verification(store)
+            # Runtime verification (skip with --no-verify)
+            if "--no-verify" not in arg:
+                await self._run_verification(store)
 
         # Post-build integrity check: verify expected files exist on disk
         missing_files = []
@@ -2048,29 +2192,47 @@ class ForgeShell:
         # Summary line
         passed = sum(1 for _, _, s, _ in wave_results if s == "pass")
         failed = sum(1 for _, _, s, _ in wave_results if s == "fail")
+        paused_count = sum(1 for _, _, s, _ in wave_results if s == "paused")
         total_cost = getattr(self, '_build_total_cost', 0.0)
         from forge_models import format_cost
         console.print()
-        console.print(
-            f"  [muted]{passed} passed, {failed} failed, "
-            f"{total_tool_calls} tool calls, {total_duration:.0f}s, "
-            f"cost: {format_cost(total_cost)}[/]"
-        )
+
+        # Structured build summary panel
+        summary_parts = []
+        result_parts = []
+        if passed:
+            result_parts.append(f"[success]{passed} passed[/]")
+        if failed:
+            result_parts.append(f"[error]{failed} failed[/]")
+        if paused_count:
+            result_parts.append(f"[warning]{paused_count} paused[/]")
+        sep = " \u00b7 "
+        summary_parts.append(f"  Result     {sep.join(result_parts)}")
+        summary_parts.append(f"  Duration   [step]{total_duration:.1f}s[/]")
+        summary_parts.append(f"  Tools      {total_tool_calls} calls")
+        if total_cost > 0:
+            summary_parts.append(f"  Cost       {format_cost(total_cost)}")
 
         # Communication stats
         if build_ctx:
             cs = build_ctx.stats()
             if cs["claims"] > 0 or cs["announcements"] > 0:
-                console.print(
-                    f"  [muted]Coordination: {cs['claims']} files claimed, "
-                    f"{cs['conflicts']} conflicts prevented, "
-                    f"{cs['announcements']} announcements shared[/]"
+                summary_parts.append(
+                    f"  Coord      {cs['claims']} claims, {cs['conflicts']} conflicts blocked"
                 )
 
-        # List generated files
+        border_color = BRAND["green"] if failed == 0 else BRAND["orange"]
+        console.print(Panel(
+            "\n".join(summary_parts),
+            title=f"[bold {BRAND['accent2']}] Build Summary [/]",
+            border_style=border_color,
+            padding=(0, 1),
+        ))
+
+        # File tree for generated files
         all_files = self._list_project_files()
         if all_files:
-            console.print(f"  [muted]Files: {', '.join(all_files[:10])}[/]")
+            console.print(file_tree(all_files[:20], str(self.project_path)))
 
         # Update user profile with build results (skill progression)
         try:
@@ -2084,10 +2246,37 @@ class ForgeShell:
             pass  # Non-critical — don't block build on profile update
 
         # Auto-preview on successful build
-        if passed > 0 and "--no-preview" not in arg:
+        if not build_paused and passed > 0 and "--no-preview" not in arg:
             self._auto_preview()
 
-        self._suggest_next_action()
+        cancellation.uninstall()
+
+        if build_paused:
+            console.print()
+            console.print("  [hint]Build paused. Run /build again to resume from pending tasks.[/]")
+        else:
+            self._suggest_next_action()
+
+    async def _show_pause_menu(self, store: Any) -> str | None:
+        """Show interactive pause menu after Ctrl-C during build.
+
+        Returns "resume", "cancel", or None (on Ctrl-C in menu = cancel).
+        """
+        completed = len([t for t in store.list() if t.status == "completed"])
+        total = len(store.list())
+        pending = len([t for t in store.list() if t.status in ("pending", "in_progress")])
+        console.print()
+        console.print(
+            f"  [warning]Build paused.[/]  "
+            f"{completed}/{total} tasks completed, {pending} remaining."
+        )
+        console.print()
+
+        choice = await ask_select("What would you like to do?", [
+            Choice("Resume build", value="resume", description="Continue from where you left off"),
+            Choice("Cancel build", value="cancel", description="Stop and keep completed work"),
+        ])
+        return choice
 
     async def _run_gate_review(self, store: Any, spec_text: str) -> dict:
         """Run adversarial gate review on build artifacts.
@@ -2214,16 +2403,10 @@ class ForgeShell:
 
         total = summary["total"]
         done = summary["completed"]
-        pct = (done / total * 100) if total > 0 else 0
-
-        bar_width = 30
-        filled = int(bar_width * done / total) if total > 0 else 0
-        bar_color = "green" if pct == 100 else "cyan" if pct > 50 else "yellow"
-        bar = f"[{bar_color}]{'|' * filled}[/][muted]{'.' * (bar_width - filled)}[/]"
 
         console.print()
-        console.print(f"  [bold]{self.project_path.name}[/]")
-        console.print(f"  {bar} {pct:.0f}%")
+        console.print(f"  [bold {BRAND['accent2']}]{self.project_path.name}[/]")
+        console.print(f"  {status_bar(done, total)}")
 
         # Show autonomy level
         autonomy_lvl = self.assistant.read_autonomy_level()
@@ -2253,6 +2436,67 @@ class ForgeShell:
 
         self._suggest_next_action()
 
+    # ── /health ──────────────────────────────────────────────────────────
+
+    def _cmd_health(self) -> None:
+        """Show system health dashboard — preview, model, project state."""
+        import shutil as _shutil
+
+        console.print()
+        table = Table(title="System Health", box=box.ROUNDED, border_style="dim")
+        table.add_column("Component", style="bold")
+        table.add_column("Status")
+        table.add_column("Detail", style="dim")
+
+        # Preview status
+        if self._preview_mgr:
+            h = self._preview_mgr.health()
+            if h["running"]:
+                table.add_row("Preview", "[green]● Running[/]", f"{h.get('stack', '?')} on port {h.get('port', '?')}")
+            else:
+                table.add_row("Preview", "[red]● Down[/]", "Use /preview to start")
+        else:
+            table.add_row("Preview", "[dim]● Not started[/]", "Use /preview to start")
+
+        # cloudflared binary
+        cf = _shutil.which("cloudflared")
+        table.add_row("cloudflared", "[green]● Found[/]" if cf else "[red]● Missing[/]",
+                       cf or "Install cloudflared for preview tunnels")
+
+        # Model availability
+        model_id = self.model_id
+        provider = get_provider(model_id)
+        try:
+            cfg = get_model_config(model_id)
+            table.add_row("Model", "[green]● Ready[/]", f"{cfg.short_name} ({provider})")
+        except Exception:
+            table.add_row("Model", "[red]● Error[/]", f"{model_id} ({provider})")
+
+        # Project state
+        summary = self._get_task_summary()
+        if summary:
+            total = summary["total"]
+            done = summary["completed"]
+            failed = summary["failed"]
+            detail = f"{done}/{total} done"
+            if failed:
+                detail += f", {failed} failed"
+            table.add_row("Project", "[green]● Active[/]", detail)
+        else:
+            table.add_row("Project", "[dim]● No tasks[/]", str(self.project_path))
+
+        # Disk space
+        try:
+            usage = _shutil.disk_usage(str(self.project_path))
+            free_gb = usage.free / (1024 ** 3)
+            color = "green" if free_gb > 5 else "yellow" if free_gb > 1 else "red"
+            table.add_row("Disk", f"[{color}]● {free_gb:.1f} GB free[/]", str(self.project_path))
+        except Exception:
+            table.add_row("Disk", "[dim]● Unknown[/]", "")
+
+        console.print(table)
+        console.print()
+
     # ── /tasks ───────────────────────────────────────────────────────────
 
     def _cmd_tasks(self) -> None:
@@ -2265,33 +2509,47 @@ class ForgeShell:
             console.print("  [hint]No tasks yet. Describe what you want to build![/]")
             return
 
+        # Compute wave assignments for display
+        try:
+            waves = store.compute_waves()
+            task_wave_map: dict[int, int] = {}
+            for wi, wave in enumerate(waves):
+                for wt in wave:
+                    task_wave_map[wt.id] = wi
+        except Exception:
+            task_wave_map = {}
+
         table = Table(
             box=box.ROUNDED, show_header=True,
-            header_style="bold cyan", padding=(0, 1),
-            title=f"[bold]{self.project_path.name}[/]",
+            header_style=f"bold {BRAND['cyan']}", padding=(0, 1),
+            title=f"[bold {BRAND['accent2']}]{self.project_path.name}[/]",
+            border_style=BRAND["accent"],
         )
         table.add_column("#", style="dim", width=4)
+        table.add_column("Wave", width=5)
         table.add_column("Task", min_width=30)
-        table.add_column("Status", width=12)
-        table.add_column("Risk", width=8)
+        table.add_column("Status", width=10)
+        table.add_column("Risk", width=6)
 
         status_icons = {
-            "completed": "[green]done[/]",
-            "in_progress": "[cyan]active[/]",
-            "pending": "[dim]pending[/]",
-            "failed": "[red]failed[/]",
-            "blocked": "[yellow]blocked[/]",
+            "completed":   f"[{BRAND['green']}]\u2713 done[/]",
+            "in_progress": f"[{BRAND['cyan']}]\u26a1 active[/]",
+            "pending":     f"[dim]\u25cb pending[/]",
+            "failed":      f"[{BRAND['red']}]\u2717 failed[/]",
+            "blocked":     f"[{BRAND['orange']}]\u23f8 blocked[/]",
         }
 
         for t in tasks:
             risk = t.metadata.get("risk", "")
             risk_style = {
-                "high": "[red]high[/]",
-                "medium": "[yellow]med[/]",
-                "low": "[green]low[/]",
+                "high": f"[{BRAND['red']}]high[/]",
+                "medium": f"[{BRAND['orange']}]med[/]",
+                "low": f"[{BRAND['green']}]low[/]",
             }.get(risk, "[muted]-[/]")
+            wave_str = str(task_wave_map[t.id]) if t.id in task_wave_map else "-"
             table.add_row(
                 str(t.id),
+                f"[dim]{wave_str}[/]",
                 t.subject,
                 status_icons.get(t.status, t.status),
                 risk_style,
@@ -2343,45 +2601,44 @@ class ForgeShell:
 
     # ── /formation ───────────────────────────────────────────────────────
 
-    def _cmd_formation(self, arg: str) -> None:
-        from formations import FORMATIONS, select_formation
+    async def _cmd_formation(self, arg: str) -> None:
+        from formations import FORMATIONS, select_formation, get_formation
 
-        if arg:
-            from formations import get_formation
-            try:
-                f = get_formation(arg)
-            except (KeyError, ValueError):
-                console.print(f"  [error]Unknown formation:[/] {arg}")
-                console.print(f"  [muted]Available: {', '.join(FORMATIONS.keys())}[/]")
-                return
-            console.print(f"  [bold]{f.name}[/] -- {f.description}")
-            for role in f.roles:
-                console.print(
-                    f"    [accent]{role.name:20s}[/] model={_short_model(role.model)} "
-                    f"policy={role.tool_policy}"
+        if not arg:
+            # Interactive formation selection
+            choices = [
+                Choice(
+                    title=f"{name:24s}  {len(f.roles)} roles, {len(f.wave_order)} waves",
+                    value=name,
+                    description=f.description,
                 )
-            console.print(f"  [muted]Waves: {len(f.wave_order)}[/]")
-            for i, wave in enumerate(f.wave_order):
-                console.print(f"    Wave {i}: {', '.join(wave)}")
-        else:
-            table = Table(
-                box=box.ROUNDED, show_header=True,
-                header_style="bold cyan", padding=(0, 1),
+                for name, f in FORMATIONS.items()
+            ]
+
+            selected = await ask_select(
+                "View formation details",
+                choices,
+                use_search_filter=True,
             )
-            table.add_column("Formation", min_width=20)
-            table.add_column("Roles", width=6)
-            table.add_column("Waves", width=6)
-            table.add_column("Description", min_width=30)
+            if selected is None:
+                return
+            arg = selected
 
-            for name, f in FORMATIONS.items():
-                table.add_row(
-                    name, str(len(f.roles)),
-                    str(len(f.wave_order)), f.description[:50],
-                )
-
-            console.print()
-            console.print(table)
-            console.print(f"\n  [hint]/formation <name> for details[/]")
+        try:
+            f = get_formation(arg)
+        except (KeyError, ValueError):
+            console.print(f"  [error]Unknown formation:[/] {arg}")
+            console.print(f"  [muted]Available: {', '.join(FORMATIONS.keys())}[/]")
+            return
+        console.print(f"  [bold]{f.name}[/] -- {f.description}")
+        for role in f.roles:
+            console.print(
+                f"    [accent]{role.name:20s}[/] model={_short_model(role.model)} "
+                f"policy={role.tool_policy}"
+            )
+        console.print(f"  [muted]Waves: {len(f.wave_order)}[/]")
+        for i, wave in enumerate(f.wave_order):
+            console.print(f"    Wave {i}: {', '.join(wave)}")
 
     # ── /audit ───────────────────────────────────────────────────────────
 
@@ -2469,8 +2726,28 @@ class ForgeShell:
                 console.print("  [muted]No preview running.[/]")
             return
 
-        # Create (or replace) the manager — stop() is called automatically
-        # if a previous preview was running, preventing orphan processes
+        if arg == "status":
+            if self._preview_mgr:
+                h = self._preview_mgr.health()
+                status = "[success]healthy[/]" if h["running"] else "[error]unhealthy[/]"
+                console.print(f"  Preview: {status}  |  {h.get('stack', '?')} on port {h.get('port', '?')}")
+                if h.get("url"):
+                    console.print(f"  URL: [bold green]{h['url']}[/]")
+            else:
+                console.print("  [muted]No preview running.[/]")
+            return
+
+        # Smart recovery: if preview already running, try ensure_healthy() first
+        if self._preview_mgr and self._preview_mgr.is_running:
+            console.print("  [info]Preview already running — checking health...[/]")
+            if self._preview_mgr.ensure_healthy():
+                console.print(f"  [success]Preview healthy:[/] {self._preview_mgr.url}")
+                return
+            console.print("  [warning]Preview unhealthy — restarting...[/]")
+            self._preview_mgr.stop()
+            self._preview_mgr = None
+
+        # Create (or replace) the manager
         if self._preview_mgr is None:
             self._preview_mgr = PreviewManager(self.project_path)
 
@@ -2482,20 +2759,62 @@ class ForgeShell:
             loc = f" from {rel}/" if str(rel) != "." else ""
             console.print(f"  [info]Preview:[/] {self.project_path.name} ({si.kind}{loc}) on port {si.port}")
             console.print(f"  [muted]Server: {si.server_cmd}[/]")
-            console.print("  Starting Cloudflare Tunnel...")
+            console.print("  Starting Cloudflare Tunnel (up to 3 retries)...")
 
             tunnel_url = self._preview_mgr.start(stack_info=si)
 
             console.print()
             console.print(Panel(
                 f"[bold green]{tunnel_url}[/]\n\n"
-                f"  [muted]Type [accent]/preview stop[/] to shut down.[/]",
+                f"  [muted]Type [accent]/preview stop[/] to shut down.\n"
+                f"  Type [accent]/preview status[/] to check health.[/]",
                 border_style="green",
                 title="[bold green] Live Preview [/]",
                 padding=(1, 2),
             ))
         except PreviewError as e:
-            console.print(f"  [error]{e}[/]")
+            err = str(e)
+            console.print(f"  [error]{err}[/]")
+            # Actionable suggestions based on error
+            if "cloudflared not found" in err:
+                console.print("  [hint]Install: sudo apt install cloudflared  or  brew install cloudflare-warp[/]")
+            elif "port" in err.lower():
+                console.print(f"  [hint]Port conflict? Try: /preview stop  then  /preview[/]")
+            elif "entry point" in err.lower():
+                console.print("  [hint]Create app.py (Flask/FastAPI), package.json, index.html, or Dockerfile[/]")
+            elif "tunnel" in err.lower():
+                console.print("  [hint]Network issue? Check internet connection and try again.[/]")
+
+    # ── /competition ────────────────────────────────────────────────────
+
+    def _cmd_competition(self) -> None:
+        """Run Amazon Nova Hackathon submission validation."""
+        try:
+            from forge_competition import CompetitionValidator
+            validator = CompetitionValidator(self.project_path)
+            checks = validator.run_all()
+
+            table = Table(title="Competition Readiness", box=box.ROUNDED, border_style="dim")
+            table.add_column("Check", style="bold")
+            table.add_column("Status")
+            table.add_column("Detail", style="dim")
+            table.add_column("Fix", style="italic")
+
+            passed = 0
+            for check in checks:
+                icon = "[green]✓[/]" if check.passed else "[red]✗[/]"
+                if check.passed:
+                    passed += 1
+                table.add_row(check.name, icon, check.detail, check.fix_suggestion or "")
+
+            console.print()
+            console.print(table)
+            pct = int(passed / len(checks) * 100) if checks else 0
+            color = "green" if pct >= 80 else "yellow" if pct >= 60 else "red"
+            console.print(f"\n  [{color}]{passed}/{len(checks)} checks passed ({pct}%)[/]")
+            console.print()
+        except ImportError:
+            console.print("  [error]forge_competition.py not found.[/]")
 
     # ── /deploy ─────────────────────────────────────────────────────────
 
@@ -2513,6 +2832,7 @@ class ForgeShell:
     async def _cmd_autonomy(self, arg: str) -> None:
         """View, explain, or change the autonomy level (A0-A5)."""
         from forge_display import display_autonomy_panel
+        from forge_guards import _LEVEL_NAMES
 
         arg = arg.strip()
 
@@ -2532,34 +2852,64 @@ class ForgeShell:
         # /autonomy <number>
         if arg and arg.isdigit():
             new_level = int(arg)
-            if new_level not in range(6):
-                console.print(f"  [error]Level must be 0-5[/]")
+        elif not arg:
+            # No argument — show current state then offer interactive selection
+            current = self.assistant.read_autonomy_level()
+            console.print()
+            display_autonomy_panel(current, self.assistant.skill_level)
+            console.print()
+
+            level_descriptions = {
+                0: "Ask for everything",
+                1: "Read freely, ask before writing",
+                2: "Read/write freely, ask for risky commands",
+                3: "Handle most things independently",
+                4: "Full autopilot",
+                5: "Background/CI execution with audit logging",
+            }
+
+            choices = [
+                Choice(
+                    title=f"A{i}  {_LEVEL_NAMES[i]:14s}",
+                    value=str(i),
+                    description=level_descriptions[i],
+                )
+                for i in range(6)
+            ]
+
+            selected = await ask_select(
+                "Set autonomy level",
+                choices,
+                default=str(current),
+            )
+            if selected is None or selected == str(current):
                 return
-
-            if self.assistant.set_autonomy_level(new_level):
-                console.print()
-                console.print(f"  [success]Autonomy set to A{new_level}[/]")
-                console.print()
-                explanation = self.assistant.explain_autonomy(new_level)
-                console.print(f"  {explanation}")
-                console.print()
-
-                # For beginners: show a note about what changes
-                if self.assistant.skill_level == "beginner" and new_level >= 3:
-                    console.print(
-                        "  [warning]Note:[/] At A3+, Nova handles most things without asking.\n"
-                        "  Lower back to A2 with [accent]/autonomy 2[/] if you want more control."
-                    )
-                    console.print()
-            else:
-                console.print("  [error]Failed to set autonomy level.[/]")
+            new_level = int(selected)
+        else:
+            console.print(f"  [error]Usage: /autonomy [0-5 | ? | explain][/]")
             return
 
-        # /autonomy (no argument) → show current state
-        current = self.assistant.read_autonomy_level()
-        console.print()
-        display_autonomy_panel(current, self.assistant.skill_level)
-        console.print()
+        if new_level not in range(6):
+            console.print(f"  [error]Level must be 0-5[/]")
+            return
+
+        if self.assistant.set_autonomy_level(new_level):
+            console.print()
+            console.print(f"  [success]Autonomy set to A{new_level}[/]")
+            console.print()
+            explanation = self.assistant.explain_autonomy(new_level)
+            console.print(f"  {explanation}")
+            console.print()
+
+            # For beginners: show a note about what changes
+            if self.assistant.skill_level == "beginner" and new_level >= 3:
+                console.print(
+                    "  [warning]Note:[/] At A3+, Nova handles most things without asking.\n"
+                    "  Lower back to A2 with [accent]/autonomy 2[/] if you want more control."
+                )
+                console.print()
+        else:
+            console.print("  [error]Failed to set autonomy level.[/]")
 
     # ── /guide ────────────────────────────────────────────────────────────
 
@@ -2580,11 +2930,24 @@ class ForgeShell:
             skill_choice = await ask_select(
                 "What's your experience level?",
                 [
-                    Choice(title="New to coding or Nova Forge", value="beginner"),
-                    Choice(title="Comfortable with code and CLIs", value="intermediate"),
-                    Choice(title="Experienced developer", value="expert"),
+                    Choice(
+                        title="Beginner",
+                        value="beginner",
+                        description="New to coding or Nova Forge — extra guidance",
+                    ),
+                    Choice(
+                        title="Intermediate",
+                        value="intermediate",
+                        description="Comfortable with code and CLIs",
+                    ),
+                    Choice(
+                        title="Expert",
+                        value="expert",
+                        description="Experienced developer — minimal hand-holding",
+                    ),
                 ],
                 default="intermediate",
+                use_shortcuts=True,
             )
             if skill_choice:
                 self.assistant.set_skill_level(skill_choice)
@@ -2653,17 +3016,22 @@ class ForgeShell:
     # ── /interview ─────────────────────────────────────────────────────
 
     async def _cmd_interview(self) -> None:
-        """5-step guided project setup."""
+        """Multi-phase guided project setup: core -> deep dive -> review -> build."""
         from formations import FORMATIONS
 
         console.print()
         console.print(Panel(
-            "Answer 5 quick questions and Nova will handle the rest.\n"
-            "  [muted]Enter to accept defaults \u00b7 Ctrl-C to quit[/]",
-            title="[brand] Interview [/]",
-            border_style="bright_magenta",
+            "Nova interviews you to understand your project in depth.\n"
+            f"  [phase.core]Phase 1: Core setup[/] \u00b7 [phase.deep]Phase 2: Deep dive[/] \u00b7 [phase.review]Phase 3: Review[/]\n"
+            "  [muted]Enter to accept defaults \u00b7 Esc to go back \u00b7 Ctrl-C to quit[/]",
+            title=f"[bold {BRAND['accent2']}] Interview [/]",
+            border_style=BRAND["accent2"],
             padding=(0, 2),
         ))
+
+        # -- Phase 1: Core 5 steps (same as before) --
+        console.print()
+        console.print(Rule(f"[phase.core] Phase 1: Core Setup [/]", style=BRAND["accent2"]))
 
         answers: dict[str, str] = {}
         steps = ["scope", "stack", "risk", "formation", "model"]
@@ -2687,7 +3055,31 @@ class ForgeShell:
             answers[step] = result
             i += 1
 
-        # Summary table
+        # -- Phase 2: Deep Dive --
+        console.print()
+        console.print(Rule(f"[phase.deep] Phase 2: Deep Dive [/]", style=BRAND["accent"]))
+        console.print("  [muted]Nova asks deeper questions to set the right scope.[/]")
+
+        deep_answers = await self._interview_deep_dive(answers)
+        if deep_answers is None:
+            console.print("  [muted]Interview cancelled.[/]")
+            return
+
+        # -- Phase 3: Review & Approve --
+        console.print()
+        console.print(Rule(f"[phase.review] Phase 3: Scope Review [/]", style=BRAND["cyan"]))
+
+        scope_summary = self.assistant.build_scope_summary(
+            {"goal": answers["scope"], "stack": answers["stack"], "risk": answers["risk"]},
+            deep_answers,
+        )
+        final_scope = await self._scope_review_loop(scope_summary, answers, deep_answers)
+
+        if final_scope is None:
+            # User chose "Start over"
+            return await self._cmd_interview()
+
+        # Summary table (core config)
         console.print()
         table = Table(
             box=box.ROUNDED, show_header=False, border_style="bright_magenta",
@@ -2704,11 +3096,11 @@ class ForgeShell:
             console.print("  [muted]Config saved. Run /build when ready.[/]")
             return
 
-        # Apply model selection
+        # Apply model selection and build with rich scope context
         self.model = resolve_model(answers.get("model", "nova-lite"))
         console.print()
-        console.print(f"  [nova]Nova[/] [muted]--[/] Great, let's build that!")
-        await self._guided_build(answers["scope"])
+        console.print(f"  [nova]Nova[/] [muted]--[/] Great, let\'s build that!")
+        await self._guided_build(answers["scope"], scope_context=final_scope)
 
     async def _interview_step(self, step: str, answers: dict) -> str | None:
         """Execute a single interview step. Returns value or None on cancel."""
@@ -2721,47 +3113,237 @@ class ForgeShell:
             )
         elif step == "stack":
             return await ask_select("Tech stack", [
-                Choice(title="Auto-detect (Nova decides)", value="auto"),
-                Choice(title="Python + Flask", value="flask"),
-                Choice(title="Node.js + Express", value="node"),
-                Choice(title="Static site (HTML/CSS/JS)", value="static"),
-                Choice(title="Custom (describe after)", value="custom"),
-            ], default="auto")
+                Choice(
+                    title="Auto-detect",
+                    value="auto",
+                    description="Let Nova pick the best stack for your project",
+                ),
+                Separator("── Frameworks ──"),
+                Choice(
+                    title="Python + Flask",
+                    value="flask",
+                    description="REST APIs, web apps — lightweight and flexible",
+                ),
+                Choice(
+                    title="Node.js + Express",
+                    value="node",
+                    description="JavaScript backend — async I/O, npm ecosystem",
+                ),
+                Choice(
+                    title="Static site",
+                    value="static",
+                    description="HTML/CSS/JS — no server needed, fast to deploy",
+                ),
+                Separator("── Other ──"),
+                Choice(
+                    title="Custom",
+                    value="custom",
+                    description="Describe your own stack in the next step",
+                ),
+            ], default="auto", use_shortcuts=True)
         elif step == "risk":
             return await ask_select("Risk level", [
-                Choice(title="Low \u2014 prototypes, internal tools", value="low"),
-                Choice(title="Medium \u2014 filesystem writes, configs", value="medium"),
-                Choice(title="High \u2014 deployment, auth, networking", value="high"),
-            ], default="low")
+                Choice(
+                    title="Low",
+                    value="low",
+                    description="Prototypes, internal tools — Nova acts freely",
+                ),
+                Choice(
+                    title="Medium",
+                    value="medium",
+                    description="Filesystem writes, configs — Nova asks before risky actions",
+                ),
+                Choice(
+                    title="High",
+                    value="high",
+                    description="Deployment, auth, networking — Nova asks before every action",
+                ),
+            ], default="low", use_shortcuts=True)
         elif step == "formation":
             formation_choices = [
                 Choice(
-                    title=f"{name:22s} ({len(f.roles)} roles) {f.description[:40]}",
+                    title=f"{name}  ({len(f.roles)} roles)",
                     value=name,
+                    description=f.description,
                 )
                 for name, f in FORMATIONS.items()
             ]
-            return await ask_select("Agent formation", formation_choices, default="feature-impl")
+            return await ask_select(
+                "Agent formation",
+                formation_choices,
+                default="feature-impl",
+                use_search_filter=True,
+            )
         elif step == "model":
-            from forge_models import MODEL_CAPABILITIES
             providers = _check_all_providers()
-            model_choices = []
-            for alias, cap in MODEL_CAPABILITIES.items():
-                prov = _provider_for_model(alias)
-                ready = providers.get(prov, False)
-                status = "ready" if ready else "needs /login"
-                ctx = f"{cap.context_window // 1000}K"
-                strengths = ", ".join(cap.strengths[:3])
-                model_choices.append(Choice(
-                    title=f"{alias:18s} ({ctx}, {strengths}) [{status}]",
-                    value=alias,
-                ))
             current = next(
                 (a for a, fid in MODEL_ALIASES.items() if fid == self.model),
                 "nova-lite",
             )
-            return await ask_select("AI model", model_choices, default=current)
+            model_choices = build_model_choices(
+                available_providers=providers,
+                current_model=current,
+            )
+            return await ask_select(
+                "AI model",
+                model_choices,
+                default=current,
+                use_search_filter=True,
+            )
         return None
+
+    # ── Deep Dive Interview ───────────────────────────────────────────
+
+    async def _interview_deep_dive(self, core_answers: dict) -> dict | None:
+        """Phase 2: Dynamic interview rounds driven by goal analysis.
+
+        Returns deep_answers dict, or None on cancel.
+        """
+        from forge_assistant import DEEP_DIVE_QUESTIONS, _feature_choices, _data_entity_choices
+
+        # Analyze the goal to determine which question categories apply
+        ctx = self.assistant.analyze_goal(
+            core_answers.get("scope", ""),
+            core_answers.get("stack", ""),
+        )
+
+        # Get applicable questions
+        questions = self.assistant.get_deep_dive_questions(ctx)
+        if not questions:
+            console.print("  [muted]No additional questions needed for this project.[/]")
+            return {}
+
+        deep_answers: dict = {}
+        current_category = ""
+        q_num = 0
+        total_q = len(questions)
+
+        for q in questions:
+            q_num += 1
+            cat = q["category"]
+
+            # Show category header on change
+            if cat != current_category:
+                current_category = cat
+                console.print()
+                cat_labels = {
+                    "features":         "\u2728 Features & Functionality",
+                    "data":             "\U0001f4be Data & Storage",
+                    "auth":             "\U0001f512 Authentication & Security",
+                    "visual_aesthetic": "\U0001f3a8 Visual Design & UX",
+                    "api_design":       "\U0001f310 API Design",
+                    "realtime":         "\u26a1 Real-time Features",
+                    "deployment":       "\U0001f680 Deployment",
+                    "testing":          "\U0001f9ea Testing Strategy",
+                }
+                label = cat_labels.get(cat, cat.replace("_", " ").title())
+                console.print(f"  [phase.deep]{label}[/]  [muted]({q_num}/{total_q})[/]")
+
+            key = q["key"]
+            q_type = q["type"]
+
+            if q_type == "select":
+                choices_raw = q.get("choices", [])
+                choices = [
+                    Choice(title=label, value=value)
+                    for label, value in choices_raw
+                ]
+                result = await ask_select(
+                    q["question"],
+                    choices,
+                    default=choices_raw[0][1] if choices_raw else None,
+                )
+                if result is None:
+                    return None
+                deep_answers[key] = result
+
+            elif q_type == "checkbox":
+                # Dynamic choices from function
+                choices_fn_name = q.get("choices_fn")
+                if choices_fn_name == "_feature_choices":
+                    choices_raw = _feature_choices(ctx)
+                elif choices_fn_name == "_data_entity_choices":
+                    choices_raw = _data_entity_choices(ctx)
+                else:
+                    choices_raw = q.get("choices", [])
+
+                choices = [
+                    Choice(title=label, value=value)
+                    for label, value in choices_raw
+                ]
+                result = await ask_checkbox(q["question"], choices)
+                if result is None:
+                    return None
+                deep_answers[key] = result
+
+            elif q_type == "text":
+                result = await ask_text_optional(q["question"])
+                deep_answers[key] = result or ""
+
+            elif q_type == "confirm":
+                default = q.get("default", True)
+                result = await ask_confirm(q["question"], default=default)
+                deep_answers[key] = "Yes" if result else "No"
+
+        return deep_answers
+
+    # ── Scope Review Loop ─────────────────────────────────────────────
+
+    async def _scope_review_loop(
+        self,
+        scope_summary: str,
+        core_answers: dict,
+        deep_answers: dict,
+    ) -> str | None:
+        """Phase 3: Display scope, let user approve/modify/restart.
+
+        Returns final scope string, or None for "Start over".
+        """
+        while True:
+            console.print()
+            console.print(Panel(
+                scope_summary,
+                title=f"[bold {BRAND['cyan']}] Project Scope [/]",
+                border_style=BRAND["cyan"],
+                padding=(1, 2),
+            ))
+            console.print()
+
+            action = await ask_select("How does this look?", [
+                Choice(
+                    title="Approve \u2014 proceed to planning *",
+                    value="approve",
+                    description="Generate spec.md and tasks from this scope",
+                ),
+                Choice(
+                    title="Add more \u2014 type additional requirements",
+                    value="add",
+                    description="Append extra notes to the scope",
+                ),
+                Choice(
+                    title="Start over \u2014 reset the interview",
+                    value="restart",
+                    description="Go back to step 1",
+                ),
+            ], default="approve")
+
+            if action is None or action == "restart":
+                return None
+            elif action == "approve":
+                return scope_summary
+            elif action == "add":
+                extra = await ask_text(
+                    "Additional requirements",
+                    instruction="Type anything to add to the scope",
+                )
+                if extra and extra.strip():
+                    prev = deep_answers.get("extra_notes", "")
+                    deep_answers["extra_notes"] = (prev + "\n" + extra.strip()).strip()
+                    # Rebuild summary with new notes
+                    scope_summary = self.assistant.build_scope_summary(
+                        {"goal": core_answers["scope"], "stack": core_answers["stack"], "risk": core_answers["risk"]},
+                        deep_answers,
+                    )
 
     # ── Chat context builder ───────────────────────────────────────────
 
@@ -2852,10 +3434,23 @@ class ForgeShell:
                 action = await ask_select(
                     f"You already have a project ({self.project_path.name})",
                     [
-                        Choice(title="Start a fresh project for this", value="fresh"),
-                        Choice(title="Add to the current project (chat)", value="add"),
-                        Choice(title="Cancel", value="cancel"),
+                        Choice(
+                            title="Start fresh",
+                            value="fresh",
+                            description="Create a new project directory for this build",
+                        ),
+                        Choice(
+                            title="Add to current",
+                            value="add",
+                            description="Chat with Nova about the existing project",
+                        ),
+                        Choice(
+                            title="Cancel",
+                            value="cancel",
+                            description="Go back to the prompt",
+                        ),
                     ],
+                    use_shortcuts=True,
                 )
                 if action == "fresh":
                     console.print()
@@ -2966,7 +3561,7 @@ class ForgeShell:
 
         if not summary or summary["total"] == 0:
             console.print()
-            console.print("  [hint]Tell me what you want to build, or try /interview for guided setup[/]")
+            console.print(f"  [hint]Tell me what you want to build, or try [{BRAND['accent2']}]/interview[/] for guided setup[/]")
             return
 
         total = summary["total"]
@@ -2976,16 +3571,14 @@ class ForgeShell:
 
         in_prog = summary.get("in_progress", 0)
 
+        console.print()
         if done == total and in_prog == 0:
-            console.print()
-            console.print("  [hint]/preview[/] — share a live URL  |  [hint]/deploy[/] — ship to production")
+            console.print(f"  [{BRAND['accent2']}]/preview[/] [muted]share a live URL[/]  \u2502  [{BRAND['cyan']}]/deploy[/] [muted]ship to production[/]")
         elif failed > 0:
-            console.print()
-            console.print(f"  [hint]{failed} task(s) failed. Run /build to retry them.[/]")
+            console.print(f"  [{BRAND['orange']}]{failed}[/] task(s) failed \u2014 [{BRAND['cyan']}]/build[/] [muted]to retry[/]")
         elif pending > 0 or in_prog > 0:
             remaining = pending + in_prog
-            console.print()
-            console.print(f"  [hint]{remaining} task(s) remaining. Run /build to continue.[/]")
+            console.print(f"  [{BRAND['accent']}]{remaining}[/] task(s) remaining \u2014 [{BRAND['cyan']}]/build[/] [muted]to continue[/]")
 
     def _get_task_summary(self) -> dict | None:
         return self._get_task_summary_for(self.project_path)

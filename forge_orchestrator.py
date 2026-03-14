@@ -30,6 +30,66 @@ from forge_tasks import TaskStore, Task
 logger = logging.getLogger(__name__)
 
 
+def _recover_json(raw: str) -> list | None:
+    """Attempt to recover a JSON array from malformed LLM output.
+
+    Handles common LLM failures: truncated arrays, markdown fences,
+    trailing commas, missing closing brackets.
+    Returns parsed list on success, None on total failure.
+    """
+    import re
+
+    # Strip markdown fences
+    raw = re.sub(r"```(?:json)?\s*", "", raw).strip()
+    raw = raw.rstrip("`").strip()
+
+    # Try as-is first
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    # Remove trailing commas before ] or } (common LLM mistake)
+    cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
+    if cleaned != raw:
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+    # Extract the outermost [...] if embedded in other text
+    start = raw.find("[")
+    if start >= 0:
+        # Find matching bracket from end
+        for end in range(len(raw), start, -1):
+            candidate = raw[start:end]
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, list):
+                    return data
+            except json.JSONDecodeError:
+                continue
+
+    # Try closing common truncation patterns
+    if start >= 0:
+        partial = raw[start:]
+        # Remove trailing comma before close
+        for suffix in ["]", "}]", '"}]', '"}]']:
+            cleaned = re.sub(r",\s*$", "", partial)
+            try:
+                data = json.loads(cleaned + suffix)
+                if isinstance(data, list):
+                    return data
+            except json.JSONDecodeError:
+                continue
+
+    return None
+
+
 # ── Result types ─────────────────────────────────────────────────────────────
 
 @dataclass
@@ -109,7 +169,12 @@ class ForgeOrchestrator:
 
         interview_block = ""
         if extra_context:
-            interview_block = f"\n\n{extra_context}"
+            interview_block = (
+                "\n\n## Interview Context (User-Confirmed Decisions)\n"
+                "The user has already made these decisions during the interview. "
+                "Incorporate ALL of them into the spec — do NOT contradict or ignore them.\n\n"
+                f"{extra_context}"
+            )
 
         plan_result = await planning_agent.run(
             prompt=(
@@ -127,7 +192,9 @@ class ForgeOrchestrator:
             ),
             system=(
                 "You are a project planner. Generate clear, actionable specifications. "
-                "Write files using the write_file tool. Be concise — spec should be under 80 lines."
+                "Write files using the write_file tool. Be concise — spec should be under 80 lines. "
+                "If interview context is provided, honor ALL user-confirmed decisions "
+                "(database, auth, visual aesthetic, features, etc.) exactly as specified."
             ),
         )
 
@@ -200,14 +267,17 @@ class ForgeOrchestrator:
                 '   {"subject": "Create static/style.css — all styles", '
                 '"description": "Complete CSS: glassmorphism, gradients, dark mode CSS variables, responsive layout.",\n'
                 '    "files": ["static/style.css"], "sprint": "sprint-01", "risk": "low", "blocked_by": []}]\n\n'
-                "Write the tasks.json file now."
+                "Write the tasks.json file now.\n\n"
+                "VALIDATION: After writing tasks.json, read it back with read_file to verify "
+                "it parses correctly. If you see a SYNTAX ERROR, fix it immediately with write_file."
             ),
             system=(
                 "You are a task decomposer. Read the spec and break it into FILE-CENTRIC tasks. "
                 "Each task creates ONE complete file with ALL features that belong in it. "
                 "Write the tasks.json file using write_file tool. "
                 "IMPORTANT: One task per file. Never split a single file across multiple tasks. "
-                "Target 3-8 tasks total."
+                "Target 3-8 tasks total. "
+                "After writing, read back tasks.json to confirm it is valid JSON."
             ),
         )
 
@@ -244,7 +314,18 @@ class ForgeOrchestrator:
         task_count = 0
         if tasks_path.exists():
             try:
-                tasks_data = json.loads(tasks_path.read_text())
+                raw_text = tasks_path.read_text()
+                try:
+                    tasks_data = json.loads(raw_text)
+                except json.JSONDecodeError as parse_err:
+                    logger.warning("tasks.json parse error: %s — attempting recovery", parse_err)
+                    tasks_data = _recover_json(raw_text)
+                    if tasks_data is not None:
+                        logger.info("JSON recovery succeeded: %d tasks extracted", len(tasks_data))
+                        # Write back the fixed JSON
+                        tasks_path.write_text(json.dumps(tasks_data, indent=2))
+                    else:
+                        raise parse_err
                 if isinstance(tasks_data, list):
                     # Merge tasks that share files to prevent parallel conflicts
                     tasks_data = self._dedup_tasks(tasks_data)

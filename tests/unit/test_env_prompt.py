@@ -295,10 +295,11 @@ class TestBuildSystemPrompt:
         assert "src/api.py" in result
 
     def test_behavioral_directives_present(self, project_dir):
-        """Behavioral directives section should always be included."""
+        """System prompt should always include behavioral guidance."""
         builder = PromptBuilder(project_dir)
         result = builder.build_system_prompt()
-        assert "Behavior" in result
+        # Focused prompt uses "Rules" section; full prompt uses "Behavior"
+        assert "Rules" in result or "Behavior" in result
 
     def test_role_identity_present(self, project_dir):
         """Role name should appear in the system prompt."""

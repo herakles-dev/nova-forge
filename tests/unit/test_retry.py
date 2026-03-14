@@ -22,6 +22,7 @@ def make_agent(tmp_path: Path, on_event=None) -> ForgeAgent:
         hooks=hooks,
         max_turns=5,
         on_event=on_event,
+        streaming=False,
     )
 
 
@@ -229,6 +230,53 @@ async def test_exponential_backoff_with_jitter(tmp_path):
     # Just verify the second delay is >= the first (exponential growth, jitter may vary)
     if len(sleep_delays) >= 2:
         assert sleep_delays[1] >= sleep_delays[0] - 1  # allow jitter variance
+
+
+@pytest.mark.asyncio
+async def test_tool_retry_on_error(tmp_path):
+    """Failed tool call is retried once before reporting error to model."""
+    agent = make_agent(tmp_path)
+    call_count = 0
+    bogus_path = str(tmp_path / "does_not_exist.txt")
+
+    async def mock_send(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return tool_call_response("read_file", {"path": bogus_path}, call_id="tc_1")
+        return text_response("File not found, moving on.")
+
+    with patch.object(agent.router, "send", side_effect=mock_send):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent.run("Read a missing file")
+
+    assert result.error is None
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_disabled_tools_excluded_from_model_calls(tmp_path):
+    """Disabled tools are filtered from the tool list sent to the model."""
+    agent = make_agent(tmp_path)
+    sent_tools = []
+
+    call_count = 0
+    async def capture_send(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # Disable bash after first call (simulating circuit break)
+            agent._disabled_tools.add("bash")
+            return tool_call_response("read_file", {"path": str(tmp_path)}, call_id="tc_1")
+        # Second call — capture the tools list
+        sent_tools.extend(tools)
+        return text_response("Done.")
+
+    with patch.object(agent.router, "send", side_effect=capture_send):
+        result = await agent.run("Do something")
+
+    tool_names = [t["name"] for t in sent_tools]
+    assert "bash" not in tool_names
 
 
 @pytest.mark.asyncio

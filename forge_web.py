@@ -1,194 +1,175 @@
 """Nova Forge Web Dashboard — serves forge.herakles.dev.
 
 Provides:
-  /          — Landing page with project description + demo
-  /health    — Health check endpoint
-  /api/info  — JSON with version, model support, formation count
+  /              — Documentation guide (static HTML/CSS/JS from web/)
+  /health        — Health check endpoint
+  /api/info      — JSON with version, model support, formation count
+  /api/docs/chat — Nova-powered Q&A about Nova Forge documentation
 """
 
 from __future__ import annotations
 
 import json
+import os
+import logging
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from config import MODEL_ALIASES, DEFAULT_MODELS
-from formations import FORMATIONS
 
-app = Flask(__name__)
+logger = logging.getLogger("forge.web")
+
+_WEB_DIR = Path(__file__).parent / "web"
+app = Flask(__name__, static_folder=str(_WEB_DIR), static_url_path="")
 CORS(app)
 
-_VERSION = "0.1.0"
+_VERSION = "0.3.0"
 
-# ── Landing page HTML ────────────────────────────────────────────────────────
+# ── Documentation context for chat ──────────────────────────────────────────
 
-_LANDING_HTML = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nova Forge — Open-Source Agent Orchestration</title>
-<style>
-  :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --border: #30363d;
-    --text: #c9d1d9;
-    --accent: #58a6ff;
-    --green: #3fb950;
-    --orange: #d29922;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-  }
-  .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
-  h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
-  h2 { color: var(--accent); font-size: 1.4rem; margin: 2rem 0 0.75rem; }
-  .subtitle { color: #8b949e; font-size: 1.1rem; margin-bottom: 2rem; }
-  .badge {
-    display: inline-block;
-    padding: 0.2rem 0.6rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-right: 0.5rem;
-  }
-  .badge-green { background: rgba(63, 185, 80, 0.15); color: var(--green); }
-  .badge-orange { background: rgba(210, 153, 34, 0.15); color: var(--orange); }
-  .badge-blue { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-  }
-  code {
-    background: rgba(110, 118, 129, 0.2);
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.9em;
-  }
-  pre {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    overflow-x: auto;
-    font-size: 0.85rem;
-    margin: 0.75rem 0;
-  }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-  .stat { text-align: center; }
-  .stat-value { font-size: 2rem; font-weight: bold; color: var(--accent); }
-  .stat-label { font-size: 0.85rem; color: #8b949e; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td {
-    padding: 0.5rem 0.75rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-  }
-  th { color: #8b949e; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .footer { margin-top: 3rem; text-align: center; color: #8b949e; font-size: 0.85rem; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>Nova Forge</h1>
-  <p class="subtitle">
-    Open-source agent orchestration framework. V11's proven patterns, any LLM, pure Python.
-    <span class="badge badge-green">v{{ version }}</span>
-    <span class="badge badge-blue">Amazon Nova Hackathon</span>
-  </p>
+_DOCS_CONTEXT = """\
+# Nova Forge Documentation
 
-  <div class="grid">
-    <div class="card stat">
-      <div class="stat-value">{{ model_count }}</div>
-      <div class="stat-label">Model Aliases</div>
-    </div>
-    <div class="card stat">
-      <div class="stat-value">{{ formation_count }}</div>
-      <div class="stat-label">Formations</div>
-    </div>
-    <div class="card stat">
-      <div class="stat-value">3</div>
-      <div class="stat-label">Provider Adapters</div>
-    </div>
-    <div class="card stat">
-      <div class="stat-value">6</div>
-      <div class="stat-label">Built-in Tools</div>
-    </div>
-  </div>
+## What is Nova Forge?
+Nova Forge is an open-source AI agent orchestration framework. It takes a natural language
+description of what you want to build and orchestrates multiple AI agents to plan, build,
+test, and deploy it. Built for the Amazon Nova AI Hackathon 2026.
 
-  <h2>Quick Start</h2>
-  <pre><code># Plan a new project
-forge plan "weather dashboard" --model nova-lite
+## Quick Start
+1. Clone: `git clone https://github.com/Herakles-AI/nova-forge.git && cd nova-forge`
+2. Install: `pip install -r requirements.txt`
+3. Configure credentials (at least one provider):
+   - AWS Bedrock: `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1`
+   - OpenRouter: `export OPENROUTER_API_KEY=...`
+   - Anthropic: `export ANTHROPIC_API_KEY=...`
+4. Launch: `python3 forge_cli.py`
+5. Type what you want to build — Nova handles the rest.
 
-# Build it (agents execute in parallel waves)
-forge build --model gemini-flash
+## Interactive Shell Commands
+- `/interview` — Start guided project setup (scope, stack, risk, formation, model)
+- `/plan` — Generate task plan from spec.md
+- `/build` — Execute all pending tasks with AI agents
+- `/build --no-review` — Skip the gate review step
+- `/build --no-verify` — Skip runtime verification
+- `/status` — View current build progress and task states
+- `/tasks` — List all tasks with status, wave, and dependencies
+- `/preview` — Launch dev server with shareable Cloudflare Tunnel URL
+- `/preview stop` — Stop the preview server
+- `/deploy` — Production deployment (Docker + nginx + SSL)
+- `/model <alias>` — Switch the active model (e.g., nova-lite, gemini-flash)
+- `/models` — Compare all models — cost, context window, strengths
+- `/formation <name>` — View or set agent formation
+- `/autonomy <0-5>` — Set agent autonomy level (A0-A5)
+- `/login` — Set up or change API provider credentials
+- `/config` — View or modify all settings
+- `/guide` — Interactive project wizard
+- `/resume` — Resume a previous session
+- `/new <name>` — Create a new project directory
+- `/cd <path>` — Change project directory
+- `/audit` — View JSONL audit trail
+- `/clear` — Clear screen
+- `/help` — Show help
+- `/quit` — Exit
 
-# Deploy to a live URL
-forge deploy --domain weather.herakles.dev
+## CLI Commands (non-interactive)
+- `forge plan "description" --model nova-lite` — Plan a project
+- `forge build --model gemini-flash` — Execute the plan
+- `forge deploy --domain app.example.com` — Deploy to production
+- `forge preview` — Launch preview
+- `forge status` — View status
+- `forge models` — List models
+- `forge chat` — Launch interactive shell
 
-# Check status
-forge status</code></pre>
+## Models (7 supported)
+- **nova-lite** (32K context, Bedrock) — Fast, cheap. Best for focused tasks. $0.00006/1K input.
+- **nova-pro** (300K context, Bedrock) — All-rounder. Complex coding. $0.0008/1K input.
+- **nova-premier** (1M context, Bedrock) — Most powerful Nova. Deep reasoning. $0.002/1K input.
+- **gemini-flash** (1M context, OpenRouter) — Lightning fast, huge context. Best value for code. $0.0001/1K input.
+- **gemini-pro** (1M context, OpenRouter) — Top-tier reasoning. Complex architectures. $0.00125/1K input.
+- **claude-sonnet** (200K context, Anthropic) — Excellent instruction-following. Premium. $0.003/1K input.
+- **claude-haiku** (200K context, Anthropic) — Fast, affordable Claude. $0.0008/1K input.
 
-  <h2>Architecture</h2>
-  <div class="card">
-    <p>Nova Forge replaces Claude Code's closed-source agent runtime with a <strong>~300-line Python tool-use loop</strong> that works with any LLM supporting function calling.</p>
-    <br>
-    <p><strong>Key insight</strong>: V11 built 89 services on the Hercules platform. Nova Forge proves those patterns are model-portable — we run them with Amazon Nova and build live apps.</p>
-  </div>
+Switch with `/model <alias>`, e.g. `/model gemini-flash`.
 
-  <h2>Supported Models</h2>
-  <table>
-    <thead><tr><th>Alias</th><th>Full Model ID</th></tr></thead>
-    <tbody>
-    {% for alias, model_id in models %}
-      <tr><td><code>{{ alias }}</code></td><td>{{ model_id }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+## Formations (8 pre-configured team layouts)
+- **single-file** (1 role) — Small, focused file edits. 1-3 tasks.
+- **lightweight-feature** (2 roles) — Single-layer features. Implementer + tester in parallel.
+- **feature-impl** (4 roles, RECOMMENDED) — Adding features. Backend + frontend parallel, then integrator, then tester.
+- **new-project** (3 roles) — Greenfield setup. Architect → implementers.
+- **bug-investigation** (3 roles) — Unknown root cause. Three parallel investigators.
+- **security-review** (3 roles) — Security audit. Scanner + modeler parallel, then fixer.
+- **perf-optimization** (2 roles) — Profiling + optimization. Sequential deep work.
+- **code-review** (3 roles) — PR review. Three parallel reviewers (security, performance, coverage). Read-only.
 
-  <h2>Formations</h2>
-  <table>
-    <thead><tr><th>Formation</th><th>Roles</th><th>Use Case</th></tr></thead>
-    <tbody>
-    {% for name, f in formations %}
-      <tr>
-        <td><code>{{ name }}</code></td>
-        <td>{{ f.roles | length }}</td>
-        <td>{{ f.description[:80] }}{% if f.description|length > 80 %}...{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+Set with `/formation <name>`, e.g. `/formation feature-impl`.
 
-  <h2>How It Works</h2>
-  <div class="card">
-    <p><strong>Phase 1</strong>: Planning — ForgeAgent + smart model generates spec.md</p>
-    <p><strong>Phase 2</strong>: Decomposition — ForgeAgent breaks spec into tasks.json</p>
-    <p><strong>Phase 3</strong>: Execution — Wave-dispatched parallel agents build the project</p>
-    <p><strong>Phase 4</strong>: Gate Review — LLM reviewer produces PASS/FAIL/CONDITIONAL</p>
-    <p><strong>Phase 5</strong>: Deploy — Docker build, nginx config, health check</p>
-  </div>
+## Autonomy System (A0-A5)
+- **A0 Manual** — Ask for everything. Full human control.
+- **A1 Guided** — Read files freely. Ask before writes.
+- **A2 Supervised** (DEFAULT) — Read/write freely. Ask before risky commands.
+- **A3 Trusted** — Handle most things independently. Block high-risk only.
+- **A4 Autonomous** — Full autopilot. Requires explicit `/autonomy 4`.
+- **A5 Unattended** — CI/background. Full audit logging.
 
-  <div class="footer">
-    <p>Built for the <a href="https://devpost.com">Amazon Nova AI Hackathon</a> &middot;
-    <a href="/api/info">API Info</a></p>
-  </div>
-</div>
-</body>
-</html>
+Set with `/autonomy <0-5>`.
+
+## How the Pipeline Works
+1. **Interview** — Interactive 5-step: scope, stack, risk, formation, model
+2. **Plan & Decompose** — AI generates spec.md → tasks.json with dependencies
+3. **Parallel Build** — Independent tasks run concurrently (asyncio.gather + semaphores)
+4. **Gate Review** — Adversarial read-only reviewer produces PASS/FAIL/CONDITIONAL
+5. **Preview & Deploy** — Cloudflare Tunnel URL or Docker + nginx + SSL
+
+## Key Architecture
+- `forge_cli.py` (2,894 LOC) — Interactive shell with 24 commands
+- `forge_agent.py` (1,603 LOC) — Tool-use loop with 12 tools
+- `model_router.py` (902 LOC) — Bedrock, OpenAI, Anthropic adapters
+- `forge_pipeline.py` (848 LOC) — WaveExecutor, ArtifactManager, GateReviewer
+- `forge_guards.py` (1,029 LOC) — RiskClassifier, PathSandbox, AutonomyManager
+- `forge_verify.py` (564 LOC) — BuildVerifier (L1 static, L2 server, L3 browser)
+- 908 tests across 38 test files, all passing
+
+## Programmatic Usage
+```python
+from forge_agent import ForgeAgent
+from model_router import ModelRouter
+
+router = ModelRouter("bedrock/us.amazon.nova-2-lite-v1:0")
+agent = ForgeAgent(project_root="./my-project", router=router, max_turns=30)
+result = await agent.run(prompt="Create a Flask API", system="Write working code.")
+print(result.artifacts)  # {"/path/to/app.py": "# code..."}
+```
+
+## Agent Tools (12 built-in)
+read_file, write_file, append_file, edit_file, bash, glob_files, grep,
+list_directory, search_replace_all, think, claim_file, check_context
+
+## Providers
+- **Amazon Bedrock** — AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+- **OpenRouter** — API key (OPENROUTER_API_KEY) — access to Gemini models
+- **Anthropic** — API key (ANTHROPIC_API_KEY) — access to Claude models
+
+## Project Structure
+nova-forge/
+├── forge.py               # Click CLI (14 commands)
+├── forge_cli.py           # Interactive shell (main file)
+├── forge_agent.py         # Core agent loop + 12 tools
+├── forge_pipeline.py      # WaveExecutor + ArtifactManager
+├── model_router.py        # LLM provider adapters
+├── forge_guards.py        # Security (risk, sandbox, autonomy)
+├── formations.py          # 10 formations + DAAO routing
+├── prompt_builder.py      # System prompt construction
+├── forge_verify.py        # BuildVerifier (L1-L3)
+├── forge_preview.py       # PreviewManager + Cloudflare Tunnel
+├── forge_deployer.py      # Docker + nginx + SSL deployment
+├── config.py              # Configuration + context windows
+├── agents/                # 20 YAML agent definitions
+├── schemas/               # 8 JSON schemas
+├── templates/             # 4 app templates
+├── tests/unit/            # 1047 tests (48 test files)
+└── web/                   # Web documentation guide
 """
 
 
@@ -196,14 +177,7 @@ forge status</code></pre>
 
 @app.route("/")
 def index():
-    return render_template_string(
-        _LANDING_HTML,
-        version=_VERSION,
-        model_count=len(MODEL_ALIASES),
-        formation_count=len(FORMATIONS),
-        models=sorted(MODEL_ALIASES.items()),
-        formations=sorted(FORMATIONS.items()),
-    )
+    return send_from_directory(str(_WEB_DIR), "index.html")
 
 
 @app.route("/health")
@@ -213,6 +187,7 @@ def health():
 
 @app.route("/api/info")
 def api_info():
+    from formations import FORMATIONS
     return jsonify({
         "name": "Nova Forge",
         "version": _VERSION,
@@ -226,12 +201,124 @@ def api_info():
                 "roles": len(f.roles),
                 "waves": len(f.wave_order),
                 "gate_criteria_count": len(f.gate_criteria),
+                "description": f.description,
             }
             for name, f in FORMATIONS.items()
         },
         "providers": ["bedrock", "openai", "anthropic"],
-        "tools": ["read_file", "write_file", "edit_file", "bash", "glob_files", "grep"],
+        "tools": [
+            "read_file", "write_file", "append_file", "edit_file",
+            "bash", "glob_files", "grep", "list_directory",
+            "search_replace_all", "think", "claim_file", "check_context",
+        ],
+        "stats": {
+            "tests": 1047,
+            "test_files": 48,
+            "modules": 39,
+            "loc": 25600,
+        },
     })
+
+
+@app.route("/api/docs/chat", methods=["POST"])
+def docs_chat():
+    """Answer questions about Nova Forge using Amazon Nova."""
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    # Try Bedrock Nova first, fall back to OpenRouter, then Anthropic
+    response_text = _call_llm(message)
+    return jsonify({"response": response_text})
+
+
+def _call_llm(user_message: str) -> str:
+    """Call an LLM with docs context to answer the user's question."""
+    system_prompt = (
+        "You are Nova, the AI assistant behind Nova Forge — an open-source agent "
+        "orchestration framework. Answer questions about Nova Forge based on the "
+        "documentation provided. Be helpful, concise, and accurate. "
+        "Use code blocks for commands. If you don't know something, say so honestly.\n\n"
+        + _DOCS_CONTEXT
+    )
+
+    # Try Bedrock (Nova)
+    if os.environ.get("AWS_ACCESS_KEY_ID"):
+        try:
+            return _call_bedrock(system_prompt, user_message)
+        except Exception as e:
+            logger.warning("Bedrock chat failed: %s", e)
+
+    # Try OpenRouter (Gemini)
+    if os.environ.get("OPENROUTER_API_KEY"):
+        try:
+            return _call_openrouter(system_prompt, user_message)
+        except Exception as e:
+            logger.warning("OpenRouter chat failed: %s", e)
+
+    # Try Anthropic (Claude)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            return _call_anthropic(system_prompt, user_message)
+        except Exception as e:
+            logger.warning("Anthropic chat failed: %s", e)
+
+    return (
+        "The chat service requires API credentials to be configured. "
+        "Please set up at least one provider (AWS Bedrock, OpenRouter, or Anthropic) "
+        "and restart the web server. In the meantime, try the CLI: `python3 forge_cli.py`"
+    )
+
+
+def _call_bedrock(system: str, message: str) -> str:
+    """Call Amazon Nova via Bedrock Converse API."""
+    import boto3
+
+    client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+    response = client.converse(
+        modelId="us.amazon.nova-lite-v1:0",
+        system=[{"text": system}],
+        messages=[{"role": "user", "content": [{"text": message}]}],
+        inferenceConfig={"maxTokens": 1024, "temperature": 0.3},
+    )
+    return response["output"]["message"]["content"][0]["text"]
+
+
+def _call_openrouter(system: str, message: str) -> str:
+    """Call Gemini via OpenRouter."""
+    import openai
+
+    client = openai.OpenAI(
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        base_url="https://openrouter.ai/api/v1",
+    )
+    response = client.chat.completions.create(
+        model="google/gemini-2.0-flash-001",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": message},
+        ],
+        max_tokens=1024,
+        temperature=0.3,
+    )
+    return response.choices[0].message.content
+
+
+def _call_anthropic(system: str, message: str) -> str:
+    """Call Claude via Anthropic API."""
+    import anthropic
+
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        system=system,
+        messages=[{"role": "user", "content": message}],
+        max_tokens=1024,
+        temperature=0.3,
+    )
+    return response.content[0].text
 
 
 if __name__ == "__main__":

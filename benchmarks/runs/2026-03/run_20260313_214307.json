@@ -1,0 +1,1082 @@
+{
+  "schema_version": 2,
+  "timestamp": "2026-03-13T21:43:07.060591",
+  "run_name": "Sprint 13: CLI Visual + JSON Recovery",
+  "metadata": {
+    "git_commit": "2e5b8c1",
+    "git_branch": "main",
+    "git_dirty": true,
+    "git_changed_files": [
+      "CLAUDE.md",
+      "forge_agent.py",
+      "forge_assistant.py",
+      "forge_cli.py",
+      "forge_comms.py",
+      "forge_deployer.py",
+      "forge_display.py",
+      "forge_orchestrator.py",
+      "forge_preview.py",
+      "forge_prompt.py",
+      "forge_verify.py",
+      "forge_web.py",
+      "prompt_builder.py",
+      "tests/unit/test_agent.py",
+      "tests/unit/test_autonomy_integration.py",
+      "tests/unit/test_preview.py",
+      "tests/unit/test_retry.py"
+    ],
+    "python_version": "3.11.2",
+    "platform": "Linux-6.1.0-39-amd64-x86_64-with-glibc2.36",
+    "spec_hash": "fd2796b7ced4",
+    "system_prompt_hash": "",
+    "models_run": [
+      "nova-lite",
+      "nova-pro",
+      "nova-premier"
+    ],
+    "trigger": "sprint-13-verification"
+  },
+  "summary": {
+    "models": [
+      "nova-lite",
+      "nova-pro",
+      "nova-premier"
+    ],
+    "grades": {
+      "nova-lite": "S",
+      "nova-pro": "C",
+      "nova-premier": "C"
+    },
+    "scores": {
+      "nova-lite": 97.5,
+      "nova-pro": 60.4,
+      "nova-premier": 62.9
+    },
+    "duration_total": 1767.4,
+    "cost_total": 0.0
+  },
+  "results": [
+    {
+      "model_alias": "nova-lite",
+      "model_id": "bedrock/us.amazon.nova-2-lite-v1:0",
+      "timestamp": "2026-03-13 21:13:38",
+      "duration_secs": 116.9,
+      "tasks_passed": 5,
+      "tasks_total": 5,
+      "retries": 0,
+      "total_turns": 27,
+      "total_tool_calls": 22,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_cost": 0.0,
+      "overall_score": 97.5,
+      "grade": "S",
+      "dimension_scores": {
+        "task_completion": 100.0,
+        "code_quality": 100.0,
+        "interface_fidelity": 100.0,
+        "runtime_viability": 100.0,
+        "efficiency": 75.0
+      },
+      "checks": [
+        {
+          "name": "File exists: models.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "8325 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: api.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4357 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/index.html",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4938 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/app.js",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "13497 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/style.css",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5187 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "Not stub: models.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "8325 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: api.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4357 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/index.html >= 500B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4938 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/app.js >= 400B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "13497 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/style.css >= 150B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5187 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "All 5 tasks passed",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5/5",
+          "weight": 3.0
+        },
+        {
+          "name": "Syntax OK: models.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: api.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py uses sqlite3",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py avoids SQLAlchemy",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py exports functions (not classes)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "9 funcs, 0 classes",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has <form>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML has <table>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links Chart.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links app.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links style.css",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS uses fetch()",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS calls /api/ endpoints",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS has DOM manipulation",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "Import/export names match",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all match",
+          "weight": 4.0
+        },
+        {
+          "name": "No ORM hallucination: .query()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: .to_dict()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: db.session",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Required functions present",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all 7 present",
+          "weight": 3.0
+        },
+        {
+          "name": "Route defined: /api/categories",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/expenses",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/summary",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Stack detected",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "flask: api.py",
+          "weight": 1.0
+        },
+        {
+          "name": "Server starts",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "port=5000",
+          "weight": 2.0
+        },
+        {
+          "name": "GET /api/categories returns 200",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "status=200",
+          "weight": 2.0
+        },
+        {
+          "name": "POST /api/expenses works",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "status=201",
+          "weight": 2.0
+        },
+        {
+          "name": "Zero retries needed",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "0 retries",
+          "weight": 2.0
+        },
+        {
+          "name": "Turns <= 15",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "27 turns",
+          "weight": 1.5
+        },
+        {
+          "name": "Duration <= 120s",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "117s",
+          "weight": 1.0
+        },
+        {
+          "name": "Cost <= $0.05",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "$0.00",
+          "weight": 1.5
+        }
+      ],
+      "task_results": [
+        {
+          "task_id": "1",
+          "subject": "Create database models and helpers",
+          "status": "pass",
+          "turns": 6,
+          "tool_calls": 5,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 25.3,
+          "cost": 0.0
+        },
+        {
+          "task_id": "2",
+          "subject": "Create Flask API routes",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 10.8,
+          "cost": 0.0
+        },
+        {
+          "task_id": "3",
+          "subject": "Create frontend HTML page",
+          "status": "pass",
+          "turns": 5,
+          "tool_calls": 4,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 29.2,
+          "cost": 0.0
+        },
+        {
+          "task_id": "4",
+          "subject": "Create frontend JavaScript",
+          "status": "pass",
+          "turns": 5,
+          "tool_calls": 4,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 21.9,
+          "cost": 0.0
+        },
+        {
+          "task_id": "5",
+          "subject": "Create CSS styling",
+          "status": "pass",
+          "turns": 7,
+          "tool_calls": 6,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 29.5,
+          "cost": 0.0
+        }
+      ],
+      "interface_issues": [],
+      "server_ok": true
+    },
+    {
+      "model_alias": "nova-pro",
+      "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+      "timestamp": "2026-03-13 21:15:35",
+      "duration_secs": 203.5,
+      "tasks_passed": 4,
+      "tasks_total": 5,
+      "retries": 0,
+      "total_turns": 43,
+      "total_tool_calls": 40,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_cost": 0.0,
+      "overall_score": 60.4,
+      "grade": "C",
+      "dimension_scores": {
+        "task_completion": 83.3,
+        "code_quality": 74.3,
+        "interface_fidelity": 0.0,
+        "runtime_viability": 73.3,
+        "efficiency": 58.3
+      },
+      "checks": [
+        {
+          "name": "File exists: models.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "16020 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: api.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2001 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/index.html",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2988 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/app.js",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "3506 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/style.css",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2299 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "Not stub: models.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "16020 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: api.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2001 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/index.html >= 500B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2988 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/app.js >= 400B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "3506 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/style.css >= 150B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2299 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "All 5 tasks passed",
+          "dimension": "task_completion",
+          "passed": false,
+          "detail": "4/5",
+          "weight": 3.0
+        },
+        {
+          "name": "Syntax OK: models.py",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "  File \"/tmp/forge-benchmark/bench-nova-pro/models.py\", line 25\n    init_db().join(set_clauses)} WHE",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: api.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py uses sqlite3",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py avoids SQLAlchemy",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py exports functions (not classes)",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "0 funcs, 0 classes",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has <form>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML has <table>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links Chart.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links app.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links style.css",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS uses fetch()",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS calls /api/ endpoints",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS has DOM manipulation",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "Interface analysis",
+          "dimension": "interface_fidelity",
+          "passed": false,
+          "detail": "syntax error: unmatched '}' (<unknown>, line 25)",
+          "weight": 4.0
+        },
+        {
+          "name": "Required functions present",
+          "dimension": "interface_fidelity",
+          "passed": false,
+          "detail": "missing: ['init_db', 'create_category', 'get_categories', 'create_expense', 'get_expenses', 'delete_expense', 'get_monthly_summary']",
+          "weight": 3.0
+        },
+        {
+          "name": "Route defined: /api/categories",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/expenses",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/summary",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Stack detected",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "flask: api.py",
+          "weight": 1.0
+        },
+        {
+          "name": "Runtime test",
+          "dimension": "runtime_viability",
+          "passed": false,
+          "detail": "Server failed to start on port 5003: it_db, create_category, get_categories, create_expense, get_exp",
+          "weight": 2.0
+        },
+        {
+          "name": "Zero retries needed",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "0 retries",
+          "weight": 2.0
+        },
+        {
+          "name": "Turns <= 15",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "43 turns",
+          "weight": 1.5
+        },
+        {
+          "name": "Duration <= 120s",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "204s",
+          "weight": 1.0
+        },
+        {
+          "name": "Cost <= $0.05",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "$0.00",
+          "weight": 1.5
+        }
+      ],
+      "task_results": [
+        {
+          "task_id": "1",
+          "subject": "Create database models and helpers",
+          "status": "fail",
+          "turns": 30,
+          "tool_calls": 30,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 125.1,
+          "cost": 0.0
+        },
+        {
+          "task_id": "2",
+          "subject": "Create Flask API routes",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 21.9,
+          "cost": 0.0
+        },
+        {
+          "task_id": "3",
+          "subject": "Create frontend HTML page",
+          "status": "pass",
+          "turns": 4,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 16.7,
+          "cost": 0.0
+        },
+        {
+          "task_id": "4",
+          "subject": "Create frontend JavaScript",
+          "status": "pass",
+          "turns": 3,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 17.6,
+          "cost": 0.0
+        },
+        {
+          "task_id": "5",
+          "subject": "Create CSS styling",
+          "status": "pass",
+          "turns": 2,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 22.1,
+          "cost": 0.0
+        }
+      ],
+      "interface_issues": [],
+      "server_ok": false
+    },
+    {
+      "model_alias": "nova-premier",
+      "model_id": "bedrock/us.amazon.nova-premier-v1:0",
+      "timestamp": "2026-03-13 21:18:59",
+      "duration_secs": 1447.0,
+      "tasks_passed": 4,
+      "tasks_total": 5,
+      "retries": 0,
+      "total_turns": 10,
+      "total_tool_calls": 8,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_cost": 0.0,
+      "overall_score": 62.9,
+      "grade": "C",
+      "dimension_scores": {
+        "task_completion": 83.3,
+        "code_quality": 74.3,
+        "interface_fidelity": 0.0,
+        "runtime_viability": 73.3,
+        "efficiency": 83.3
+      },
+      "checks": [
+        {
+          "name": "File exists: models.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4580 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: api.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2677 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/index.html",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2870 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/app.js",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5091 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/style.css",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2750 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "Not stub: models.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4580 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: api.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2677 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/index.html >= 500B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2870 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/app.js >= 400B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5091 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/style.css >= 150B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "2750 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "All 5 tasks passed",
+          "dimension": "task_completion",
+          "passed": false,
+          "detail": "4/5",
+          "weight": 3.0
+        },
+        {
+          "name": "Syntax OK: models.py",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "  File \"/tmp/forge-benchmark/bench-nova-premier/models.py\", line 10\n    cursor.execute(\"\"\"\n         ",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: api.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py uses sqlite3",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py avoids SQLAlchemy",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py exports functions (not classes)",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "0 funcs, 0 classes",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has <form>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML has <table>",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links Chart.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links app.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links style.css",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS uses fetch()",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS calls /api/ endpoints",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS has DOM manipulation",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "Interface analysis",
+          "dimension": "interface_fidelity",
+          "passed": false,
+          "detail": "syntax error: invalid syntax. Perhaps you forgot a comma? (<unknown>, line 10)",
+          "weight": 4.0
+        },
+        {
+          "name": "Required functions present",
+          "dimension": "interface_fidelity",
+          "passed": false,
+          "detail": "missing: ['init_db', 'create_category', 'get_categories', 'create_expense', 'get_expenses', 'delete_expense', 'get_monthly_summary']",
+          "weight": 3.0
+        },
+        {
+          "name": "Route defined: /api/categories",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/expenses",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Route defined: /api/summary",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Stack detected",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "flask: api.py",
+          "weight": 1.0
+        },
+        {
+          "name": "Runtime test",
+          "dimension": "runtime_viability",
+          "passed": false,
+          "detail": "Server failed to start on port 5005: ring>\", line 1, in <module>\n  File \"/tmp/forge-benchmark/bench-",
+          "weight": 2.0
+        },
+        {
+          "name": "Zero retries needed",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "0 retries",
+          "weight": 2.0
+        },
+        {
+          "name": "Turns <= 15",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "10 turns",
+          "weight": 1.5
+        },
+        {
+          "name": "Duration <= 120s",
+          "dimension": "efficiency",
+          "passed": false,
+          "detail": "1447s",
+          "weight": 1.0
+        },
+        {
+          "name": "Cost <= $0.50",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "$0.00",
+          "weight": 1.5
+        }
+      ],
+      "task_results": [
+        {
+          "task_id": "1",
+          "subject": "Create database models and helpers",
+          "status": "fail",
+          "turns": 1,
+          "tool_calls": 0,
+          "files_created": 0,
+          "retries": 0,
+          "duration": 1121.4,
+          "cost": 0.0
+        },
+        {
+          "task_id": "2",
+          "subject": "Create Flask API routes",
+          "status": "pass",
+          "turns": 2,
+          "tool_calls": 1,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 68.5,
+          "cost": 0.0
+        },
+        {
+          "task_id": "3",
+          "subject": "Create frontend HTML page",
+          "status": "pass",
+          "turns": 2,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 54.9,
+          "cost": 0.0
+        },
+        {
+          "task_id": "4",
+          "subject": "Create frontend JavaScript",
+          "status": "pass",
+          "turns": 3,
+          "tool_calls": 3,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 123.5,
+          "cost": 0.0
+        },
+        {
+          "task_id": "5",
+          "subject": "Create CSS styling",
+          "status": "pass",
+          "turns": 2,
+          "tool_calls": 2,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 78.6,
+          "cost": 0.0
+        }
+      ],
+      "interface_issues": [],
+      "server_ok": false
+    }
+  ]
+}

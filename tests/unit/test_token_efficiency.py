@@ -60,7 +60,7 @@ def test_get_prompt_budget_128k():
         + budget["working_space"]
     )
     assert zone_sum == 128_000, f"Zones sum to {zone_sum}, expected 128000"
-    assert budget["compaction_threshold"] == 0.75
+    assert budget["compaction_threshold"] == 0.65
 
 
 def test_get_prompt_budget_1m():
@@ -74,7 +74,7 @@ def test_get_prompt_budget_1m():
         + budget["working_space"]
     )
     assert zone_sum == 300_000, f"Zones sum to {zone_sum}, expected 300000"
-    assert budget["compaction_threshold"] == 0.80
+    assert budget["compaction_threshold"] == 0.65
 
 
 def test_get_prompt_budget_boundary_32k():
@@ -86,13 +86,13 @@ def test_get_prompt_budget_boundary_32k():
 def test_get_prompt_budget_boundary_200k():
     """200K context uses the 200K budget."""
     budget = get_prompt_budget(200_000)
-    assert budget["compaction_threshold"] == 0.75
+    assert budget["compaction_threshold"] == 0.65
 
 
 def test_get_prompt_budget_boundary_above_200k():
     """201K context uses the 1M budget."""
     budget = get_prompt_budget(201_000)
-    assert budget["compaction_threshold"] == 0.80
+    assert budget["compaction_threshold"] == 0.65
 
 
 # ── estimate_tokens helper ───────────────────────────────────────────────────
@@ -314,7 +314,7 @@ def test_compaction_threshold_32k():
 def test_compaction_threshold_200k():
     """200K model compaction threshold is 0.75."""
     budget = get_prompt_budget(200_000)
-    assert budget["compaction_threshold"] == 0.75
+    assert budget["compaction_threshold"] == 0.65
 
 
 def test_compact_messages_32k_keeps_3_pairs(tmp_path):

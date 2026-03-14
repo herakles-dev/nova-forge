@@ -499,6 +499,173 @@ _CODE_REVIEW = Formation(
 )
 
 
+# Formation 9: recovery
+# Post-failure diagnosis: investigator finds root cause, fixer applies fix, validator confirms.
+_RECOVERY = Formation(
+    name="recovery",
+    description=(
+        "Post-failure diagnosis and repair. Use when a build/deploy/test has failed "
+        "and the root cause needs investigation before fixing. "
+        "Investigator reads logs and traces the failure, fixer applies the fix, "
+        "validator runs tests to confirm the fix. "
+        "Use when: a previously working feature broke, deployment failed, or tests regressed."
+    ),
+    roles=[
+        Role(
+            name="investigator",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["*.log", "*.err"],
+            },
+            description=(
+                "Reads logs, traces, and source to identify root cause. "
+                "READ-ONLY — produces a diagnosis report, not code changes. "
+                "Smart model for careful failure analysis."
+            ),
+        ),
+        Role(
+            name="fixer",
+            model=_FAST_MODEL,
+            tool_policy="coding",
+            ownership={
+                "files": [],
+                "directories": ["src/"],
+                "patterns": ["src/**"],
+            },
+            description=(
+                "Applies targeted fix based on investigator's diagnosis. "
+                "Minimal changes — fix the root cause only, no refactoring."
+            ),
+        ),
+        Role(
+            name="validator",
+            model=_FAST_MODEL,
+            tool_policy="testing",
+            ownership={
+                "files": [],
+                "directories": ["tests/"],
+                "patterns": ["*.test.*", "*.spec.*"],
+            },
+            description=(
+                "Runs the failing test/scenario to confirm the fix works. "
+                "Default position is FAIL — evidence must prove the fix resolved the issue."
+            ),
+        ),
+    ],
+    wave_order=[["investigator"], ["fixer"], ["validator"]],
+    gate_criteria=[
+        "Root cause identified with evidence",
+        "Fix applied with minimal changes",
+        "Original failure no longer reproduces",
+        "No new regressions introduced",
+    ],
+    tool_policy_defaults="coding",
+)
+
+
+# Formation 10: all-hands-planning
+# Pre-build spec validation with parallel reviewers and synthesizer.
+_ALL_HANDS_PLANNING = Formation(
+    name="all-hands-planning",
+    description=(
+        "Pre-build spec review with cross-functional validation. Use for complex "
+        "greenfield projects or when a first attempt failed and needs replanning. "
+        "Four parallel reviewers (architecture, feasibility, security, UX) produce "
+        "findings, then a synthesizer combines them into an actionable plan. "
+        "Use when: starting a large project, recovering from a failed build, "
+        "or validating a complex architectural decision."
+    ),
+    roles=[
+        Role(
+            name="arch-reviewer",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["arch-review.*"],
+            },
+            description=(
+                "Reviews architecture decisions: tech stack choices, data flow, "
+                "scalability, separation of concerns. Identifies structural risks."
+            ),
+        ),
+        Role(
+            name="feasibility-reviewer",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["feasibility-review.*"],
+            },
+            description=(
+                "Reviews feasibility: can this be built with the proposed stack in the "
+                "allotted time? Identifies missing dependencies, unrealistic scope, "
+                "or tasks that need splitting."
+            ),
+        ),
+        Role(
+            name="security-reviewer",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["security-review.*"],
+            },
+            description=(
+                "Reviews security implications: auth model, data protection, "
+                "injection risks, secrets management. Flags BLOCKER issues."
+            ),
+        ),
+        Role(
+            name="ux-reviewer",
+            model=_SMART_MODEL,
+            tool_policy="readonly",
+            ownership={
+                "files": [],
+                "directories": [],
+                "patterns": ["ux-review.*"],
+            },
+            description=(
+                "Reviews UX implications: user flow coherence, accessibility, "
+                "responsive design requirements, error state handling."
+            ),
+        ),
+        Role(
+            name="synthesizer",
+            model=_SMART_MODEL,
+            tool_policy="coding",
+            ownership={
+                "files": ["spec.md", "tasks.json"],
+                "directories": [],
+                "patterns": ["spec.*", "tasks.*"],
+            },
+            description=(
+                "Reads all four review reports and produces an updated spec.md "
+                "and tasks.json incorporating reviewer feedback. Resolves conflicts "
+                "between reviewers by choosing the safer/simpler option."
+            ),
+        ),
+    ],
+    wave_order=[
+        ["arch-reviewer", "feasibility-reviewer", "security-reviewer", "ux-reviewer"],
+        ["synthesizer"],
+    ],
+    gate_criteria=[
+        "All four reviewers produced findings documents",
+        "Synthesizer updated spec.md with reviewer feedback",
+        "No unresolved BLOCKER issues",
+        "Revised task plan is actionable",
+    ],
+    tool_policy_defaults="readonly",
+)
+
+
 # ── Module-level FORMATIONS registry ────────────────────────────────────────
 
 FORMATIONS: dict[str, Formation] = {
@@ -510,6 +677,8 @@ FORMATIONS: dict[str, Formation] = {
     "security-review":     _SECURITY_REVIEW,
     "perf-optimization":   _PERF_OPTIMIZATION,
     "code-review":         _CODE_REVIEW,
+    "recovery":            _RECOVERY,
+    "all-hands-planning":  _ALL_HANDS_PLANNING,
 }
 
 
@@ -545,7 +714,7 @@ _DAAO_TABLE: dict[tuple[str, str], str] = {
     ("medium",  "large"):  "feature-impl",
     ("complex", "small"):  "lightweight-feature",
     ("complex", "medium"): "feature-impl",
-    ("complex", "large"):  "feature-impl",
+    ("complex", "large"):  "all-hands-planning",
     # novel maps to new-project regardless of scope
     ("novel",   "small"):  "new-project",
     ("novel",   "medium"): "new-project",

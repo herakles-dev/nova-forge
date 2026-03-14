@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 from rich.progress import (
@@ -28,44 +27,10 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from rich.theme import Theme
 from rich import box
 
 from forge_agent import AgentEvent, AgentResult
-
-# ── Theme (shared with forge_cli.py) ────────────────────────────────────────
-
-THEME = Theme({
-    "info": "cyan",
-    "success": "bold green",
-    "warning": "bold yellow",
-    "error": "bold red",
-    "muted": "dim",
-    "accent": "bold cyan",
-    "nova": "bold magenta",
-    "tool": "dim cyan",
-    "step": "bold white",
-    "blocked": "dim yellow",
-    "retry": "yellow",
-    "hint": "italic dim cyan",
-    "file.read": "dim",
-    "file.write": "green",
-    "file.edit": "yellow",
-    "file.run": "cyan",
-})
-
-console = Console(theme=THEME)
-
-# ── Tool display helpers ────────────────────────────────────────────────────
-
-TOOL_ICONS = {
-    "read_file":  "eye",
-    "write_file": "pencil",
-    "edit_file":  "wrench",
-    "bash":       "terminal",
-    "glob_files": "magnifying_glass",
-    "grep":       "magnifying_glass",
-}
+from forge_theme import console, TOOL_ICONS, SPINNERS, BRAND
 
 TOOL_VERBS = {
     "read_file":  "Reading",
@@ -118,6 +83,30 @@ def _format_ms(ms: int) -> str:
     if ms < 1000:
         return f"{ms}ms"
     return f"{ms / 1000:.1f}s"
+
+
+def _suggest_fix(error: str) -> str:
+    """Classify error string and suggest a specific fix."""
+    err = error.lower()
+    if "import" in err and ("no module" in err or "cannot find" in err):
+        return "Missing dependency? Check requirements.txt or run pip install"
+    if "syntax" in err:
+        return "Syntax error — check the file for typos, unclosed brackets, or bad indentation"
+    if "timeout" in err or "timed out" in err:
+        return "Timeout — try /preview stop first, or increase timeout in config"
+    if "permission" in err or "errno 13" in err:
+        return "Permission denied — check file permissions or run with appropriate access"
+    if "max_turns" in err:
+        return "Agent hit turn limit — try a simpler task description or use a larger model"
+    if "429" in err or "rate" in err:
+        return "Rate limited — wait a moment and retry, or switch to a different model"
+    if "context" in err and ("length" in err or "exceed" in err):
+        return "Context window exceeded — try breaking the task into smaller pieces"
+    if "paused" in err:
+        return "Build paused by user — use /build to resume"
+    if "conflict" in err:
+        return "File ownership conflict — another agent owns this file"
+    return ""
 
 
 # ── Task-level tracker ──────────────────────────────────────────────────────
@@ -307,6 +296,12 @@ class BuildDisplay:
             if self.verbose:
                 detail = event.tool_args.get("detail", "")
                 console.print(f"    [info]announce[/] {detail}")
+        elif event.kind == "pause_requested":
+            if self._progress and self._current_task is not None:
+                self._progress.update(
+                    self._current_task,
+                    description="[warning]Pausing after current operation...[/]",
+                )
         elif event.kind == "error":
             trace.error = event.error
 
@@ -315,9 +310,9 @@ class BuildDisplay:
     def create_progress(self) -> Progress:
         """Create and return the Progress instance for use as context manager."""
         self._progress = Progress(
-            SpinnerColumn("dots"),
+            SpinnerColumn(SPINNERS["building"]),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=20, complete_style="bright_magenta", finished_style="green"),
+            BarColumn(bar_width=30, complete_style=BRAND["accent"], finished_style=BRAND["green"]),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
             console=console,
@@ -335,16 +330,17 @@ class BuildDisplay:
 
     def _update_tool_status(self, event: AgentEvent, trace: TaskTrace) -> None:
         """Update the progress bar description with current tool call."""
+        icon = TOOL_ICONS.get(event.tool_name, "")
         verb = TOOL_VERBS.get(event.tool_name, event.tool_name)
         target = _short_path(event.file_path, 35)
 
         if event.tool_name == "bash":
             cmd = event.tool_args.get("command", "")[:40]
-            desc = f"[tool]{verb}[/] [muted]{cmd}[/]"
+            desc = f"{icon}[tool]{verb}[/] [muted]{cmd}[/]"
         elif target:
-            desc = f"[tool]{verb}[/] [muted]{target}[/]"
+            desc = f"{icon}[tool]{verb}[/] [muted]{target}[/]"
         else:
-            desc = f"[tool]{verb}...[/]"
+            desc = f"{icon}[tool]{verb}...[/]"
 
         if self._progress and self._current_task is not None:
             self._progress.update(self._current_task, description=desc)
@@ -388,10 +384,13 @@ class BuildDisplay:
             if file_parts:
                 console.print(f"       {' '.join(file_parts)}")
 
-        # Show error detail for failures
+        # Show error detail for failures with actionable suggestions
         if trace.status == "failed" and trace.error:
             err_preview = trace.error[:120].replace("\n", " ")
             console.print(f"       [error]{err_preview}[/]")
+            suggestion = _suggest_fix(trace.error)
+            if suggestion:
+                console.print(f"       [hint]{suggestion}[/]")
 
     # ── Build summary ───────────────────────────────────────────────────
 
@@ -421,8 +420,8 @@ class BuildDisplay:
         # ── Summary table ────────────────────────────────────────────────
         table = Table(
             box=box.ROUNDED, show_header=False, padding=(0, 2),
-            border_style="bright_magenta" if failed == 0 else "yellow",
-            title="[bold] Build Summary [/]",
+            border_style=BRAND["accent"] if failed == 0 else BRAND["orange"],
+            title=f"[bold {BRAND['accent2']}] Build Summary [/]",
         )
         table.add_column("Key", style="bold", width=12)
         table.add_column("Value")
@@ -525,14 +524,14 @@ class ChatDisplay:
     def create_progress(self) -> Progress:
         """Create and return the Progress instance for use as context manager."""
         self._progress = Progress(
-            SpinnerColumn("dots"),
+            SpinnerColumn(SPINNERS["thinking"]),
             TextColumn("[progress.description]{task.description}"),
             TimeElapsedColumn(),
             console=console,
             transient=True,
         )
         self._task_id = self._progress.add_task(
-            "[nova]Nova[/] is thinking...", total=None,
+            f"[nova]Nova[/] [{BRAND['accent']}]is thinking...[/]", total=None,
         )
         return self._progress
 

@@ -14,10 +14,47 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+import signal
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+class BuildCancellation:
+    """Cooperative cancellation signal for multi-agent builds.
+
+    During builds, replaces SIGINT handler so Ctrl-C sets an asyncio.Event
+    instead of raising KeyboardInterrupt. Agents check this event at safe
+    boundaries (between turns, between tool calls) and exit cleanly.
+    """
+
+    def __init__(self):
+        self.pause_requested = asyncio.Event()
+        self._original_handler = None
+        self._installed = False
+
+    def install(self):
+        """Replace SIGINT handler with pause signal. Call at build start."""
+        self._original_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self._handle_sigint)
+        self._installed = True
+
+    def uninstall(self):
+        """Restore original SIGINT handler. Call in finally block."""
+        if self._installed and self._original_handler is not None:
+            signal.signal(signal.SIGINT, self._original_handler)
+            self._installed = False
+
+    def _handle_sigint(self, signum, frame):
+        self.pause_requested.set()
+
+    def is_paused(self) -> bool:
+        return self.pause_requested.is_set()
+
+    def reset(self):
+        self.pause_requested.clear()
 
 
 @dataclass

@@ -55,6 +55,7 @@ def make_agent(tmp_path: Path, autonomy_level: int | None = None) -> ForgeAgent:
         hooks=hooks,
         max_turns=5,
         wire_v11_hooks=False,  # Don't auto-wire; we'll set manager manually
+        streaming=False,
     )
     if autonomy_level is not None:
         agent.autonomy_manager = make_manager(tmp_path, autonomy_level)
@@ -161,6 +162,7 @@ def test_autonomy_manager_wired_into_agent(tmp_path):
         hooks=hooks,
         max_turns=5,
         wire_v11_hooks=True,
+        streaming=False,
     )
 
     assert agent.autonomy_manager is not None

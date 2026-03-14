@@ -12,12 +12,13 @@ from formations import (
 class TestFormationRegistry:
     """All 8 formations are importable and well-formed."""
 
-    def test_eight_formations_registered(self):
-        assert len(FORMATIONS) == 8
+    def test_ten_formations_registered(self):
+        assert len(FORMATIONS) == 10
         expected = {
             "single-file", "lightweight-feature", "feature-impl",
             "new-project", "bug-investigation", "security-review",
             "perf-optimization", "code-review",
+            "recovery", "all-hands-planning",
         }
         assert set(FORMATIONS.keys()) == expected
 
@@ -70,7 +71,7 @@ class TestSelectFormation:
         ("medium", "large", "feature-impl"),
         ("complex", "small", "lightweight-feature"),
         ("complex", "medium", "feature-impl"),
-        ("complex", "large", "feature-impl"),
+        ("complex", "large", "all-hands-planning"),
         ("novel", "small", "new-project"),
         ("novel", "medium", "new-project"),
         ("novel", "large", "new-project"),
@@ -146,3 +147,46 @@ class TestToolProfiles:
 
     def test_minimal_empty(self):
         assert len(TOOL_PROFILES["minimal"]) == 0
+
+
+class TestNewFormations:
+    """Tests for recovery and all-hands-planning formations."""
+
+    def test_recovery_formation_structure(self):
+        f = get_formation("recovery")
+        assert len(f.roles) == 3
+        role_names = {r.name for r in f.roles}
+        assert role_names == {"investigator", "fixer", "validator"}
+        assert len(f.wave_order) == 3  # Sequential: investigate → fix → validate
+
+    def test_recovery_no_ownership_overlaps(self):
+        f = get_formation("recovery")
+        warnings = validate_ownership(f)
+        assert warnings == []
+
+    def test_all_hands_planning_structure(self):
+        f = get_formation("all-hands-planning")
+        assert len(f.roles) == 5
+        role_names = {r.name for r in f.roles}
+        assert "synthesizer" in role_names
+        assert "arch-reviewer" in role_names
+        # First wave has 4 parallel reviewers, second has synthesizer
+        assert len(f.wave_order[0]) == 4
+        assert f.wave_order[1] == ["synthesizer"]
+
+    def test_all_hands_planning_reviewers_readonly(self):
+        f = get_formation("all-hands-planning")
+        for role in f.roles:
+            if "reviewer" in role.name:
+                assert role.tool_policy == "readonly", (
+                    f"{role.name} should be readonly, got {role.tool_policy}"
+                )
+
+    def test_all_hands_planning_no_ownership_overlaps(self):
+        f = get_formation("all-hands-planning")
+        warnings = validate_ownership(f)
+        assert warnings == []
+
+    def test_daao_routes_complex_large_to_all_hands(self):
+        f = select_formation("complex", "large")
+        assert f.name == "all-hands-planning"

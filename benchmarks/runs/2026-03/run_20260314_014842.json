@@ -1,0 +1,362 @@
+{
+  "schema_version": 2,
+  "timestamp": "2026-03-14T01:48:42.118889",
+  "run_name": "",
+  "metadata": {
+    "git_commit": "2e5b8c1",
+    "git_branch": "main",
+    "git_dirty": true,
+    "git_changed_files": [
+      "CLAUDE.md",
+      "README.md",
+      "agents/spec-implementer.yml",
+      "agents/spec-recovery.yml",
+      "agents/spec-tester.yml",
+      "config.py",
+      "forge_agent.py",
+      "forge_assistant.py",
+      "forge_cli.py",
+      "forge_comms.py",
+      "forge_deployer.py",
+      "forge_display.py",
+      "forge_orchestrator.py",
+      "forge_preview.py",
+      "forge_prompt.py",
+      "forge_verify.py",
+      "forge_web.py",
+      "formations.py",
+      "model_router.py",
+      "prompt_builder.py",
+      "tests/unit/test_agent.py",
+      "tests/unit/test_agent_intelligence.py",
+      "tests/unit/test_autonomy_integration.py",
+      "tests/unit/test_env_prompt.py",
+      "tests/unit/test_formations.py",
+      "tests/unit/test_light_model.py",
+      "tests/unit/test_preview.py",
+      "tests/unit/test_prompt_builder.py",
+      "tests/unit/test_retry.py",
+      "tests/unit/test_token_efficiency.py"
+    ],
+    "python_version": "3.11.2",
+    "platform": "Linux-6.1.0-39-amd64-x86_64-with-glibc2.36",
+    "spec_hash": "d837b2042c24",
+    "system_prompt_hash": "",
+    "models_run": [
+      "nova-lite"
+    ],
+    "trigger": ""
+  },
+  "summary": {
+    "models": [
+      "nova-lite"
+    ],
+    "grades": {
+      "nova-lite": "A"
+    },
+    "scores": {
+      "nova-lite": 91.7
+    },
+    "duration_total": 106.7,
+    "cost_total": 0.0
+  },
+  "results": [
+    {
+      "model_alias": "nova-lite",
+      "model_id": "bedrock/us.amazon.nova-2-lite-v1:0",
+      "timestamp": "2026-03-14 01:46:53",
+      "duration_secs": 106.7,
+      "tasks_passed": 4,
+      "tasks_total": 5,
+      "retries": 0,
+      "total_turns": 33,
+      "total_tool_calls": 25,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_cost": 0.0,
+      "overall_score": 91.7,
+      "grade": "A",
+      "dimension_scores": {
+        "task_completion": 100.0,
+        "code_quality": 93.5,
+        "interface_fidelity": 100.0,
+        "runtime_viability": 55.6,
+        "efficiency": 100.0
+      },
+      "checks": [
+        {
+          "name": "File exists: models.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5021 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: main.py",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5039 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/index.html",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5675 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "File exists: static/app.js",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "7100 bytes",
+          "weight": 2.0
+        },
+        {
+          "name": "Not stub: models.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5021 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: main.py >= 300B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5039 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/index.html >= 500B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "5675 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "Not stub: static/app.js >= 400B",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "7100 bytes",
+          "weight": 1.0
+        },
+        {
+          "name": "All 4 tasks passed",
+          "dimension": "task_completion",
+          "passed": true,
+          "detail": "4/4",
+          "weight": 3.0
+        },
+        {
+          "name": "Syntax OK: models.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Syntax OK: main.py",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py uses sqlite3",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py avoids SQLAlchemy",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "models.py exports functions (not classes)",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "6 funcs, 0 classes",
+          "weight": 1.5
+        },
+        {
+          "name": "HTML has <form>",
+          "dimension": "code_quality",
+          "passed": false,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML links app.js",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "HTML has list/checkbox UI",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS uses fetch()",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS calls /api/ endpoints",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "JS has DOM manipulation",
+          "dimension": "code_quality",
+          "passed": true,
+          "detail": "",
+          "weight": 1.0
+        },
+        {
+          "name": "Import/export names match",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all match",
+          "weight": 4.0
+        },
+        {
+          "name": "No ORM hallucination: .query()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: .to_dict()",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "No ORM hallucination: db.session",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "",
+          "weight": 2.0
+        },
+        {
+          "name": "Required functions present",
+          "dimension": "interface_fidelity",
+          "passed": true,
+          "detail": "all 5 present",
+          "weight": 3.0
+        },
+        {
+          "name": "Route defined: /api/todos",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "",
+          "weight": 1.5
+        },
+        {
+          "name": "Stack detected",
+          "dimension": "runtime_viability",
+          "passed": true,
+          "detail": "fastapi: main.py",
+          "weight": 1.0
+        },
+        {
+          "name": "Runtime test",
+          "dimension": "runtime_viability",
+          "passed": false,
+          "detail": "Server failed to start on port 5014: kages/pydantic/fields.py\", line 1039, in Field\n    raise Pydant",
+          "weight": 2.0
+        },
+        {
+          "name": "Zero retries needed",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "0 retries",
+          "weight": 2.0
+        },
+        {
+          "name": "Turns <= 40",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "33 turns",
+          "weight": 1.5
+        },
+        {
+          "name": "Duration <= 360s",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "107s",
+          "weight": 1.0
+        },
+        {
+          "name": "Cost <= $0.05",
+          "dimension": "efficiency",
+          "passed": true,
+          "detail": "$0.00",
+          "weight": 1.5
+        }
+      ],
+      "task_results": [
+        {
+          "task_id": "1",
+          "subject": "Create todo database models",
+          "status": "pass",
+          "turns": 7,
+          "tool_calls": 5,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 17.2,
+          "cost": 0.0
+        },
+        {
+          "task_id": "2",
+          "subject": "Create FastAPI routes",
+          "status": "pass",
+          "turns": 9,
+          "tool_calls": 7,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 39.0,
+          "cost": 0.0
+        },
+        {
+          "task_id": "3",
+          "subject": "Create frontend HTML page",
+          "status": "pass",
+          "turns": 7,
+          "tool_calls": 5,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 25.0,
+          "cost": 0.0
+        },
+        {
+          "task_id": "4",
+          "subject": "Create frontend JavaScript",
+          "status": "pass",
+          "turns": 10,
+          "tool_calls": 8,
+          "files_created": 1,
+          "retries": 0,
+          "duration": 25.3,
+          "cost": 0.0
+        }
+      ],
+      "interface_issues": [],
+      "server_ok": false
+    }
+  ]
+}

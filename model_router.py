@@ -106,9 +106,17 @@ class BedrockAdapter(ProviderAdapter):
 
     def __init__(self) -> None:
         import boto3  # type: ignore[import]
+        from botocore.config import Config as BotoConfig
 
         region = os.environ.get("AWS_REGION", "us-east-1")
-        self._client = boto3.client("bedrock-runtime", region_name=region)
+        bedrock_config = BotoConfig(
+            connect_timeout=30,
+            read_timeout=300,
+            retries={"max_attempts": 2, "mode": "standard"},
+        )
+        self._client = boto3.client(
+            "bedrock-runtime", region_name=region, config=bedrock_config,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
