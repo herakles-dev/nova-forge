@@ -1,0 +1,7 @@
+# Full — includes all optional providers and web dashboard
+-r requirements.txt
+openai>=1.0          # OpenRouter (Gemini models)
+anthropic>=0.39      # Anthropic (Claude models)
+flask>=3.0           # Web dashboard (forge.herakles.dev)
+flask-cors>=4.0      # Web dashboard CORS
+gunicorn>=21.0       # Production web server

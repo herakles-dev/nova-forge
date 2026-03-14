@@ -68,26 +68,25 @@ User Goal → Deep Interview (3-phase: scope, technical, risk)
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.11+
-- AWS credentials for Amazon Bedrock (Nova models)
-
-### Install & Run
+**Prerequisites**: Python 3.11+ and AWS credentials with [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) for Nova models.
 
 ```bash
 git clone https://github.com/herakles-dev/nova-forge.git
 cd nova-forge
-pip install -r requirements.txt
+./setup.sh                    # Creates venv + installs deps
 
-# Configure AWS Bedrock
+source .venv/bin/activate     # Activate the virtual environment
+
+# Set your AWS Bedrock credentials
 export AWS_ACCESS_KEY_ID="your-key"
 export AWS_SECRET_ACCESS_KEY="your-secret"
 export AWS_DEFAULT_REGION="us-east-1"
 
-# Launch
-python3 forge_cli.py
+python3 forge_cli.py          # Launch Nova Forge
 ```
+
+> **Note**: If `./setup.sh` doesn't work on your system, you can install manually:
+> `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
 
 ### Interactive Commands
 
