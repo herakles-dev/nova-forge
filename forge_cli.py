@@ -2514,10 +2514,10 @@ class ForgeShell:
             console.print(f"  [warning]Verify: SKIP[/] — {exc}")
 
     async def _agent_repair_preview(self, port: int) -> bool:
-        """Run a ForgeAgent to diagnose and fix why GET / returns 404.
+        """Run a ForgeAgent to diagnose and fix why GET / fails.
 
-        The agent reads the project files, identifies the mismatch between
-        code and file locations, and fixes it. Returns True if repair was attempted.
+        The agent reads the project files and error logs, identifies the issue,
+        and fixes it. Returns True if repair was attempted.
         """
         from forge_agent import ForgeAgent
         from config import get_model_config
@@ -2531,20 +2531,59 @@ class ForgeShell:
 
         file_tree = "\n".join(f"  {f}" for f in files[:30])
 
+        # Read server error log for actual traceback
+        error_log = ""
+        err_log_path = self.project_path / ".forge" / "preview-stderr.log"
+        if err_log_path.exists():
+            try:
+                log_text = err_log_path.read_text()
+                # Get the last 2000 chars (most recent errors)
+                error_log = log_text[-2000:] if len(log_text) > 2000 else log_text
+            except Exception:
+                pass
+
+        # Also try hitting the URL with debug info
+        error_response = ""
+        if port > 0:
+            import urllib.request
+            import urllib.error
+            try:
+                req = urllib.request.Request(
+                    f"http://localhost:{port}/",
+                    headers={"User-Agent": "NovaForge/1.0"}
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except urllib.error.HTTPError as e:
+                try:
+                    error_response = e.read().decode("utf-8", errors="replace")[:1500]
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        error_section = ""
+        if error_log:
+            error_section += f"\n\n## Server Error Log (stderr)\n```\n{error_log}\n```"
+        if error_response:
+            error_section += f"\n\n## HTTP Error Response Body\n```\n{error_response}\n```"
+
         prompt = (
             f"## Problem\n"
-            f"This Flask/web app returns 404 on GET /. The server starts but the root route is broken.\n\n"
-            f"## Project Files\n{file_tree}\n\n"
+            f"This web app's GET / is broken. The server starts but returns an error.\n\n"
+            f"## Project Files\n{file_tree}\n"
+            f"{error_section}\n\n"
             f"## Your Task\n"
             f"1. Read app.py (or the main server file) to see how / is routed\n"
-            f"2. Read the file it tries to serve (check both static/ and templates/)\n"
-            f"3. Fix the mismatch. Common issues:\n"
-            f"   - app.send_static_file('x.html') but file is in templates/ → change to render_template('x.html') and fix imports\n"
-            f"   - render_template('x.html') but file is in static/ → move/copy file to templates/\n"
-            f"   - No route for / at all → add one\n"
-            f"   - Missing import (e.g. render_template not imported from flask)\n"
-            f"4. Write the fixed file using edit_file or write_file\n\n"
-            f"IMPORTANT: Actually fix the code. Do NOT just describe what to do — use your tools to make the change."
+            f"2. Check for these common issues:\n"
+            f"   - app.send_static_file('x.html') but file is in templates/ → use render_template('x.html') instead (it's a standalone function, NOT app.render_template)\n"
+            f"   - render_template('x.html') but file is in static/ → copy file to templates/ directory\n"
+            f"   - Missing import: render_template must be imported from flask (e.g. from flask import Flask, render_template)\n"
+            f"   - No route for / → add @app.route('/') def index(): ...\n"
+            f"   - Template syntax errors (Jinja2 {{ }} conflicts with JS) → use {{% raw %}} blocks\n"
+            f"   - Missing os import when os.environ is used\n"
+            f"3. Read the actual files involved to confirm the issue\n"
+            f"4. Fix the code using edit_file or write_file\n\n"
+            f"IMPORTANT: Actually fix the code. Do NOT just describe what to do — use your tools."
         )
 
         task_mc = get_model_config(self.model, max_tokens=4096)
@@ -2881,15 +2920,15 @@ class ForgeShell:
             except Exception:
                 root_status = 0
 
-            if root_status == 404:
-                console.print("  [warning]GET / returned 404 — running repair agent...[/]")
+            if root_status >= 400:
+                console.print(f"  [warning]GET / returned {root_status} — running repair agent...[/]")
                 repaired = await self._agent_repair_preview(si.port)
                 if repaired:
                     self._preview_mgr.stop()
                     self._preview_mgr = PreviewManager(self.project_path)
                     preview_url = self._preview_mgr.start(stack_info=si)
                     is_local = preview_url.startswith("http://localhost")
-                    console.print("  [info]Repair agent fixed file references[/]")
+                    console.print("  [info]Repair agent fixed the issue[/]")
 
             title = "[bold green] Local Preview [/]" if is_local else "[bold green] Live Preview [/]"
             console.print(Panel(
@@ -2976,9 +3015,9 @@ class ForgeShell:
             except Exception:
                 root_status = 0
 
-            if root_status == 404:
-                console.print("  [warning]GET / returned 404 — running repair agent...[/]")
-                import asyncio
+            if root_status >= 400:
+                label = "404 — route/file mismatch" if root_status == 404 else f"{root_status} — server error"
+                console.print(f"  [warning]GET / returned {label} — running repair agent...[/]")
                 repaired = await self._agent_repair_preview(si.port)
                 if repaired:
                     # Restart server with fixed code
@@ -3000,8 +3039,6 @@ class ForgeShell:
                         console.print(f"  [warning]Repair agent ran but GET / still returns {root_status}[/]")
                 else:
                     console.print("  [warning]Repair agent could not fix — app may not serve correctly[/]")
-            elif root_status >= 500:
-                console.print(f"  [warning]GET / returned {root_status} — server error in app code[/]")
 
             console.print()
             if is_local:
