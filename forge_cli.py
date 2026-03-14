@@ -771,7 +771,7 @@ class ForgeShell:
                 from io import StringIO
                 from rich.console import Console as _C
                 buf = StringIO()
-                _C(file=buf, force_terminal=True, theme=console._theme).print(tree)
+                _C(file=buf, force_terminal=True).print(tree)
                 tree_str = "\n" + buf.getvalue()
 
             console.print(Panel(
