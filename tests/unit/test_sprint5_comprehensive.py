@@ -398,11 +398,11 @@ class TestThinkToolReadTrackingAutoVerify:
             {},
         )
         assert "syntax OK" not in result.lower()
-        assert "SYNTAX ERROR" not in result
+        assert "Syntax issue" not in result
 
     @pytest.mark.asyncio
     async def test_auto_verify_reports_syntax_error_for_bad_py(self, tmp_path):
-        """Writing a syntactically invalid .py file reports SYNTAX ERROR."""
+        """Writing a syntactically invalid .py file reports Syntax issue."""
         agent = make_agent(tmp_path)
         target = tmp_path / "bad.py"
         result = await agent._run_tool(
@@ -410,13 +410,13 @@ class TestThinkToolReadTrackingAutoVerify:
             {"path": str(target), "content": "def broken(\n  # unclosed paren\n"},
             {},
         )
-        assert "SYNTAX ERROR" in result, (
-            f"Expected SYNTAX ERROR for invalid Python, got: {result}"
+        assert "Syntax issue" in result, (
+            f"Expected Syntax issue for invalid Python, got: {result}"
         )
 
     @pytest.mark.asyncio
     async def test_auto_verify_reports_syntax_error_for_bad_json(self, tmp_path):
-        """Writing invalid JSON reports SYNTAX ERROR."""
+        """Writing invalid JSON reports Syntax issue."""
         agent = make_agent(tmp_path)
         target = tmp_path / "bad.json"
         result = await agent._run_tool(
@@ -424,8 +424,8 @@ class TestThinkToolReadTrackingAutoVerify:
             {"path": str(target), "content": '{"key": "value", broken}'},
             {},
         )
-        assert "SYNTAX ERROR" in result, (
-            f"Expected SYNTAX ERROR for invalid JSON, got: {result}"
+        assert "Syntax issue" in result, (
+            f"Expected Syntax issue for invalid JSON, got: {result}"
         )
 
 

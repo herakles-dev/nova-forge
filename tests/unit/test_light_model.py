@@ -172,7 +172,7 @@ def test_full_system_prompt_for_large_model():
 
     # Focused prompt should include key directives and be larger than slim
     assert "You ACT" in prompt
-    assert "SYNTAX ERROR" in prompt
+    assert "Syntax issue" in prompt
     assert len(prompt) > 1500
 
 

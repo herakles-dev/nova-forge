@@ -45,7 +45,7 @@ async def test_auto_verify_js_syntax_error(tmp_path):
     js_file = tmp_path / "bad.js"
     js_file.write_text("function hello( { return 'world'; }\n")
     result = await agent._auto_verify(js_file)
-    assert "SYNTAX ERROR" in result
+    assert "Syntax issue" in result
 
 
 def test_verify_html_ok(tmp_path):
@@ -307,7 +307,7 @@ def test_system_prompt_has_self_verify():
         model_id="openrouter/google/gemini-2.0-flash-001",
     )
     assert "Verification" in prompt
-    assert "SYNTAX ERROR" in prompt
+    assert "Syntax issue" in prompt
 
 
 def test_system_prompt_has_code_quality():
@@ -332,7 +332,7 @@ def test_slim_prompt_has_verify_hints():
         role="builder",
         model_id="bedrock/us.amazon.nova-2-lite-v1:0",
     )
-    assert "SYNTAX ERROR" in prompt
+    assert "Syntax issue" in prompt
     assert "CONFLICT" in prompt
     assert "write_file" in prompt
 

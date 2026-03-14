@@ -83,6 +83,15 @@ def _recover_json(raw: str) -> list | None:
     except json.JSONDecodeError:
         pass
 
+    # Python dict literal → JSON (single quotes → double quotes, True/False/None)
+    try:
+        import ast
+        data = ast.literal_eval(raw)
+        if isinstance(data, list):
+            return json.loads(json.dumps(data))  # Round-trip to ensure JSON-compatible types
+    except (ValueError, SyntaxError):
+        pass
+
     # Remove trailing commas before ] or } (common LLM mistake)
     cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
     if cleaned != raw:
@@ -241,7 +250,7 @@ class ForgeOrchestrator:
             hooks=hooks,
             sandbox=sandbox,
             tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
-            max_turns=20,
+            max_turns=25,
             agent_id="forge-decomposer",
         )
 
@@ -277,7 +286,11 @@ class ForgeOrchestrator:
                 "3. Backend files first (blocked_by: []), frontend files depend on backend.\n"
                 "4. The task description MUST include ALL features that go into that file.\n"
                 "5. If the spec says 'NOT X' or 'do NOT use X', repeat that constraint in the task description.\n"
-                "6. Target 3-8 tasks total. More tasks = more interface mismatches.\n\n"
+                "6. Target 3-8 tasks total. More tasks = more interface mismatches.\n"
+                "7. File paths in 'files' field must be ROOT-RELATIVE — use 'index.html' not 'src/index.html'.\n"
+                "   For Flask: 'templates/index.html', 'static/style.css', 'app.py'.\n"
+                "   For static sites: 'index.html', 'style.css', 'app.js' (all at project root).\n"
+                "8. Output MUST be valid JSON with double quotes. NOT Python dicts with single quotes.\n\n"
                 "Example for a Flask+JS app:\n"
                 '  [{"subject": "Create models.py — database layer", '
                 '"description": "SQLite helper functions: create_tables(), get_tasks(), create_task(title, order), '

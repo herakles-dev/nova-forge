@@ -182,7 +182,7 @@ class TestBuildSystemPrompt:
         # Core tool guidance must be present (full or focused prompt)
         assert "write_file" in prompt
         assert "read" in prompt.lower()
-        assert "SYNTAX ERROR" in prompt
+        assert "Syntax issue" in prompt
 
     def test_build_system_prompt_includes_behavior(self, builder):
         prompt = builder.build_system_prompt(role="builder")

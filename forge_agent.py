@@ -1560,7 +1560,7 @@ class ForgeAgent:
                     return " (syntax OK)"
                 else:
                     err = stderr.decode(errors='replace').strip().split('\n')[-1][:200]
-                    return f" (SYNTAX ERROR: {err})"
+                    return f"\n\nSyntax issue detected: {err}\nThe file was written but has a syntax problem. Please fix it."
             except Exception:
                 return ""
 
