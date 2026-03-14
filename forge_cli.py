@@ -1810,6 +1810,12 @@ class ForgeShell:
     def _assign_formation_role(self, task: Any, formation: Any) -> Any:
         """Map a task to the best-matching formation role by keyword heuristics."""
         role_by_name: dict[str, Any] = {r.name: r for r in formation.roles}
+
+        # Priority 1: Explicit agent hint in task metadata
+        agent_hint = (task.metadata or {}).get("agent", "")
+        if agent_hint and agent_hint in role_by_name:
+            return role_by_name[agent_hint]
+
         desc = (task.subject + " " + (task.description or "")).lower()
         role_keywords: dict[str, list[str]] = {
             "backend-impl":   ["backend", "api", "server", "route", "endpoint", "database", "model"],

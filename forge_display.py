@@ -212,8 +212,8 @@ class BuildDisplay:
         trace.status = "passed" if passed else "failed"
         if result:
             trace.turns = getattr(result, "turns", 0)
-            trace.tokens_in += getattr(result, "token_usage", {}).get("input", 0)
-            trace.tokens_out += getattr(result, "token_usage", {}).get("output", 0)
+            trace.tokens_in += getattr(result, "tokens_in", 0)
+            trace.tokens_out += getattr(result, "tokens_out", 0)
             if not passed and getattr(result, "error", None):
                 trace.error = result.error
             trace.self_corrections = getattr(result, "self_corrections", 0)
@@ -272,6 +272,11 @@ class BuildDisplay:
             trace._current_tool = event.tool_name
             trace._current_file = event.file_path
             trace._tool_start_ms = int(time.monotonic() * 1000)
+            # Capture bash commands at start (tool_end lacks tool_args)
+            if event.tool_name == "bash":
+                cmd = event.tool_args.get("command", "")[:60]
+                if cmd:
+                    trace.commands_run.append(cmd)
             self._update_tool_status(event, trace)
 
         elif event.kind == "tool_end":
@@ -286,7 +291,7 @@ class BuildDisplay:
             }
             trace.tool_log.append(tool_entry)
             # Track files
-            if event.file_action == "write" and event.file_path:
+            if event.file_action in ("write", "append") and event.file_path:
                 if event.file_path not in trace.files_written:
                     trace.files_written.append(event.file_path)
             elif event.file_action == "edit" and event.file_path:
@@ -296,9 +301,7 @@ class BuildDisplay:
                 if event.file_path not in trace.files_read:
                     trace.files_read.append(event.file_path)
             elif event.file_action == "run":
-                cmd = event.tool_args.get("command", "")[:60]
-                if cmd:
-                    trace.commands_run.append(cmd)
+                pass  # commands captured at tool_start (tool_end lacks tool_args)
 
             if event.error:
                 trace.error = event.error

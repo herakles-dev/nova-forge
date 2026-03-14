@@ -52,10 +52,11 @@ def _infer_files_from_subject(subject: str, description: str = "") -> list[str]:
     if files:
         return files
 
-    # Fall back to any file-like patterns in subject
-    for m in re.finditer(r'([a-zA-Z0-9_]+(?:/[a-zA-Z0-9_]+)*\.\w{1,6})', subject):
-        candidate = m.group(1)
-        if candidate and not candidate.startswith('.') and candidate not in files:
+    # Fall back to file-like patterns with known extensions only
+    _KNOWN_EXTS = {"py", "js", "ts", "jsx", "tsx", "html", "css", "json", "yaml", "yml", "md", "sql", "sh", "toml", "cfg", "txt", "csv", "xml"}
+    for m in re.finditer(r'([a-zA-Z0-9_]+(?:/[a-zA-Z0-9_]+)*\.(\w{1,6}))', subject):
+        candidate, ext = m.group(1), m.group(2).lower()
+        if ext in _KNOWN_EXTS and not candidate.startswith('.') and candidate not in files:
             files.append(candidate)
 
     return files
@@ -109,7 +110,7 @@ def _recover_json(raw: str) -> list | None:
     if start >= 0:
         partial = raw[start:]
         # Remove trailing comma before close
-        for suffix in ["]", "}]", '"}]', '"}]']:
+        for suffix in ["]", "}]", '"}]', '"} ]']:
             cleaned = re.sub(r",\s*$", "", partial)
             try:
                 data = json.loads(cleaned + suffix)

@@ -790,6 +790,7 @@ def get_formation(name: str) -> Formation:
 _DAAO_TABLE: dict[tuple[str, str], str] = {
     ("routine", "small"):  "single-file",
     ("routine", "medium"): "lightweight-feature",
+    ("routine", "large"):  "lightweight-feature",
     ("medium",  "small"):  "lightweight-feature",
     ("medium",  "medium"): "lightweight-feature",
     ("medium",  "large"):  "feature-impl",
