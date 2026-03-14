@@ -94,9 +94,19 @@ class BuildVerifier:
         # L1: Static checks
         self._check_syntax(result)
         self._check_imports(result)
+        self._check_file_references(result)
 
         # L2: Server check — start the app
         server_ok, port, preview_mgr = await self._check_server(result)
+
+        # L2.5: Root route check — GET / must return 200
+        if server_ok and port:
+            status = await self._check_http_status(port, "/")
+            if 200 <= status < 400:
+                result.add("root_route", True, f"GET / returned {status}")
+            else:
+                detail = self._diagnose_root_404(status)
+                result.add("root_route", False, detail)
 
         # L3: Browser checks (only if server started)
         if server_ok and port:
@@ -176,6 +186,102 @@ class BuildVerifier:
         else:
             result.add("imports", True, "All intra-project imports resolve")
 
+    def _check_file_references(self, result: VerifyResult) -> None:
+        """Verify that code file references (templates, static files) resolve to actual files."""
+        py_files = sorted(self.project_path.glob("**/*.py"))
+        py_files = [f for f in py_files if not _skip_path(f, self.project_path)]
+
+        mismatches = []
+        for f in py_files:
+            try:
+                src = f.read_text()
+            except Exception:
+                continue
+
+            # Flask: render_template('x.html') → must exist in templates/
+            for m in re.finditer(r"render_template\(\s*['\"]([^'\"]+)['\"]", src):
+                ref = m.group(1)
+                target = self.project_path / "templates" / ref
+                if not target.exists():
+                    # Check if it's misplaced in static/ instead
+                    alt = self.project_path / "static" / ref
+                    if alt.exists():
+                        mismatches.append(f"{f.name}: render_template('{ref}') but file is in static/, not templates/")
+                    else:
+                        mismatches.append(f"{f.name}: render_template('{ref}') but templates/{ref} missing")
+
+            # Flask: send_static_file('x.html') → must exist in static/
+            for m in re.finditer(r"send_static_file\(\s*['\"]([^'\"]+)['\"]", src):
+                ref = m.group(1)
+                target = self.project_path / "static" / ref
+                if not target.exists():
+                    alt = self.project_path / "templates" / ref
+                    if alt.exists():
+                        mismatches.append(f"{f.name}: send_static_file('{ref}') but file is in templates/, not static/")
+                    else:
+                        mismatches.append(f"{f.name}: send_static_file('{ref}') but static/{ref} missing")
+
+            # Jinja2: url_for('static', filename='x') → must exist in static/
+            for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
+                ref = m.group(1)
+                target = self.project_path / "static" / ref
+                if not target.exists():
+                    mismatches.append(f"{f.name}: url_for static '{ref}' but static/{ref} missing")
+
+        # Also check HTML templates for broken static references
+        html_files = list(self.project_path.glob("templates/**/*.html")) + list(self.project_path.glob("static/**/*.html"))
+        for f in html_files:
+            try:
+                src = f.read_text()
+            except Exception:
+                continue
+            for m in re.finditer(r"url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]", src):
+                ref = m.group(1)
+                target = self.project_path / "static" / ref
+                if not target.exists():
+                    mismatches.append(f"{f.name}: references static/{ref} but file missing")
+
+        if mismatches:
+            result.add("file_references", False, "; ".join(mismatches[:5]))
+        elif py_files:
+            result.add("file_references", True, "All file references resolve")
+
+    def _diagnose_root_404(self, status: int) -> str:
+        """Diagnose why GET / failed and suggest the fix."""
+        if status == 404:
+            # Check for common misplacements
+            has_templates_index = (self.project_path / "templates" / "index.html").exists()
+            has_static_index = (self.project_path / "static" / "index.html").exists()
+
+            # Read app.py to see what the route does
+            app_py = self.project_path / "app.py"
+            route_uses = ""
+            if app_py.exists():
+                try:
+                    src = app_py.read_text()
+                    if "send_static_file" in src and has_templates_index and not has_static_index:
+                        return (
+                            f"GET / returned 404: app.py uses send_static_file() "
+                            f"but index.html is in templates/ not static/"
+                        )
+                    if "render_template" in src and has_static_index and not has_templates_index:
+                        return (
+                            f"GET / returned 404: app.py uses render_template() "
+                            f"but index.html is in static/ not templates/"
+                        )
+                except Exception:
+                    pass
+
+            if has_templates_index or has_static_index:
+                return f"GET / returned 404: index.html exists but route is misconfigured"
+            return f"GET / returned 404: no root route or missing index.html"
+        elif status == 500:
+            return f"GET / returned 500: server error — check app.py for runtime bugs"
+        elif status == 0:
+            return "GET / failed: no HTTP response from server"
+        else:
+            return f"GET / returned {status}"
+
     # ── L2: Server check ────────────────────────────────────────────────
 
     async def _check_server(self, result: VerifyResult) -> tuple[bool, int | None, Any]:
@@ -210,7 +316,7 @@ class BuildVerifier:
             return False, None, None
 
     async def _check_http(self, port: int, path: str = "/", timeout: float = 5.0) -> bool:
-        """Send a simple HTTP GET and check for 2xx/3xx response."""
+        """Send a simple HTTP GET and check for any response (server is alive)."""
         import urllib.request
         import urllib.error
 
@@ -228,6 +334,25 @@ class BuildVerifier:
             return e.code < 500
         except Exception:
             return False
+
+    async def _check_http_status(self, port: int, path: str = "/", timeout: float = 5.0) -> int:
+        """Send HTTP GET and return the actual status code (0 on connection error)."""
+        import urllib.request
+        import urllib.error
+
+        url = f"http://localhost:{port}{path}"
+        try:
+            loop = asyncio.get_event_loop()
+            req = urllib.request.Request(url, headers={"User-Agent": "NovaForge-Verify/1.0"})
+            resp = await loop.run_in_executor(
+                None,
+                lambda: urllib.request.urlopen(req, timeout=timeout)
+            )
+            return resp.status
+        except urllib.error.HTTPError as e:
+            return e.code
+        except Exception:
+            return 0
 
     # ── L3: Browser checks ──────────────────────────────────────────────
 

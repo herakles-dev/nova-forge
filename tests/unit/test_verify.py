@@ -291,3 +291,88 @@ class TestBuildVerifierIntegration:
         assert "python_syntax" in names
         assert "imports" in names
         assert "server_start" in names
+
+
+class TestFileReferenceCheck:
+    """Tests for L1 file reference consistency check."""
+
+    def test_send_static_file_correct(self, tmp_path):
+        """send_static_file pointing to a file in static/ passes."""
+        (tmp_path / "static").mkdir()
+        (tmp_path / "static" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return app.send_static_file('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_file_references(r)
+        ref_check = [c for c in r.checks if c.name == "file_references"]
+        assert ref_check and ref_check[0].passed
+
+    def test_send_static_file_wrong_dir(self, tmp_path):
+        """send_static_file('x') but file is in templates/ — must fail."""
+        (tmp_path / "templates").mkdir()
+        (tmp_path / "templates" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return app.send_static_file('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_file_references(r)
+        ref_check = [c for c in r.checks if c.name == "file_references"]
+        assert ref_check and not ref_check[0].passed
+        assert "templates/" in ref_check[0].detail
+
+    def test_render_template_correct(self, tmp_path):
+        """render_template pointing to templates/ passes."""
+        (tmp_path / "templates").mkdir()
+        (tmp_path / "templates" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask, render_template\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return render_template('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_file_references(r)
+        ref_check = [c for c in r.checks if c.name == "file_references"]
+        assert ref_check and ref_check[0].passed
+
+    def test_render_template_wrong_dir(self, tmp_path):
+        """render_template('x') but file is in static/ — must fail."""
+        (tmp_path / "static").mkdir()
+        (tmp_path / "static" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask, render_template\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return render_template('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_file_references(r)
+        ref_check = [c for c in r.checks if c.name == "file_references"]
+        assert ref_check and not ref_check[0].passed
+        assert "static/" in ref_check[0].detail
+
+    def test_diagnose_root_404_send_static_mismatch(self, tmp_path):
+        """Diagnosis correctly identifies send_static_file vs templates/ mismatch."""
+        (tmp_path / "templates").mkdir()
+        (tmp_path / "templates" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return app.send_static_file('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(404)
+        assert "send_static_file" in msg
+        assert "templates/" in msg

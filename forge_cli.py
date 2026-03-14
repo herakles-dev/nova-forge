@@ -1636,6 +1636,13 @@ class ForgeShell:
                 file_list = ", ".join(list(existing.keys())[:15])
                 context_hint += f"\n\nExisting files in project: {file_list}"
 
+            # Full project file manifest — every agent sees the FULL planned layout
+            all_planned_files: dict[str, str] = {}
+            for other_task in all_tasks:
+                other_files = (other_task.metadata or {}).get("files", [])
+                for f in other_files:
+                    all_planned_files[f] = other_task.subject
+
             # File ownership boundaries from planning metadata
             ownership_hint = ""
             task_files = (task.metadata or {}).get("files", [])
@@ -1646,6 +1653,25 @@ class ForgeShell:
                     f"NEVER write to files not in this list — they are owned by other agents "
                     f"and your writes WILL BE REJECTED. Focus exclusively on your assigned files."
                 )
+
+            # Show the full file layout so agents know where ALL files live
+            if all_planned_files:
+                other_files_map = {f: t for f, t in all_planned_files.items() if f not in task_files}
+                if other_files_map:
+                    ownership_hint += (
+                        f"\n\n## Full Project File Layout\n"
+                        f"These files are being created by other agents in parallel. "
+                        f"When your code references other files, use THESE EXACT PATHS:\n"
+                    )
+                    for fpath, tname in sorted(other_files_map.items()):
+                        ownership_hint += f"- `{fpath}` (from: {tname})\n"
+                    ownership_hint += (
+                        f"\nIMPORTANT: If you serve files via Flask/FastAPI/Express, "
+                        f"match the exact paths above. For Flask:\n"
+                        f"- Files in `templates/` → use `render_template()`\n"
+                        f"- Files in `static/` → use `send_static_file()` or `url_for('static')`\n"
+                        f"- Do NOT use `send_static_file()` for files in `templates/`"
+                    )
 
             # Downstream awareness — tell agent who depends on their output
             downstream = [t for t in all_tasks if task.id in (t.blocked_by or [])]
@@ -2462,6 +2488,15 @@ class ForgeShell:
             completed = store.list(status="completed") if store else []
             vr = await verifier.verify(tasks=completed)
 
+            # Auto-repair file reference mismatches before reporting
+            repaired = False
+            failed_checks = [c for c in vr.checks if not c.passed and c.name in ("file_references", "root_route")]
+            if failed_checks:
+                repaired = self._auto_repair_file_refs()
+                if repaired:
+                    console.print("  [info]Auto-repaired file reference mismatches — re-verifying...[/]")
+                    vr = await verifier.verify(tasks=completed)
+
             if vr.status == "pass":
                 console.print(f"  [success]Verify: PASS[/] — {vr.summary}")
             elif vr.status == "fail":
@@ -2477,6 +2512,64 @@ class ForgeShell:
                     console.print(f"         [muted]screenshot: {check.evidence_path}[/]")
         except Exception as exc:
             console.print(f"  [warning]Verify: SKIP[/] — {exc}")
+
+    def _auto_repair_file_refs(self) -> bool:
+        """Fix common file reference mismatches between code and file locations.
+
+        Returns True if any repairs were made.
+        """
+        import re as _re
+        import shutil as _shutil
+
+        repaired = False
+        app_py = self.project_path / "app.py"
+        if not app_py.exists():
+            return False
+
+        try:
+            src = app_py.read_text()
+        except Exception:
+            return False
+
+        # Case 1: send_static_file('x') but file is in templates/
+        for m in _re.finditer(r"send_static_file\(\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            static_path = self.project_path / "static" / ref
+            templates_path = self.project_path / "templates" / ref
+            if not static_path.exists() and templates_path.exists():
+                # Fix: change send_static_file to render_template
+                old = m.group(0)
+                new = f"render_template('{ref}'"
+                src = src.replace(old, new)
+                # Ensure render_template is imported
+                if "render_template" not in src.split("\n")[0:10].__repr__():
+                    src = _re.sub(
+                        r"(from flask import .+)",
+                        lambda match: match.group(0) if "render_template" in match.group(0)
+                        else match.group(0).rstrip(")").rstrip() + ", render_template" +
+                            (")" if match.group(0).rstrip().endswith(")") else ""),
+                        src, count=1,
+                    )
+                repaired = True
+
+        # Case 2: render_template('x') but file is in static/
+        for m in _re.finditer(r"render_template\(\s*['\"]([^'\"]+)['\"]", src):
+            ref = m.group(1)
+            templates_path = self.project_path / "templates" / ref
+            static_path = self.project_path / "static" / ref
+            if not templates_path.exists() and static_path.exists():
+                # Fix: copy the file to templates/ (safer than changing code)
+                templates_path.parent.mkdir(parents=True, exist_ok=True)
+                _shutil.copy2(static_path, templates_path)
+                repaired = True
+
+        if repaired:
+            try:
+                app_py.write_text(src)
+            except Exception:
+                return False
+
+        return repaired
 
     # ── /status ──────────────────────────────────────────────────────────
 
