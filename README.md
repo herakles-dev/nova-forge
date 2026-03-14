@@ -1,294 +1,197 @@
 # Nova Forge
 
-> Open-source agent orchestration framework. V11's proven patterns, any LLM, pure Python.
+> Open-source agent orchestration framework powered by Amazon Nova. Describe what you want — Nova plans, builds, reviews, and deploys it.
 
-**Live demo**: [forge.herakles.dev](https://forge.herakles.dev)
+[![Amazon Nova AI Hackathon 2026](https://img.shields.io/badge/Amazon%20Nova-AI%20Hackathon%202026-ff9900?style=flat-square)](https://amazon-nova.devpost.com/)
+[![Tests](https://img.shields.io/badge/tests-1051%20passing-4ade80?style=flat-square)]()
+[![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square)](LICENSE)
+
+**Live demo**: [forge.herakles.dev](https://forge.herakles.dev) | **Interactive demos**: [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/)
 
 ## What is Nova Forge?
 
-Nova Forge replaces closed-source agent runtimes (Claude Code, Cursor, etc.) with a **pure Python tool-use loop** that works with **any LLM** supporting function calling.
+Nova Forge is an AI agent orchestration framework that turns a natural language description into a working, deployed application. You describe what you want to build. Nova Forge orchestrates multiple AI agents to plan it, build it in parallel waves, review it with an adversarial quality gate, and deploy it — all from a single command.
 
-It ports battle-tested orchestration patterns from V11 (which built 89+ production services) to a standalone framework that runs with Amazon Nova, Google Gemini, Anthropic Claude, or any OpenAI-compatible model.
+Built entirely on **Amazon Nova** models via AWS Bedrock:
+
+- **Nova Lite** (32K) — Fast, affordable builds. S-tier on benchmarks.
+- **Nova Pro** (300K) — Complex multi-file projects. S-tier on benchmarks.
+- **Nova Premier** (1M) — Deep reasoning for the hardest problems. S-tier on benchmarks.
 
 ```bash
-# Launch the interactive CLI
-forge
+python3 forge_cli.py
 
-# Or use individual commands
-forge plan "weather dashboard API" --model nova-lite
-forge build --model gemini-flash
-forge preview            # Cloudflare Tunnel — shareable URL, no account needed
-forge deploy --domain weather.herakles.dev
+> Build an expense tracker with categories, charts, and CSV export
+  Nova interviews you → plans 5 tasks → builds in parallel → reviews → deploys
+  Result: Working Flask app in 170 seconds. Grade: S (100%).
 ```
+
+## Benchmark Results
+
+All 3 Amazon Nova models benchmarked across 4 difficulty scenarios with 25+ automated verification checks per run (HTTP testing, interface fidelity, code quality):
+
+| Scenario | Nova Lite (32K) | Nova Pro (300K) | Nova Premier (1M) |
+|----------|:-:|:-:|:-:|
+| **Expense Tracker** (Easy) | **S** 100% · 170s | **S** 99% · 130s | **S** 100% · 443s |
+| **Kanban Board** (Hard) | **A** 90% · 285s | **A** 90% · 240s | **A** 89% · 1336s |
+| Todo App (Easy) | Scenario defined | Scenario defined | Scenario defined |
+| Realtime Kanban (Nightmare) | Stress test | Stress test | Stress test |
+
+**Grade progression over development**: C → A → S (sprints 13-14). Key breakthroughs: 3-tier prompt system, pre-seeded upstream context, Bedrock 300s timeout configuration.
 
 ## Architecture
 
 ```
-User Goal → Interview (scope, stack, risk)
+User Goal → Deep Interview (3-phase: scope, technical, risk)
          → ForgeAgent (Planning) → spec.md + tasks.json
-         → WaveExecutor (Parallel Agents) → Built Project
+         → WaveExecutor (Parallel Agents per wave)
+           ├── Pre-seeded upstream context injection
            ├── Per-task retry with error self-correction
-           ├── Artifact handoff between dependent tasks
-           └── Dependency-aware failure blocking
-         → GateReviewer (Quality Check) → PASS/FAIL
-         → Preview (Cloudflare Tunnel) → Shareable URL
-         → ForgeDeployer (Docker + nginx) → Live URL
+           ├── Circuit breaker (auto-disable after 3 tool failures)
+           └── Artifact handoff between dependent tasks
+         → GateReviewer (Adversarial quality check) → PASS/FAIL
+         → PreviewManager (14-stack detection + Cloudflare Tunnel)
+         → ForgeDeployer (Docker + nginx + SSL) → Live URL
 ```
 
-### Key Components
+### Key Innovations
 
-| Component | Purpose |
-|-----------|---------|
-| **ForgeAgent** | Tool-use loop: prompt → LLM → tool calls → execute → loop. Emits real-time events. |
-| **ModelRouter** | 3 provider adapters: AWS Bedrock, OpenAI/OpenRouter, Anthropic |
-| **TaskStore** | CRUD + JSON persistence + topological sort for wave computation |
-| **WaveExecutor** | `asyncio.gather()` with semaphore throttling for parallel agents |
-| **BuildDisplay** | Rich live UI: real-time tool calls, per-task results, build summary with tokens/timing |
-| **10 Formations** | Pre-built team patterns (feature-impl, code-review, security-review, etc.) |
-| **GateReviewer** | LLM-backed quality gate producing PASS/FAIL/CONDITIONAL verdicts |
-| **HookSystem** | 12 pre/post/stop hooks compatible with V11's shell hook protocol |
-| **PathSandbox** | Defense-in-depth file access control |
-| **RiskClassifier** | 29 regex patterns for command risk classification |
-| **ArtifactManager** | Per-agent isolation with post-gather merging and upstream injection |
-| **ForgeDeployer** | Docker build → container → nginx reverse proxy → SSL → health check |
-
-### Agent Event System
-
-ForgeAgent emits real-time `AgentEvent` callbacks during execution:
-
-| Event | Data |
-|-------|------|
-| `turn_start` | Turn number |
-| `model_response` | Tokens in/out, duration |
-| `tool_start` | Tool name, args, file path |
-| `tool_end` | Result preview, duration, file action |
-| `compact` | Before/after token counts |
-| `error` | Error message |
-
-The `BuildDisplay` class subscribes to these events to render a live progress bar showing exactly what the agent is doing (reading files, writing code, running commands).
-
-## Supported Models
-
-| Alias | Provider | Model | Context |
-|-------|----------|-------|---------|
-| `nova-lite` | AWS Bedrock | Amazon Nova 2 Lite | 32K |
-| `nova-pro` | AWS Bedrock | Amazon Nova Pro | 300K |
-| `nova-premier` | AWS Bedrock | Amazon Nova Premier | 1M |
-| `gemini-flash` | OpenRouter | Google Gemini 2.0 Flash | 1M |
-| `gemini-pro` | OpenRouter | Google Gemini 2.5 Pro | 1M |
-| `claude-sonnet` | Anthropic | Claude Sonnet 4.6 | 200K |
-| `claude-haiku` | Anthropic | Claude Haiku 4.5 | 200K |
+| Innovation | What it does | Impact |
+|------------|-------------|--------|
+| **3-Tier Prompts** | Slim (32K), Focused (300K+), Full (1M+) system prompts per model | Nova Lite went from C to S tier |
+| **Pre-Seeded Context** | Dependent tasks get upstream file content injected | Saves 2-3 LLM turns per task |
+| **Circuit Breaker** | Auto-disables tools after 3 consecutive failures | Prevents infinite retry loops |
+| **Agent Self-Correction** | Agents verify their own output with read-back checks | Catches incomplete writes |
+| **JSON Recovery** | Handles malformed LLM output (trailing commas, truncation, fences) | Zero crash rate on bad JSON |
+| **Context Compaction** | Budget-based (60% for 32K, 65% for 200K+), preserves tool pairs | Enables 30-turn conversations |
+| **Bedrock 300s Timeout** | Custom botocore.Config for Premier's ~100s inference time | Premier went from C to S tier |
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- AWS credentials (for Bedrock models)
-- OpenRouter API key (for Gemini models, optional)
+- AWS credentials for Amazon Bedrock (Nova models)
 
-### Install
+### Install & Run
 
 ```bash
 git clone https://github.com/herakles-dev/nova-forge.git
 cd nova-forge
 pip install -r requirements.txt
-```
 
-### Set up credentials
-
-```bash
+# Configure AWS Bedrock
 export AWS_ACCESS_KEY_ID="your-key"
 export AWS_SECRET_ACCESS_KEY="your-secret"
 export AWS_DEFAULT_REGION="us-east-1"
-export OPENROUTER_API_KEY="your-key"  # optional, for Gemini
+
+# Launch
+python3 forge_cli.py
 ```
 
-### Interactive CLI (recommended)
+### Interactive Commands
+
+| Command | Description |
+|---------|-------------|
+| `/interview` | 3-phase deep planning interview (scope, stack, risk, formation, model) |
+| `/plan` | Generate task plan from spec |
+| `/build` | Execute all tasks with parallel AI agents |
+| `/preview` | Live preview via Cloudflare Tunnel (3x retry with backoff) |
+| `/deploy` | Production deployment (Docker + nginx + SSL) |
+| `/model <name>` | Switch model (`nova-lite`, `nova-pro`, `nova-premier`) |
+| `/formation <name>` | Set agent team layout (10 formations) |
+| `/autonomy <0-5>` | Set agent trust level (A0 manual → A5 unattended) |
+| `/health` | System health dashboard |
+| `/competition` | Hackathon submission readiness check (8 gates) |
+
+### Non-Interactive CLI
 
 ```bash
-forge                # Launch the interactive shell
-```
-
-Inside the shell:
-```
-> Build me a REST API for managing recipes
-  (Nova interviews you, plans, and builds automatically)
-
-/interview Build a weather dashboard    # Guided 5-step interview
-/plan REST API with auth                # Direct planning (skip interview)
-/build                                  # Execute the plan
-/preview                                # Share via Cloudflare Tunnel
-/deploy my-app.example.com             # Production deploy
-```
-
-### Non-interactive CLI
-
-```bash
-forge new my-app --template flask-api
-cd my-app
-forge plan "REST API with user authentication and CRUD endpoints"
+forge plan "expense tracker with categories and charts" --model nova-lite
 forge build
-forge preview              # Shareable URL via Cloudflare Tunnel
-forge deploy --domain my-app.example.com
+forge preview
+forge deploy --domain app.example.com
 ```
 
-## Interactive Shell Commands
+## 10 Agent Formations
 
-### Build
-| Command | Description |
-|---------|-------------|
-| `/interview <goal>` | Guided build with V11-style interview (scope, stack, risk) |
-| `/plan <goal>` | Plan a project directly (skip interview) |
-| `/build` | Execute the plan with retry + artifact handoff |
-| `/status` | Progress bar and project overview |
-| `/tasks` | See all tasks with status and dependencies |
+Pre-configured multi-agent team layouts with automatic DAAO routing:
 
-### Deploy & Preview
-| Command | Description |
-|---------|-------------|
-| `/preview` | Launch a live preview via Cloudflare Tunnel (shareable URL) |
-| `/preview stop` | Stop the tunnel and dev server |
-| `/deploy <domain>` | Deploy to production (Docker + nginx + SSL) |
+| Formation | Agents | Pattern |
+|-----------|--------|---------|
+| `single-file` | 1 | Quick edits, config changes |
+| `lightweight-feature` | 2 | Implementer + tester in parallel |
+| `feature-impl` | 4 | Backend + frontend parallel → integrator → tester |
+| `new-project` | 3 | Architect → 2 implementers |
+| `bug-investigation` | 3 | Three parallel investigators |
+| `security-review` | 3 | Scanner + modeler → fixer |
+| `perf-optimization` | 2 | Profiler → optimizer |
+| `code-review` | 3 | Three parallel reviewers (read-only) |
+| `recovery` | 3 | Investigator → fixer → validator |
+| `all-hands-planning` | 5 | 4 parallel reviewers → synthesizer |
 
-### Configuration
-| Command | Description |
-|---------|-------------|
-| `/model <name>` | Switch AI model (e.g. `/model gemini-flash`) |
-| `/models` | Show all available models + credential status |
-| `/config` | View or change settings |
-| `/login` | Set up API credentials for a provider |
+## Autonomy System (A0-A5)
 
-### Project
-| Command | Description |
-|---------|-------------|
-| `/resume <n>` | Resume a recent project |
-| `/new <name>` | Start a fresh project directory |
-| `/cd <path>` | Switch project directory |
-| `/pwd` | Show current project location |
-| `/formation` | Agent team configurations |
-| `/audit` | View the build audit log |
+Six trust levels control what agents can do without asking:
 
-## Build Features
+| Level | Read | Write | Bash | Deploy | Delete |
+|-------|:----:|:-----:|:----:|:------:|:------:|
+| A0 Manual | ask | ask | ask | ask | ask |
+| A1 Guided | auto | ask | ask | ask | ask |
+| **A2 Supervised** (default) | auto | auto | conditional | ask | ask |
+| A3 Trusted | auto | auto | auto | conditional | ask |
+| A4 Autonomous | auto | auto | auto | auto | conditional |
+| A5 Unattended | auto | auto | auto | auto | auto |
 
-### Retry with Self-Correction
-Each task gets up to 2 retries. On failure, the error is injected into the retry prompt so the agent can self-correct:
-```
-Previous Attempt Failed: old_string not found in app.py
-Please try a different approach. Common fixes:
-- If a file wasn't found, use glob_files to discover the correct path
-- If an edit failed, read the file first to get the exact string
-```
+Auto-escalation capped at A3. Full audit logging at all levels.
 
-### Artifact Handoff
-Completed tasks pass their outputs to dependent tasks:
-```
-## Context from Prior Tasks
-Task [1] "Setup project structure" completed.
-Files produced:
-  - app.py (2400 bytes)
-  - models.py (1200 bytes)
-```
+## Project Stats
 
-### Dependency-Aware Failure Blocking
-If a task fails, all tasks that depend on it are automatically blocked instead of running and failing predictably.
+| Metric | Value |
+|--------|-------|
+| Lines of code | ~25,600 |
+| Python modules | 39 |
+| Tests | 1,051 (48 test files) |
+| Agent definitions | 20 |
+| Formations | 10 |
+| Agent tools | 12 |
+| JSON schemas | 8 |
+| App templates | 4 |
+| Hook implementations | 12 |
+| Sprints completed | 16 (in 5 days) |
 
-### Live Build Display
-Real-time visibility into what the agent is doing:
-- Spinner shows current tool call (`Reading app.py`, `Writing models.py`, `Running npm install`)
-- Per-task result line with duration, tool calls, files touched, token usage
-- Build summary table with total stats
+## Development Timeline
 
-## Templates
+| Sprint | Key Deliverable |
+|--------|-----------------|
+| 5 | 12 tools, parallel waves, artifact handoffs, gate review |
+| 7-8 | Light model optimization (SLIM_TOOLS, slim prompts) |
+| 9 | Assistant layer, A0-A5 autonomy, adaptive UX |
+| 12 | Deep planning interview (3-phase, 8 categories) |
+| 13 | JSON recovery, 3-tier prompts — Pro C→S, Premier C→A |
+| 14 | Pre-seeded context, Bedrock 300s timeout — Premier A→S |
+| 15 | Preview resilience, circuit breaker, /health + /competition |
+| 16 | Agent self-correction, recovery + all-hands-planning formations |
 
-| Template | Stack | Use Case |
-|----------|-------|----------|
-| `flask-api` | Flask + Gunicorn | REST API backend |
-| `streamlit-dash` | Streamlit + Plotly | Data dashboard |
-| `static-site` | nginx + HTML/CSS | Landing page |
-| `nova-chat` | Flask + Bedrock | AI chat app powered by Nova |
+## Tech Stack
 
-## 10 Formations
+- **Language**: Python 3.11+ (pure Python, no JS/TS dependencies)
+- **LLM Provider**: AWS Bedrock (Amazon Nova Lite, Pro, Premier)
+- **CLI**: Click + custom interactive shell with Rich live UI
+- **Testing**: pytest (1,051 tests)
+- **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
+- **Website**: Static HTML/CSS/JS at [forge.herakles.dev](https://forge.herakles.dev)
 
-Formations are pre-built Agent Team patterns for common workflows:
+## Live Demos
 
-| Formation | Roles | Pattern |
-|-----------|-------|---------|
-| `single-file` | 1 implementer | Quick edits |
-| `lightweight-feature` | implementer + tester | Single-layer features |
-| `feature-impl` | 2 impl + integrator + tester | Full-stack features |
-| `new-project` | architect + 2 implementers | Greenfield setup |
-| `bug-investigation` | 3 parallel investigators | Unknown root cause |
-| `security-review` | modeler + scanner + fixer | Security audit |
-| `perf-optimization` | optimizer + tester | Performance work |
-| `code-review` | 3 parallel reviewers | PR review |
+6 interactive demo apps at [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/):
 
-DAAO routing automatically selects a formation based on project scope and complexity.
-
-## Testing
-
-```bash
-# Run all 1050+ tests
-pytest tests/ -v
-
-# Run specific test module
-pytest tests/unit/test_pipeline.py -v
-```
-
-## Project Structure
-
-```
-nova-forge/
-├── bin/
-│   ├── forge                 # CLI entry point (bash wrapper)
-│   └── herakles              # Alias for forge
-├── forge.py                  # CLI commands (Click)
-├── forge_cli.py              # Interactive shell (ForgeShell) + V11-style interview
-├── forge_agent.py            # Tool-use loop + AgentEvent system
-├── forge_display.py          # Rich live UI (BuildDisplay)
-├── model_router.py           # 3 provider adapters (Bedrock, OpenAI, Anthropic)
-├── forge_tasks.py            # TaskStore + topological sort
-├── forge_guards.py           # Risk classifier + PathSandbox + AutonomyManager
-├── forge_hooks.py            # Hook system (V11 compatible)
-├── forge_hooks_impl.py       # 12 hook implementations
-├── formations.py             # 8 formation definitions + DAAO routing
-├── prompt_builder.py         # 7-section prompt construction
-├── forge_pipeline.py         # WaveExecutor + ArtifactManager + GateReviewer
-├── forge_orchestrator.py     # Plan/build/deploy orchestration
-├── forge_deployer.py         # Docker + nginx + SSL deployment
-├── forge_web.py              # Web dashboard (forge.herakles.dev)
-├── forge_session.py          # Session lifecycle + persistence
-├── forge_compliance.py       # 10-gate compliance checker
-├── forge_registry.py         # Agent definition registry (20 agents)
-├── forge_schema.py           # 8 JSON schema validators
-├── forge_audit.py            # JSONL audit trail
-├── forge_migrate.py          # Legacy version migration
-├── forge_teams.py            # Multi-agent team spawning
-├── config.py                 # Model configs + .forge/ init
-├── agents/                   # 20 agent definitions (YAML)
-├── schemas/                  # 8 JSON schemas
-├── templates/                # 4 app skeleton templates
-├── tests/                    # 303 unit tests
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
-```
-
-## The "Swappable Brain" Concept
-
-Nova Forge proves that agent orchestration patterns are **model-portable**. The same `forge plan` + `forge build` pipeline works identically whether the brain is:
-
-- Amazon Nova 2 Lite (AWS Bedrock)
-- Google Gemini 2.0 Flash (OpenRouter)
-- Anthropic Claude (direct API)
-
-The brain is just a `--model` flag. The orchestration patterns (waves, formations, gates, artifacts, retries) are the real innovation.
-
-## Built for the Amazon Nova AI Hackathon
-
-Nova Forge was built in 7 days for the [Amazon Nova AI Hackathon](https://devpost.com) to demonstrate that V11's orchestration patterns — battle-tested across 89 production services — work with any LLM, including Amazon Nova.
-
-**Stats**: 13,719 lines of core code | 3,076 lines of tests | 303 passing tests | 25 Python modules | 20 agent definitions | 8 formations | 8 JSON schemas | 7 model aliases | 4 templates | 3 provider adapters
+- **Expense Tracker** — Nova Lite, S 100%, 170s
+- **Kanban Board** — Nova Lite, A 90%, 285s
+- **Kanban Board** — Nova Pro, A 90%, 240s
+- **Kanban Board** — Nova Premier, A 89%, 1336s
+- **Todo App** — Easy scenario preview
+- **Realtime Kanban** — Nightmare scenario preview (SSE, 5 tables, file uploads)
 
 ## License
 
