@@ -169,14 +169,15 @@ async def ask_checkbox(
     if not sys.stdin.isatty():
         return []
     try:
-        question = questionary.checkbox(
-            message,
+        kwargs: dict = dict(
             choices=choices,
             instruction=instruction,
-            validate=validate,
             style=PROMPT_STYLE,
             qmark="",
         )
+        if validate is not None:
+            kwargs["validate"] = validate
+        question = questionary.checkbox(message, **kwargs)
         _add_escape_binding(question)
         return await question.unsafe_ask_async()
     except (KeyboardInterrupt, EOFError):
