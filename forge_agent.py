@@ -109,7 +109,7 @@ BUILT_IN_TOOLS: list[dict] = [
             "Append content to the end of an existing file, or create it if it does not exist.\n\n"
             "- Use write_file FIRST to create the file with the initial section.\n"
             "- Then call append_file one or more times to add remaining sections.\n"
-            "- For large files (>150 lines), use: write_file (first part) + append_file (rest).\n"
+            "- For large files (~80+ lines), use: write_file (first ~80 lines) + append_file (rest).\n"
             "- Runs syntax check after appending (.py, .json, .yaml)."
         ),
         "parameters": {
@@ -328,8 +328,8 @@ SLIM_TOOLS: list[dict] = [
      }, "required": ["pattern"]}},
     {"name": "list_directory", "description": "List files in a directory.",
      "parameters": {"type": "object", "properties": {
-         "path": {"type": "string"}
-     }, "required": ["path"]}},
+         "path": {"type": "string", "description": "Directory path (default: project root)"}
+     }, "required": []}},
 ]
 
 
@@ -600,9 +600,14 @@ class ForgeAgent:
                     if "context" in error_str and (
                         "length" in error_str or "exceed" in error_str or "too long" in error_str
                     ):
-                        logger.warning("Context overflow — compacting and retrying")
+                        pre_tokens = self._estimate_tokens(messages)
                         budget = get_prompt_budget(self.model_config.context_window)
                         messages = self._compact_messages(messages, budget)
+                        post_tokens = self._estimate_tokens(messages)
+                        if post_tokens >= pre_tokens:
+                            logger.error("Compaction did not reduce context (%d→%d) — giving up", pre_tokens, post_tokens)
+                            break
+                        logger.warning("Context overflow — compacted %d→%d tokens, retrying", pre_tokens, post_tokens)
                         continue
                     # Non-transient error — fail immediately
                     break
@@ -840,7 +845,7 @@ class ForgeAgent:
 
                 # Track syntax errors for post-turn fix injection
                 if call.name in ("write_file", "append_file", "edit_file"):
-                    if result_str and "SYNTAX ERROR" in result_str:
+                    if result_str and "Syntax issue" in result_str:
                         _file = call.args.get("path", "unknown") if isinstance(call.args, dict) else "unknown"
                         _syntax_error_files.append(str(_file))
 
@@ -914,17 +919,20 @@ class ForgeAgent:
                     "then complete any remaining work."
                 )
 
-            escalated_result = await self.run(prompt=prompt + artifact_summary, system=system, context=context)
-            escalated_result.escalated = True
-            escalated_result.tokens_in += _total_in
-            escalated_result.tokens_out += _total_out
-
-            self.model_config = old_config
-            self.provider = old_provider
-            self.max_turns = old_max
-            self.soft_max_turns = old_soft
-            self._verify_budget = old_verify
-            return escalated_result
+            try:
+                escalated_result = await self.run(prompt=prompt + artifact_summary, system=system, context=context)
+                escalated_result.escalated = True
+                escalated_result.tokens_in += _total_in
+                escalated_result.tokens_out += _total_out
+                # Merge original artifacts into escalation result
+                escalated_result.artifacts = {**artifacts, **escalated_result.artifacts}
+                return escalated_result
+            finally:
+                self.model_config = old_config
+                self.provider = old_provider
+                self.max_turns = old_max
+                self.soft_max_turns = old_soft
+                self._verify_budget = old_verify
 
         # Session end — fire stop hooks
         await self.hooks.on_stop(project=self.project_root.name)
@@ -1267,6 +1275,11 @@ class ForgeAgent:
         return f"{warning}Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}{completeness}"
 
     async def _tool_edit_file(self, args: dict, artifacts: dict) -> str:
+        # Unescape Nova double-encoding (consistent with write_file/append_file)
+        if "old_string" in args:
+            args["old_string"] = self._unescape_content(args["old_string"])
+        if "new_string" in args:
+            args["new_string"] = self._unescape_content(args["new_string"])
         path = self._resolve_path(args["path"])
         self.sandbox.validate_write(path)
         rel = self._relative_path(path)
@@ -1469,6 +1482,7 @@ class ForgeAgent:
         if not cwd_path.exists():
             cwd_path = self.project_root
 
+        proc = None
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
@@ -1479,7 +1493,10 @@ class ForgeAgent:
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         except asyncio.TimeoutError:
-            return "Command timed out after 120 seconds"
+            if proc:
+                proc.kill()
+                await proc.wait()
+            return "Command timed out after 120 seconds (process killed)"
         except Exception as exc:
             return f"Command failed: {exc}"
 
@@ -1698,16 +1715,19 @@ class ForgeAgent:
         """
         ext = path.suffix.lower()
 
-        # Shell-based checks (shlex.quote prevents injection via crafted filenames)
+        # Shell-based checks
+        # Use repr() for Python-level quoting (always produces 'path/to/file'),
+        # shlex.quote() for shell-level quoting (node --check).
         import shlex
-        safe_path = shlex.quote(str(path))
+        py_path = repr(str(path))  # Python string literal: '/tmp/test.py'
+        sh_path = shlex.quote(str(path))  # Shell-safe: '/tmp/test.py' or /tmp/test.py
         checks = {
-            '.py': f"python3 -c \"import py_compile; py_compile.compile({safe_path}, doraise=True)\"",
-            '.json': f"python3 -c \"import json; json.load(open({safe_path}))\"",
-            '.yaml': f"python3 -c \"import yaml; yaml.safe_load(open({safe_path}))\"",
-            '.yml': f"python3 -c \"import yaml; yaml.safe_load(open({safe_path}))\"",
-            '.js': f"node --check {safe_path}",
-            '.mjs': f"node --check {safe_path}",
+            '.py': f"python3 -c \"import py_compile; py_compile.compile({py_path}, doraise=True)\"",
+            '.json': f"python3 -c \"import json; json.load(open({py_path}))\"",
+            '.yaml': f"python3 -c \"import yaml; yaml.safe_load(open({py_path}))\"",
+            '.yml': f"python3 -c \"import yaml; yaml.safe_load(open({py_path}))\"",
+            '.js': f"node --check {sh_path}",
+            '.mjs': f"node --check {sh_path}",
         }
         cmd = checks.get(ext)
         if cmd:

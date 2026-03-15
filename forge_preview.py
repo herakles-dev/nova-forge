@@ -227,7 +227,7 @@ def _detect_streamlit(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                         cwd=d,
                         server_cmd=(
                             f"streamlit run {f.name} --server.port={port} "
-                            f"--server.address=0.0.0.0 --server.headless=true"
+                            f"--server.address=127.0.0.1 --server.headless=true"
                         ),
                         port=port,
                         startup_timeout=15,
@@ -256,7 +256,7 @@ def _detect_fastapi(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                         kind="fastapi",
                         entry=f.name,
                         cwd=d,
-                        server_cmd=f"uvicorn {module}:{app_var} --host 0.0.0.0 --port {port}",
+                        server_cmd=f"uvicorn {module}:{app_var} --host 127.0.0.1 --port {port}",
                         port=port,
                         startup_timeout=10,
                         needs_install=True,
@@ -289,7 +289,7 @@ def _detect_flask(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                                 f"import sys; sys.path.insert(0, '{d}'); "
                                 f"from {module} import {factory_fn}; "
                                 f"app = {factory_fn}(); "
-                                f"app.run(host='0.0.0.0', port={port}, debug=False)\""
+                                f"app.run(host='127.0.0.1', port={port}, debug=False)\""
                             )
                         else:
                             # Direct app variable: app = Flask(__name__)
@@ -301,7 +301,7 @@ def _detect_flask(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                                 f"python3 -c \""
                                 f"import sys; sys.path.insert(0, '{d}'); "
                                 f"from {module} import {app_var}; "
-                                f"{app_var}.run(host='0.0.0.0', port={port}, debug=False)\""
+                                f"{app_var}.run(host='127.0.0.1', port={port}, debug=False)\""
                             )
                         return StackInfo(
                             kind="flask",
@@ -331,7 +331,7 @@ def _detect_django(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                         kind="django",
                         entry="manage.py",
                         cwd=d,
-                        server_cmd=f"python3 manage.py runserver 0.0.0.0:{port} --noreload",
+                        server_cmd=f"python3 manage.py runserver 127.0.0.1:{port} --noreload",
                         port=port,
                         startup_timeout=12,
                         needs_install=True,
@@ -385,7 +385,7 @@ def _detect_vite(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                 kind="vite",
                 entry="package.json",
                 cwd=d,
-                server_cmd=f"npx vite --host 0.0.0.0 --port {port}",
+                server_cmd=f"npx vite --host 127.0.0.1 --port {port}",
                 port=port,
                 startup_timeout=20,
                 needs_install=True,
@@ -459,7 +459,7 @@ def _detect_rails(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                         kind="rails",
                         entry="config.ru",
                         cwd=d,
-                        server_cmd=f"bundle exec rails s -b 0.0.0.0 -p {port}",
+                        server_cmd=f"bundle exec rails s -b 127.0.0.1 -p {port}",
                         port=port,
                         startup_timeout=25,
                         needs_install=True,
@@ -480,7 +480,7 @@ def _detect_php(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                 kind="php",
                 entry=entry,
                 cwd=d,
-                server_cmd=f"php -S 0.0.0.0:{port}",
+                server_cmd=f"php -S 127.0.0.1:{port}",
                 port=port,
                 startup_timeout=5,
             )

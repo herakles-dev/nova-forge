@@ -123,7 +123,7 @@ def compute_turn_budget(task_metadata: dict, max_turns_ceiling: int = 50) -> dic
     # Base budget scales with file count
     # 1-file needs room for write+append+verify+fix cycles (~15 turns)
     if num_files == 0:
-        base = 6
+        base = 12  # Read-only/discovery tasks need room for exploration
     elif num_files == 1:
         base = 15
     elif num_files == 2:

@@ -112,9 +112,12 @@ async def test_context_overflow_compacts_and_retries(tmp_path):
         compact_called.append(True)
         return original_compact(messages, budget) if budget else original_compact(messages, {})
 
+    # Mock _estimate_tokens to report decreasing token count after compaction
+    token_counts = iter([100, 50])  # pre=100, post=50 → reduction detected
     with patch.object(agent.router, "send", side_effect=overflow_then_ok):
         with patch.object(agent, "_compact_messages", side_effect=spy_compact):
-            result = await agent.run("Do something")
+            with patch.object(agent, "_estimate_tokens", side_effect=lambda msgs: next(token_counts, 50)):
+                result = await agent.run("Do something")
 
     assert result.error is None
     assert result.output == "Done after compaction."

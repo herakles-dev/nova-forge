@@ -10,11 +10,11 @@ from forge_agent import ConvergenceTracker
 class TestComputeTurnBudget:
     """Adaptive turn budget scales with task complexity."""
 
-    def test_zero_files_gets_minimal_budget(self):
+    def test_zero_files_gets_discovery_budget(self):
         budget = compute_turn_budget({"files": []})
-        assert budget["soft_limit"] == 6
-        assert budget["hard_limit"] <= 10
-        assert budget["verify_budget"] == 2
+        assert budget["soft_limit"] == 12
+        assert budget["hard_limit"] <= 16
+        assert budget["verify_budget"] == 3
 
     def test_one_file_budget(self):
         budget = compute_turn_budget({"files": ["models.py"]})
@@ -69,7 +69,7 @@ class TestComputeTurnBudget:
 
     def test_empty_metadata(self):
         budget = compute_turn_budget({})
-        assert budget["soft_limit"] == 6  # 0 files
+        assert budget["soft_limit"] == 12  # 0 files = discovery budget
 
 
 # ── ConvergenceTracker tests ─────────────────────────────────────────────

@@ -157,7 +157,7 @@ def test_slim_system_prompt_for_32k_model():
     assert "Max ~80 lines" in prompt
     # Should NOT contain verbose sections
     assert "You are NOT a chatbot" not in prompt
-    assert len(prompt) < 1500  # Slim should be well under full size
+    assert len(prompt) < 1800  # Slim should be well under full size (~1600 with M1+M2 rules)
 
 
 def test_full_system_prompt_for_large_model():

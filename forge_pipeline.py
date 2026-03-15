@@ -66,7 +66,7 @@ class PipelineResult:
 
 # Inline threshold: artifacts <= 2 KB are embedded directly; larger ones are
 # stored as file references with a truncated preview.
-_INLINE_THRESHOLD_BYTES = 2048
+_INLINE_THRESHOLD_BYTES = 4096
 
 
 class ArtifactManager:
@@ -211,7 +211,8 @@ class ArtifactManager:
                     else:
                         preview = artifact_value[:_INLINE_THRESHOLD_BYTES]
                         context[context_key] = (
-                            f"{preview}\n\n... [truncated: {byte_size} bytes total]"
+                            f"{preview}\n\n... [truncated: {byte_size} bytes total. "
+                            f"You MUST call read_file to see the full content before importing from this file.]"
                         )
                 elif isinstance(artifact_value, dict) and "path" in artifact_value:
                     # File reference from store() / ForgeAgent write

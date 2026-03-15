@@ -356,8 +356,8 @@ class TestThinkToolReadTrackingAutoVerify:
         agent._files_read.add(str(target))  # suppress warning
 
         result = await agent._run_tool("write_file", {"path": str(target), "content": "x = 1\n"}, {})
-        assert "syntax" in result.lower() or "OK" in result, (
-            f"Expected syntax check result for .py file, got: {result}"
+        assert "syntax OK" in result, (
+            f"Expected 'syntax OK' for valid .py file, got: {result}"
         )
 
     @pytest.mark.asyncio
@@ -369,8 +369,8 @@ class TestThinkToolReadTrackingAutoVerify:
         agent._files_read.add(str(target))
 
         result = await agent._run_tool("write_file", {"path": str(target), "content": valid_json}, {})
-        assert "syntax" in result.lower() or "OK" in result, (
-            f"Expected syntax check for .json file, got: {result}"
+        assert "syntax OK" in result, (
+            f"Expected 'syntax OK' for valid .json file, got: {result}"
         )
 
     @pytest.mark.asyncio

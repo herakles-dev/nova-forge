@@ -1750,10 +1750,10 @@ class ForgeShell:
                 f"Only write YOUR files. Do NOT create files that belong to other tasks.\n\n"
                 f"## Instructions\n"
                 f"Implement this task COMPLETELY. Use write_file to create EVERY file listed above. "
-                f"CRITICAL: Include ALL functions listed in the task description in your FIRST write_file call. "
-                f"Do NOT write a partial file (e.g. only init_db) and edit it later — write the COMPLETE file "
-                f"with every function in one shot. If it's too long, write the first half with write_file then "
-                f"IMMEDIATELY call append_file with the remaining functions. "
+                f"CRITICAL: Include ALL functions listed in the task description. "
+                f"Write the first ~80 lines via write_file, then IMMEDIATELY call append_file for the rest. "
+                f"Get ALL functions down in write_file + append_file calls before moving to the next file. "
+                f"Do NOT write a partial file (e.g. only init_db) and edit it later. "
                 f"Read existing files first with read_file if you need context. "
                 f"Write complete, working code — not stubs or placeholders. "
                 f"Do NOT describe file contents in text — use write_file/append_file tools with the full content."
@@ -1771,7 +1771,7 @@ class ForgeShell:
                 role="builder",
                 project_context=spec_text[:2000] if spec_text else "",
                 model_id=task_mc.model_id,
-                autonomy_level=self.assistant.read_autonomy_level(),
+                autonomy_level=4,  # Automated builds always A4 (autonomous) — no human in loop
             )
 
             # Pass acceptance criteria to agent for self-test during self-correction
