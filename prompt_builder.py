@@ -177,18 +177,17 @@ _SECTION_CODE_QUALITY = """\
 _SECTION_PREVIEWABILITY = """\
 ## Previewability
 Your app MUST work with `/preview` (Cloudflare Tunnel) after build:
-- Bind to `0.0.0.0`, never `127.0.0.1` or `localhost`
 - Accept port from `PORT` env var with sensible default (5000 Python, 3000 Node)
-- Flask: `app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))`
-- FastAPI: add `if __name__` block with `uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))`
-- Express: `app.listen(process.env.PORT || 3000, '0.0.0.0')`
+- Flask: `app.run(host='127.0.0.1', port=int(os.environ.get('PORT', 5000)))`
+- FastAPI: add `if __name__` block with `uvicorn.run(app, host='127.0.0.1', port=int(os.environ.get('PORT', 8000)))`
+- Express: `app.listen(process.env.PORT || 3000, '127.0.0.1')`
 - Put main app in `app.py` or `main.py`. Export `app` variable at module level.
 - Always create `requirements.txt` (Python) or `package.json` with `start` script (Node).
 - For static sites, put `index.html` in root or `public/` directory.\
 """
 
 _SECTION_PREVIEWABILITY_SLIM = (
-    "- Bind 0.0.0.0. Accept PORT env. Put app in app.py. Create requirements.txt or package.json."
+    "- Accept PORT env. Put app in app.py. Create requirements.txt or package.json."
 )
 
 # ── Focused system prompt for 300K models (Pro/Premier) ──────────────────────

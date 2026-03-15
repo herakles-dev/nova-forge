@@ -187,8 +187,8 @@ class ArtifactManager:
     def inject_upstream(self, task: Task, store: TaskStore) -> dict:
         """Collect artifacts from completed blocking tasks.
 
-        Inline  <=2 KB: embed content directly as a string.
-        Reference >2 KB: embed a truncated preview + path reference.
+        Inline  <=4 KB: embed content directly as a string.
+        Reference >4 KB: embed a truncated preview + read_file hint.
 
         Returns a context dict suitable for PromptBuilder.build(context=...).
         """
@@ -228,7 +228,7 @@ class ArtifactManager:
                                 preview = content[:_INLINE_THRESHOLD_BYTES]
                                 context[context_key] = (
                                     f"{preview}\n\n... [truncated: {byte_size} bytes, "
-                                    f"full path: {path}]"
+                                    f"full path: {path}. You MUST call read_file to see the full content.]"
                                 )
                         except OSError:
                             context[context_key] = f"[file reference: {path} ({size} bytes)]"

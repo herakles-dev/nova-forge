@@ -1341,6 +1341,7 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
                 role="builder",
                 project_context=spec_text[:2000] if spec_text else "",
                 model_id=mc.model_id,
+                autonomy_level=4,  # Automated builds — match CLI path
             )
 
             # Tool selection: same model-aware path as CLI

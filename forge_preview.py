@@ -524,7 +524,7 @@ def _detect_dockerfile(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                 cwd=d,
                 server_cmd=(
                     f"docker build -t forge-preview . && "
-                    f"docker run --rm -p {port}:{exposed} forge-preview"
+                    f"docker run --rm -p 127.0.0.1:{port}:{exposed} forge-preview"
                 ),
                 port=port,
                 startup_timeout=60,
@@ -542,7 +542,7 @@ def _detect_static(pp: Path, search_dirs: list[Path]) -> StackInfo | None:
                 kind="static",
                 entry="index.html",
                 cwd=d,
-                server_cmd=f"python3 -m http.server {port}",
+                server_cmd=f"python3 -m http.server {port} --bind 127.0.0.1",
                 port=port,
                 startup_timeout=3,
             )

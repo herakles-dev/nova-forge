@@ -845,7 +845,7 @@ class ForgeAgent:
 
                 # Track syntax errors for post-turn fix injection
                 if call.name in ("write_file", "append_file", "edit_file"):
-                    if result_str and "Syntax issue" in result_str:
+                    if result_str and ("Syntax issue" in result_str or "HTML ERROR" in result_str or "CSS ERROR" in result_str):
                         _file = call.args.get("path", "unknown") if isinstance(call.args, dict) else "unknown"
                         _syntax_error_files.append(str(_file))
 
