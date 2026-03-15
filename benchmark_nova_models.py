@@ -65,7 +65,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("benchmark")
 
-from config import get_model_config, ForgeProject, resolve_model, init_forge_dir, get_context_window
+from config import get_model_config, ForgeProject, resolve_model, init_forge_dir, get_context_window, compute_turn_budget
 from forge_agent import ForgeAgent, BUILT_IN_TOOLS, AgentEvent, get_tools_for_model
 from forge_comms import BuildContext
 from forge_guards import PathSandbox
@@ -1276,6 +1276,7 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
             expected_files = (task.metadata or {}).get("files", [])
             files_hint = ", ".join(expected_files) if expected_files else "as specified"
 
+            # Chunk hint: only for 32K models — matches CLI behavior
             chunk_hint = ""
             if ctx_window <= 32_000:
                 chunk_hint = (
@@ -1283,12 +1284,6 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
                     "You have a ~4K token output limit (~80 lines of code per tool call).\n"
                     "NEVER write more than 80 lines in a single write_file call.\n"
                     "Strategy: write_file (first 80 lines) → append_file (next 80) → repeat.\n"
-                )
-            else:
-                chunk_hint = (
-                    "\n\n## WRITING STRATEGY\n"
-                    "For files over ~120 lines: write_file (first section) → append_file (rest).\n"
-                    "After each write_file, check the tool output for SYNTAX ERROR — fix immediately.\n"
                 )
 
             # SQLite threading hint for Flask projects
@@ -1325,7 +1320,10 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
                 f"## File Languages\n{lang_hint}\n\n"
                 f"## Instructions\n"
                 f"Implement this task COMPLETELY. Use write_file to create EVERY file listed above. "
-                f"For large files, use write_file for the first section then append_file for remaining sections. "
+                f"CRITICAL: Include ALL functions listed in the task description in your FIRST write_file call. "
+                f"Do NOT write a partial file (e.g. only init_db) and edit it later — write the COMPLETE file "
+                f"with every function in one shot. If it's too long, write the first half with write_file then "
+                f"IMMEDIATELY call append_file with the remaining functions. "
                 f"ALWAYS read existing files first with read_file before writing code that depends on them. "
                 f"Use their ACTUAL interface — do not assume or hallucinate function names or APIs. "
                 f"Write complete, working code — not stubs or placeholders. "
@@ -1336,25 +1334,24 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
                 f"{context_hint}"
             )
 
-            if ctx_window <= 32_000:
-                _chunk_guide = "Max ~80 lines per write_file call. Use write_file then append_file for larger files."
-            else:
-                _chunk_guide = "For files over ~120 lines: write_file (first section) then append_file (rest)."
-            system = (
-                "You are a developer. Write complete, production-quality code. "
-                "Always use write_file to create files. " + _chunk_guide + " "
-                "Never leave files incomplete. "
-                "CRITICAL: Read existing files with read_file BEFORE writing code that depends on them. "
-                "Use their ACTUAL interface — do not assume or hallucinate. "
-                "After each write, check tool output for SYNTAX ERROR and fix immediately. "
-                "Use correct syntax for each language: # comments in Python, // comments in JavaScript. "
-                "Do NOT run bash verification scripts — focus on writing files."
+            # System prompt: use PromptBuilder — same path as CLI
+            from prompt_builder import PromptBuilder
+            pb = PromptBuilder(project_dir)
+            system = pb.build_system_prompt(
+                role="builder",
+                project_context=spec_text[:2000] if spec_text else "",
+                model_id=mc.model_id,
             )
 
+            # Tool selection: same model-aware path as CLI
             task_tools = get_tools_for_model(ctx_window, has_build_context=True)
 
-            # Per-task turn limit: prevent 30-turn spirals on a single file
-            per_task_turns = 30  # generous limit — let agents work to completion
+            # Adaptive turn budget based on task complexity
+            _task_meta = dict(task.metadata or {})
+            if task.blocked_by:
+                _task_meta["blocked_by"] = task.blocked_by
+            _budget = compute_turn_budget(_task_meta, max_turns_ceiling=30)
+            per_task_turns = _budget["soft_limit"]
 
             agent = ForgeAgent(
                 model_config=mc,
@@ -1366,6 +1363,8 @@ async def run_single_model(model_alias: str, verbose: bool = False, scenario_key
                 agent_id=f"task-{task.id}",
                 build_context=build_context,
             )
+            agent._verify_budget = _budget["verify_budget"]
+            agent._escalation_turns = _budget["escalation_turns"]
 
             task_start = time.time()
             retries = 0

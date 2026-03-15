@@ -125,6 +125,80 @@ class TestDedupTasks:
         assert merged["risk"] == "medium"  # highest risk preserved
 
 
+class TestDedupBlockedByRemapping:
+    """Test that _dedup_tasks properly remaps blocked_by indices after merging."""
+
+    def test_blocked_by_remapped_after_merge(self):
+        """When tasks merge, downstream blocked_by indices are remapped correctly."""
+        tasks = [
+            {"subject": "A", "files": ["a.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "B", "files": ["b.py"], "blocked_by": [0], "risk": "low"},
+            {"subject": "C", "files": ["c.py", "d.py"], "blocked_by": [1], "risk": "low"},
+            {"subject": "D", "files": ["d.py", "e.py"], "blocked_by": [0, 1], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # C+D merge (share d.py): [A(0), B(1), C+D(2)]
+        assert len(result) == 3
+        # B's blocked_by: old [0] → new [0] (A is still index 0)
+        assert sorted(result[1].get("blocked_by", [])) == [0]
+        # C+D merged: union of old C's [1] + old D's [0,1] → remapped [0, 1]
+        assert sorted(result[2].get("blocked_by", [])) == [0, 1]
+
+    def test_non_merged_task_remapped(self):
+        """Non-merged task's blocked_by remaps when earlier tasks merge."""
+        tasks = [
+            {"subject": "A", "files": ["a.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "B", "files": ["b.py"], "blocked_by": [0], "risk": "low"},
+            {"subject": "C", "files": ["c.py", "d.py"], "blocked_by": [1], "risk": "low"},
+            {"subject": "D", "files": ["d.py", "e.py"], "blocked_by": [0, 1], "risk": "low"},
+            {"subject": "E", "files": ["f.py"], "blocked_by": [0, 1, 2, 3], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # C+D merge: [A(0), B(1), C+D(2), E(3)]
+        assert len(result) == 4
+        # E's blocked_by: old [0,1,2,3] → new [0,1,2] (old 2 and 3 both map to 2)
+        assert sorted(result[3].get("blocked_by", [])) == [0, 1, 2]
+
+    def test_merged_task_inherits_deps(self):
+        """Merged tasks inherit the union of all constituents' dependencies."""
+        tasks = [
+            {"subject": "A", "files": ["a.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "B", "files": ["b.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "C", "files": ["c.py", "shared.py"], "blocked_by": [0], "risk": "low"},
+            {"subject": "D", "files": ["shared.py", "d.py"], "blocked_by": [1], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # C+D merge (share shared.py): [A(0), B(1), C+D(2)]
+        assert len(result) == 3
+        # C+D's blocked_by: union of C's [0] + D's [1] → [0, 1]
+        assert sorted(result[2].get("blocked_by", [])) == [0, 1]
+
+    def test_self_reference_removed(self):
+        """When tasks that depend on each other merge, self-references are dropped."""
+        tasks = [
+            {"subject": "A", "files": ["shared.py", "a.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "B", "files": ["shared.py", "b.py"], "blocked_by": [0], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # A+B merge (share shared.py): [A+B(0)]
+        assert len(result) == 1
+        # No self-reference: old B had blocked_by [0] pointing to A, but they merged
+        assert result[0].get("blocked_by", []) == []
+
+    def test_no_overlap_preserves_blocked_by(self):
+        """When no merging occurs, blocked_by is preserved unchanged."""
+        tasks = [
+            {"subject": "A", "files": ["a.py"], "blocked_by": [], "risk": "low"},
+            {"subject": "B", "files": ["b.py"], "blocked_by": [0], "risk": "low"},
+            {"subject": "C", "files": ["c.py"], "blocked_by": [0, 1], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        assert len(result) == 3
+        assert result[0].get("blocked_by", []) == []
+        assert result[1].get("blocked_by", []) == [0]
+        assert sorted(result[2].get("blocked_by", [])) == [0, 1]
+
+
 class TestBlockedByParsing:
     """Test robust blocked_by parsing for different LLM output formats."""
 

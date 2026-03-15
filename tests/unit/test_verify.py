@@ -18,6 +18,7 @@ from forge_verify import (
     _extract_api_endpoints,
     _skip_path,
     _STDLIB_MODULES,
+    scan_file_references,
 )
 
 
@@ -376,3 +377,70 @@ class TestFileReferenceCheck:
         msg = v._diagnose_root_404(404)
         assert "send_static_file" in msg
         assert "templates/" in msg
+
+
+class TestHTMLSrcHrefScanning:
+    """Tests for HTML <script src>, <link href>, <img src> scanning."""
+
+    def test_missing_script_src_detected(self, tmp_path):
+        (tmp_path / "index.html").write_text('<script src="app.js"></script>')
+        issues = scan_file_references(tmp_path)
+        assert any("app.js" in i and "not found" in i for i in issues)
+
+    def test_existing_script_src_passes(self, tmp_path):
+        (tmp_path / "index.html").write_text('<script src="app.js"></script>')
+        (tmp_path / "app.js").write_text("console.log(1)")
+        issues = scan_file_references(tmp_path)
+        assert not any("app.js" in i and "not found" in i for i in issues)
+
+    def test_missing_link_href_detected(self, tmp_path):
+        (tmp_path / "index.html").write_text('<link rel="stylesheet" href="style.css">')
+        issues = scan_file_references(tmp_path)
+        assert any("style.css" in i and "not found" in i for i in issues)
+
+    def test_existing_link_href_passes(self, tmp_path):
+        (tmp_path / "index.html").write_text('<link rel="stylesheet" href="style.css">')
+        (tmp_path / "style.css").write_text("body { color: red; }")
+        issues = scan_file_references(tmp_path)
+        assert not any("style.css" in i and "not found" in i for i in issues)
+
+    def test_missing_img_src_detected(self, tmp_path):
+        (tmp_path / "index.html").write_text('<img src="logo.png">')
+        issues = scan_file_references(tmp_path)
+        assert any("logo.png" in i and "not found" in i for i in issues)
+
+    def test_external_urls_skipped(self, tmp_path):
+        (tmp_path / "index.html").write_text(
+            '<script src="https://cdn.example.com/lib.js"></script>'
+            '<link href="//cdn.example.com/style.css">'
+            '<img src="http://example.com/img.png">'
+        )
+        issues = scan_file_references(tmp_path)
+        assert not any("not found" in i for i in issues)
+
+    def test_jinja_expressions_skipped(self, tmp_path):
+        (tmp_path / "index.html").write_text(
+            '<script src="{{ url_for(\'static\', filename=\'app.js\') }}"></script>'
+        )
+        issues = scan_file_references(tmp_path)
+        assert not any("url_for" in i and "not found" in i for i in issues)
+
+    def test_data_uri_skipped(self, tmp_path):
+        (tmp_path / "index.html").write_text('<img src="data:image/png;base64,abc123">')
+        issues = scan_file_references(tmp_path)
+        assert not any("not found" in i for i in issues)
+
+    def test_static_fallback_path(self, tmp_path):
+        """File referenced as 'app.js' but exists in static/ — should pass."""
+        (tmp_path / "templates").mkdir()
+        (tmp_path / "templates" / "index.html").write_text('<script src="app.js"></script>')
+        (tmp_path / "static").mkdir()
+        (tmp_path / "static" / "app.js").write_text("console.log(1)")
+        issues = scan_file_references(tmp_path)
+        assert not any("app.js" in i and "not found" in i for i in issues)
+
+    def test_root_html_scanned(self, tmp_path):
+        """HTML files at project root (not just in templates/) are scanned."""
+        (tmp_path / "page.html").write_text('<script src="missing.js"></script>')
+        issues = scan_file_references(tmp_path)
+        assert any("missing.js" in i and "not found" in i for i in issues)

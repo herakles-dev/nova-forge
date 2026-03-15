@@ -47,7 +47,9 @@ You are Nova, an AI build assistant. You ACT — don't chat. Write working code 
 - Read existing files before editing. Match existing style.
 - After writing, check the tool output for Syntax issue or INCOMPLETE — fix immediately.
 - If a tool fails, try a different approach. Don't repeat failing calls.
-- Write complete code — no stubs, placeholders, or TODOs.
+- Write COMPLETE WORKING code — no stubs, placeholders, or TODOs.
+- WRONG: addEventListener('click', () => {}); def delete(id): pass
+  RIGHT: addEventListener('click', () => { fetch('/api/'+id,{method:'DELETE'}).then(load) }); def delete(id): db.execute(...)
 - Only write files assigned to YOUR task. If you get a CONFLICT error, skip that file.
 - After writing all files, verify: run bash("python3 -c 'import MODULE'") for Python modules.
 - Be concise.\
@@ -113,7 +115,18 @@ _SECTION_BEHAVIOR = """\
 - Prefer explicit imports over star imports. Never use wildcard imports in new code.
 - When adding new dependencies, add them to requirements.txt or pyproject.toml.
 - Use environment variables for all configuration that varies between environments.
-- Do not leave dead code, commented-out blocks, or debug prints in files you modify.\
+- Do not leave dead code, commented-out blocks, or debug prints in files you modify.
+
+## WORKING Code vs STUB Code
+NEVER write stub code that looks valid but does nothing. Every function MUST have real logic.
+STUB (WRONG):
+  button.addEventListener('click', () => { /* TODO: implement */ });
+  def delete_task(id): pass  # placeholder
+  fetch('/api/tasks').then(data => { /* handle response */ });
+WORKING (CORRECT):
+  button.addEventListener('click', () => { fetch('/api/tasks/' + id, {method:'DELETE'}).then(() => loadTasks()) });
+  def delete_task(id): db.execute('DELETE FROM tasks WHERE id=?', (id,)); db.commit()
+  fetch('/api/tasks').then(r => r.json()).then(tasks => { taskList.innerHTML = ''; tasks.forEach(t => addTaskRow(t)) });\
 """
 
 _SECTION_ERROR_HANDLING = """\
@@ -207,7 +220,12 @@ After writing each file:
 
 ## Self-Correction
 Before finishing, read back files you created. Check: syntax, imports match exports, no TODO/stubs.
-If you find issues, fix them now. Do not leave broken code for a downstream agent.\
+If you find issues, fix them now. Do not leave broken code for a downstream agent.
+
+## WORKING Code — NOT Stubs
+STUB (WRONG): addEventListener('click', () => { /* TODO */ }); def delete(id): pass
+WORKING: addEventListener('click', () => { fetch('/api/'+id, {method:'DELETE'}).then(loadTasks) });
+         def delete(id): db.execute('DELETE FROM tasks WHERE id=?', (id,)); db.commit()\
 """
 
 # ── Autonomy-aware prompt sections ───────────────────────────────────────────
@@ -513,7 +531,7 @@ class PromptBuilder:
         ctx = get_context_window(model_id) if model_id else 200_000
 
         if ctx <= 32_000:
-            # Slim prompt for small-context models (~600 chars vs ~4,975)
+            # Slim prompt for small-context models (~325 tokens)
             sections: list[str] = [_SECTION_SLIM]
             profile = ROLE_PROFILES.get(role, "")
             if profile:
@@ -522,8 +540,9 @@ class PromptBuilder:
                 sections.append(short_profile)
             sections.append(_SECTION_PREVIEWABILITY_SLIM)
         elif ctx <= 1_100_000:
-            # Focused prompt for medium/large models (~1,500 chars)
-            # Avoids the 5K-char full prompt that dilutes instructions
+            # Focused prompt for medium/large models (~716 tokens)
+            # Tested: SLIM prompt gives same quality but no improvement.
+            # Keep FOCUSED — extra guardrails (self-verify, code quality) are low-cost at 300K+.
             sections: list[str] = [_SECTION_FOCUSED]
             profile = ROLE_PROFILES.get(role)
             if profile:

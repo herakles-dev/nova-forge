@@ -112,6 +112,10 @@ class BuildVerifier:
         if server_ok and port:
             await self._check_browser(result, port, tasks)
 
+        # L4: Functional tests (only if server started and L3 passed)
+        if server_ok and port:
+            await self._verify_functional(result, port, tasks)
+
         # Cleanup server
         if preview_mgr:
             preview_mgr.stop()
@@ -524,6 +528,246 @@ class BuildVerifier:
             result.add("form_interaction", False, f"Form test error: {e}")
 
 
+    # ── L4: Functional tests ────────────────────────────────────────────
+
+    async def _verify_functional(self, result: VerifyResult, port: int, tasks: list[Any] = None) -> None:
+        """L4 functional verification: test that buttons work, forms submit, data round-trips.
+
+        Goes beyond L3 (elements exist) to verify actual behavior:
+        1. Click every button → verify DOM changes
+        2. Fill and submit forms → verify data appears
+        3. POST data via API → GET it back → verify persistence
+        4. Check JS event listeners are wired to elements
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return  # Playwright not available, skip L4
+
+        base_url = f"http://localhost:{port}"
+        functional_failures: list[str] = []
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    viewport={"width": 1280, "height": 720},
+                    ignore_https_errors=True,
+                )
+                page = await context.new_page()
+
+                try:
+                    await page.goto(base_url, wait_until="domcontentloaded", timeout=10000)
+                except Exception:
+                    result.add("functional_test", False, "Could not load page for L4 tests")
+                    await browser.close()
+                    return
+
+                # Wait for JS to initialize
+                await page.wait_for_timeout(1000)
+
+                # ── Test 1: Click every button and verify DOM changes ──────
+                buttons = page.locator("button, input[type='submit'], [role='button']")
+                btn_count = await buttons.count()
+                btn_clicks_ok = 0
+                btn_click_failures = []
+
+                for i in range(min(btn_count, 10)):  # Cap at 10 buttons
+                    try:
+                        btn = buttons.nth(i)
+                        # Skip hidden or disabled buttons
+                        if not await btn.is_visible() or not await btn.is_enabled():
+                            continue
+
+                        btn_text = (await btn.text_content() or "").strip()[:30]
+                        if not btn_text:
+                            btn_text = await btn.get_attribute("aria-label") or f"button[{i}]"
+
+                        # Snapshot DOM before click
+                        dom_before = await page.evaluate("document.body.innerHTML.length")
+
+                        # Listen for network activity
+                        responses_before = []
+
+                        def capture(resp):
+                            try:
+                                responses_before.append(resp.url)
+                            except Exception:
+                                pass
+
+                        page.on("response", capture)
+
+                        try:
+                            await btn.click(timeout=3000)
+                            await page.wait_for_timeout(1500)
+                        except Exception:
+                            pass  # Button click may navigate or cause dialog
+
+                        page.remove_listener("response", capture)
+
+                        # Check: did something change?
+                        dom_after = await page.evaluate("document.body.innerHTML.length")
+                        network_fired = len(responses_before) > 0
+
+                        if dom_after != dom_before or network_fired:
+                            btn_clicks_ok += 1
+                        else:
+                            btn_click_failures.append(f"'{btn_text}' — no DOM change or network activity")
+
+                        # Navigate back to main page if button caused navigation
+                        current_url = page.url
+                        if not current_url.startswith(base_url) or current_url != base_url + "/":
+                            try:
+                                await page.goto(base_url, wait_until="domcontentloaded", timeout=5000)
+                                await page.wait_for_timeout(500)
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+
+                if btn_count > 0:
+                    tested = btn_clicks_ok + len(btn_click_failures)
+                    if btn_click_failures:
+                        detail = f"{btn_clicks_ok}/{tested} buttons responsive; dead: {'; '.join(btn_click_failures[:3])}"
+                        functional_failures.append(detail)
+                        result.add("button_functionality", False, detail)
+                    elif tested > 0:
+                        result.add("button_functionality", True, f"{btn_clicks_ok}/{tested} buttons trigger DOM/network changes")
+
+                # ── Test 2: Form data round-trip ───────────────────────────
+                forms = page.locator("form")
+                form_count = await forms.count()
+
+                if form_count > 0:
+                    try:
+                        first_form = forms.first
+                        inputs = first_form.locator("input[type='text'], input:not([type]), textarea")
+                        input_count = await inputs.count()
+
+                        if input_count > 0:
+                            test_value = f"NovaForge-L4-{int(time.time())}"
+                            await inputs.first.fill(test_value)
+
+                            # Submit via button or Enter
+                            submit = first_form.locator("button[type='submit'], input[type='submit'], button:not([type])")
+                            submit_count = await submit.count()
+
+                            if submit_count > 0:
+                                dom_before = await page.content()
+                                await submit.first.click()
+                                await page.wait_for_timeout(2000)
+                                dom_after = await page.content()
+
+                                # Check if our test data appears in the page
+                                if test_value in dom_after:
+                                    result.add("form_roundtrip", True, f"Form submit: data '{test_value[:20]}' appears in page")
+                                elif dom_before != dom_after:
+                                    result.add("form_roundtrip", True, "Form submit: DOM changed (data may use different format)")
+                                else:
+                                    detail = f"Form submit: no visible change after submitting '{test_value[:20]}'"
+                                    functional_failures.append(detail)
+                                    result.add("form_roundtrip", False, detail)
+                    except Exception as e:
+                        result.add("form_roundtrip", False, f"Form test error: {e}")
+
+                # ── Test 3: API data round-trip (POST then GET) ────────────
+                api_endpoints = _extract_api_endpoints(self.spec_text, self.project_path)
+                post_endpoints = [(m, p) for m, p in api_endpoints if m.upper() == "POST"]
+                get_endpoints = [(m, p) for m, p in api_endpoints if m.upper() == "GET"]
+
+                if post_endpoints and get_endpoints:
+                    try:
+                        post_method, post_path = post_endpoints[0]
+                        get_method, get_path = get_endpoints[0]
+
+                        # POST test data
+                        test_data = {"title": f"L4-test-{int(time.time())}", "name": "L4 test item"}
+                        post_resp = await page.request.post(
+                            f"{base_url}{post_path}",
+                            data=json.dumps(test_data),
+                            headers={"Content-Type": "application/json"},
+                        )
+
+                        if post_resp.status < 400:
+                            # GET and verify data persisted
+                            await page.wait_for_timeout(500)
+                            get_resp = await page.request.get(f"{base_url}{get_path}")
+                            if get_resp.status < 400:
+                                try:
+                                    body = await get_resp.text()
+                                    if "L4-test" in body or "L4 test" in body:
+                                        result.add("api_roundtrip", True,
+                                                    f"POST {post_path} → GET {get_path}: data persisted")
+                                    else:
+                                        detail = f"POST {post_path} OK but data not found in GET {get_path}"
+                                        functional_failures.append(detail)
+                                        result.add("api_roundtrip", False, detail)
+                                except Exception:
+                                    result.add("api_roundtrip", False, f"Could not read GET {get_path} response")
+                            else:
+                                result.add("api_roundtrip", False, f"GET {get_path} returned {get_resp.status}")
+                        else:
+                            result.add("api_roundtrip", False,
+                                        f"POST {post_path} returned {post_resp.status}")
+                    except Exception as e:
+                        result.add("api_roundtrip", False, f"API round-trip error: {e}")
+
+                # ── Test 4: Check JS event listeners are wired ─────────────
+                try:
+                    unwired = await page.evaluate("""() => {
+                        const interactive = document.querySelectorAll('button, [role="button"], input[type="submit"]');
+                        const unwired = [];
+                        for (const el of interactive) {
+                            if (!el.disabled && el.offsetParent !== null) {
+                                // Check for inline handlers or known framework bindings
+                                const hasOnclick = el.onclick !== null;
+                                const hasInlineHandler = el.hasAttribute('onclick');
+                                const hasAriaAction = el.hasAttribute('data-action');
+                                // getEventListeners is Chrome DevTools only, so we check indirect signals
+                                const text = (el.textContent || '').trim();
+                                if (!hasOnclick && !hasInlineHandler && !hasAriaAction && text) {
+                                    unwired.push(text.substring(0, 30));
+                                }
+                            }
+                        }
+                        return unwired;
+                    }""")
+
+                    if unwired and len(unwired) > 0:
+                        # This is a heuristic — addEventListener won't be caught by onclick check
+                        # So only flag if >50% of buttons appear unwired
+                        total_btns = await page.locator("button, [role='button']").count()
+                        if len(unwired) > total_btns * 0.5 and total_btns > 1:
+                            detail = f"{len(unwired)}/{total_btns} buttons may lack event handlers: {', '.join(unwired[:3])}"
+                            result.add("js_handlers", False, detail)
+                        else:
+                            result.add("js_handlers", True, f"Event handler check passed ({total_btns} buttons)")
+                    else:
+                        result.add("js_handlers", True, "All interactive elements appear wired")
+                except Exception:
+                    pass  # JS evaluation failure is non-critical
+
+                # Take L4 screenshot
+                try:
+                    self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+                    screenshot_path = str(self._screenshot_dir / "l4_functional.png")
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                except Exception:
+                    pass
+
+                await browser.close()
+
+        except Exception as e:
+            result.add("functional_test", False, f"L4 functional test error: {e}")
+
+        # Summary check
+        if functional_failures:
+            result.add("functional_summary", False,
+                        f"{len(functional_failures)} functional issue(s): {'; '.join(functional_failures[:3])}")
+        elif any(c.name.startswith(("button_", "form_", "api_")) for c in result.checks):
+            result.add("functional_summary", True, "L4 functional tests passed")
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 _SKIP_DIRS = frozenset({".git", "node_modules", "__pycache__", ".forge", ".venv", "venv", "artifacts"})
@@ -706,5 +950,123 @@ def scan_file_references(project_path: Path) -> list[str]:
             target = project_path / "static" / ref
             if not target.exists():
                 issues.append(f"{f.name}: references static/{ref} but file missing")
+
+    # Check ALL HTML files for broken <script src>, <link href>, <img src>
+    _SKIP_PREFIXES = ("http://", "https://", "//", "data:", "#")
+    _JINJA_MARKERS = ("{{", "{%")
+    for html_f in project_path.glob("**/*.html"):
+        if _skip_path(html_f, project_path):
+            continue
+        try:
+            html_src = html_f.read_text(errors="replace")
+        except Exception:
+            continue
+        html_dir = html_f.parent
+
+        # <script src="X">
+        for m in re.finditer(r'<script[^>]+src=["\']([^"\']+)["\']', html_src):
+            ref = m.group(1)
+            if any(ref.startswith(p) for p in _SKIP_PREFIXES) or any(mk in ref for mk in _JINJA_MARKERS):
+                continue
+            target = (html_dir / ref).resolve()
+            static_fallback = project_path / "static" / ref
+            if not target.exists() and not static_fallback.exists():
+                issues.append(f"{html_f.name}: <script src=\"{ref}\"> but file not found")
+
+        # <link ... href="X"> (CSS)
+        for m in re.finditer(r'<link[^>]+href=["\']([^"\']+)["\']', html_src):
+            ref = m.group(1)
+            if any(ref.startswith(p) for p in _SKIP_PREFIXES) or any(mk in ref for mk in _JINJA_MARKERS):
+                continue
+            target = (html_dir / ref).resolve()
+            static_fallback = project_path / "static" / ref
+            if not target.exists() and not static_fallback.exists():
+                issues.append(f"{html_f.name}: <link href=\"{ref}\"> but file not found")
+
+        # <img src="X">
+        for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', html_src):
+            ref = m.group(1)
+            if any(ref.startswith(p) for p in _SKIP_PREFIXES) or any(mk in ref for mk in _JINJA_MARKERS):
+                continue
+            target = (html_dir / ref).resolve()
+            static_fallback = project_path / "static" / ref
+            if not target.exists() and not static_fallback.exists():
+                issues.append(f"{html_f.name}: <img src=\"{ref}\"> but file not found")
+
+    # Also check for HTML/JS ID mismatches
+    id_issues = scan_id_mismatches(project_path)
+    issues.extend(id_issues)
+
+    return issues
+
+
+def scan_id_mismatches(project_path: Path) -> list[str]:
+    """Detect HTML element IDs referenced in JS but missing from HTML, and vice versa.
+
+    Parses HTML for id="..." attributes, JS for getElementById/querySelector("#...").
+    Reports mismatches with fuzzy-match suggestions.
+    """
+    from difflib import get_close_matches
+
+    project_path = Path(project_path)
+    issues: list[str] = []
+
+    # Collect HTML IDs from all HTML files
+    html_ids: set[str] = set()
+    html_files = (
+        list(project_path.glob("**/*.html"))
+    )
+    html_files = [f for f in html_files if not _skip_path(f, project_path)]
+    for f in html_files:
+        try:
+            src = f.read_text()
+        except Exception:
+            continue
+        for m in re.finditer(r'\bid=["\']([^"\']+)["\']', src):
+            html_ids.add(m.group(1))
+
+    if not html_ids:
+        return issues  # No HTML IDs to cross-reference
+
+    # Collect JS ID references from all JS files and inline scripts
+    # Track (filename, id) so issues include the source file for scoping
+    js_refs: dict[str, set[str]] = {}  # id -> set of filenames
+    js_files = list(project_path.glob("**/*.js"))
+    js_files = [f for f in js_files if not _skip_path(f, project_path)]
+
+    # Also extract inline <script> blocks from HTML
+    js_sources: list[tuple[str, str]] = []  # (relative_path, source)
+    for f in js_files:
+        try:
+            rel = str(f.relative_to(project_path))
+            js_sources.append((rel, f.read_text()))
+        except Exception:
+            continue
+    for f in html_files:
+        try:
+            src = f.read_text()
+            rel = str(f.relative_to(project_path))
+        except Exception:
+            continue
+        for m in re.finditer(r'<script[^>]*>(.*?)</script>', src, re.DOTALL):
+            js_sources.append((rel, m.group(1)))
+
+    for fname, src in js_sources:
+        # getElementById("id")
+        for m in re.finditer(r'getElementById\(\s*["\']([^"\']+)["\']\s*\)', src):
+            js_refs.setdefault(m.group(1), set()).add(fname)
+        # querySelector("#id") / querySelectorAll("#id")
+        for m in re.finditer(r'querySelector(?:All)?\(\s*["\']#([^"\'.\s\[]+)["\']\s*\)', src):
+            js_refs.setdefault(m.group(1), set()).add(fname)
+
+    # Find JS references to IDs that don't exist in HTML
+    for ref_id in sorted(js_refs):
+        if ref_id not in html_ids:
+            suggestion = ""
+            close = get_close_matches(ref_id, list(html_ids), n=1, cutoff=0.6)
+            if close:
+                suggestion = f" (did you mean '{close[0]}'?)"
+            sources = ", ".join(sorted(js_refs[ref_id]))
+            issues.append(f"{sources}: references id='{ref_id}' but no HTML element has this ID{suggestion}")
 
     return issues

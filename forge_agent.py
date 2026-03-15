@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import random
+import re
 import subprocess
 import tempfile
 import time
@@ -332,16 +333,61 @@ SLIM_TOOLS: list[dict] = [
 ]
 
 
+class ConvergenceTracker:
+    """Detects when an agent is stuck in a read-edit loop with diminishing returns.
+
+    Tracks bytes written per turn. Signals convergence when:
+    - Last N turns had zero writes, OR
+    - Average change dropped below threshold of initial write size.
+    """
+
+    def __init__(self, window: int = 5, min_change_ratio: float = 0.02):
+        self._window = window
+        self._min_change_ratio = min_change_ratio
+        self._turn_writes: list[int] = []  # bytes written per turn
+        self._initial_write: int = 0
+        self._current_turn_bytes: int = 0
+
+    def record_write(self, bytes_changed: int) -> None:
+        """Record bytes written by a tool call in the current turn."""
+        self._current_turn_bytes += max(0, bytes_changed)
+        if self._initial_write == 0 and bytes_changed > 0:
+            self._initial_write = bytes_changed
+
+    def end_turn(self) -> None:
+        """Flush current turn's writes to history."""
+        self._turn_writes.append(self._current_turn_bytes)
+        self._current_turn_bytes = 0
+
+    def should_stop(self) -> bool:
+        """True when the agent has converged (no meaningful writes in recent turns)."""
+        if len(self._turn_writes) < self._window:
+            return False
+        recent = self._turn_writes[-self._window:]
+        # All recent turns had zero writes
+        if all(b == 0 for b in recent):
+            return True
+        # Average change is negligible vs initial write
+        if self._initial_write > 0:
+            avg = sum(recent) / len(recent)
+            if avg < self._initial_write * self._min_change_ratio:
+                return True
+        return False
+
+
 def get_tools_for_model(context_window: int, has_build_context: bool = False) -> list[dict]:
     """Return appropriate tool set based on model context window size.
 
-    32K models get SLIM_TOOLS (8 essential tools, ~1,350 fewer tokens per turn).
-    Larger models get the full BUILT_IN_TOOLS set.
+    32K models get SLIM_TOOLS (8 essential tools, saves ~1,600 tokens/turn).
+    Larger models get full BUILT_IN_TOOLS — the `think` tool helps them
+    plan complex files (tested: removing it drops Pro from A to B).
     """
     if context_window <= 32_000:
         if has_build_context:
             return SLIM_TOOLS + [t for t in BUILT_IN_TOOLS if t["name"] in ("claim_file", "check_context")]
         return list(SLIM_TOOLS)
+    if has_build_context:
+        return list(BUILT_IN_TOOLS)
     return list(BUILT_IN_TOOLS)
 
 
@@ -392,6 +438,8 @@ class ForgeAgent:
         self.build_context = build_context  # BuildContext for multi-agent coordination
         self._claimed_files: set[str] = set()  # Tracks files already claimed (suppresses duplicate events)
         self._cancellation = cancellation  # BuildCancellation for cooperative Ctrl-C pause
+        # Readonly mode: blocks bash write patterns (set by caller for read-only tasks)
+        self._is_readonly: bool = False
         # Circuit breaker: per-tool failure tracking
         self._tool_failures: dict[str, int] = {}
         self._disabled_tools: set[str] = set()
@@ -400,6 +448,14 @@ class ForgeAgent:
         self.auto_verify = True
         self._awaiting_read_proof = False
         self._self_correction_count = 0
+        # Acceptance criteria: bash commands that prove the code works
+        self._acceptance_criteria: list[str] = []
+        # Adaptive turn budgets (set by caller via compute_turn_budget)
+        self._verify_budget: int = 3
+        self._verify_turns_used: int = 0
+        self._in_verify_phase: bool = False
+        self._escalation_turns: int = max(8, max_turns // 2)
+        self._convergence: ConvergenceTracker = ConvergenceTracker()
 
         # Auto-wire V11 hooks into the active HookSystem (provided or default)
         if wire_v11_hooks:
@@ -441,6 +497,7 @@ class ForgeAgent:
         """
         messages = self._build_initial_messages(prompt, system, context)
         artifacts: dict[str, Any] = {}
+        self._last_artifacts = artifacts  # Expose for crash recovery (ref stays current)
         total_tool_calls = 0
         _total_in = 0
         _total_out = 0
@@ -450,10 +507,16 @@ class ForgeAgent:
         self.auto_verify = True
         self._awaiting_read_proof = False
         self._self_correction_count = 0
+        # Note: _acceptance_criteria is NOT reset here — it's set by the caller
+        # before run() and should persist across retries within the same task.
         _syntax_error_files: list[str] = []
+        # Reset verify phase and convergence tracker for each run
+        self._verify_turns_used = 0
+        self._in_verify_phase = False
+        self._convergence = ConvergenceTracker()
 
         turn = 0
-        hard_limit = self.max_turns * 2  # absolute safety cap
+        hard_limit = max(self.max_turns + 4, int(self.max_turns * 1.3))  # tight safety cap
         while turn < hard_limit:
             # Check for cooperative cancellation (Ctrl-C pause)
             if self._cancellation and self._cancellation.is_paused():
@@ -468,12 +531,28 @@ class ForgeAgent:
                     tokens_out=_total_out,
                 )
 
-            # Soft turn limit warning
-            if turn == self.soft_max_turns - 1 and self.on_event:
-                try:
-                    self.on_event(AgentEvent(kind="turn_limit_warning", turn=turn + 1))
-                except Exception:
-                    pass
+            # Convergence detection: if stuck in read-only loops, disable writes
+            if artifacts and self._convergence.should_stop():
+                WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all"}
+                self._disabled_tools.update(WRITE_TOOLS)
+                logger.info("Convergence detected at turn %d — write tools disabled", turn)
+
+            # Verify phase budget: count ALL turns in verify phase
+            if self._in_verify_phase:
+                self._verify_turns_used += 1
+                if self._verify_turns_used >= self._verify_budget:
+                    WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all"}
+                    self._disabled_tools.update(WRITE_TOOLS)
+                    logger.info("Verify budget exhausted (%d turns) — write tools disabled",
+                                self._verify_turns_used)
+
+            # Soft turn limit warning — emit event only (convergence detector handles wrap-up)
+            if turn == self.soft_max_turns - 1:
+                if self.on_event:
+                    try:
+                        self.on_event(AgentEvent(kind="turn_limit_warning", turn=turn + 1))
+                    except Exception:
+                        pass
 
             # Emit turn_start event
             if self.on_event:
@@ -597,35 +676,49 @@ class ForgeAgent:
 
                 tool_calls = valid_calls  # Use only valid calls
 
-            # No tool calls → agent is done (or needs self-correction)
+            # No tool calls → agent is done (or needs verify phase)
             if not tool_calls:
-                # Self-correction phase 1: ask model to read back and verify files
+                self._convergence.end_turn()  # Record zero-write turn
+
+                # Enter verify phase: first time model says "done" with artifacts
                 if (self.auto_verify
-                        and self._self_correction_count < 3
+                        and not self._in_verify_phase
                         and total_tool_calls > 0
                         and artifacts
                         and response.text and response.text.strip()):
+                    self._in_verify_phase = True
                     self._self_correction_count += 1
+                    # Include acceptance criteria if available
+                    acceptance_block = ""
+                    if self._acceptance_criteria:
+                        criteria_lines = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(self._acceptance_criteria))
+                        acceptance_block = (
+                            "\n\nAfter reading back files, run these acceptance tests via bash to verify "
+                            "the code actually works (not just compiles):\n"
+                            f"{criteria_lines}\n"
+                            "If any test fails, read the relevant code, fix the bug, and re-run the test. "
+                            "Do NOT skip failing tests — fix them."
+                        )
                     verify_prompt = (
                         "Before finishing, read back the files you created or modified. "
                         "Check: syntax correctness, imports match exports, no TODO/stub placeholders. "
                         "If you find issues, fix them now. If everything looks correct, "
                         "confirm by saying 'Verified — all files are correct.'"
+                        f"{acceptance_block}"
                     )
                     adapter = self.router.route(self.model_config.model_id)
                     messages.append(adapter.format_assistant_message(response))
                     messages.append({"role": "user", "content": verify_prompt})
-                    self.auto_verify = False  # Don't re-inject phase 1
+                    self.auto_verify = False  # Don't re-enter
                     self._awaiting_read_proof = True
                     turn += 1
                     continue
 
-                # Self-correction phase 2: model said "verified" without reading
+                # Single nudge: model said "verified" without reading any files
                 if (self._awaiting_read_proof
-                        and self._self_correction_count < 3
+                        and self._self_correction_count < 2
                         and artifacts):
                     self._awaiting_read_proof = False
-                    # Model completed verification turn without tool calls (no read_file)
                     self._self_correction_count += 1
                     file_list = ", ".join(
                         p.rsplit("/", 1)[-1] for p in list(artifacts.keys())[:6]
@@ -642,7 +735,7 @@ class ForgeAgent:
                     turn += 1
                     continue
 
-                # Clear read proof flag if model DID use tools (it read/fixed files)
+                # Agent is done — clear flags and return
                 self._awaiting_read_proof = False
 
                 await self.hooks.on_stop(project=self.project_root.name)
@@ -740,11 +833,19 @@ class ForgeAgent:
                     adapter.format_tool_result(call.id, result_str)
                 )
 
+                # Track writes for convergence detection
+                if call.name in ("write_file", "append_file", "edit_file", "search_replace_all"):
+                    _content = call.args.get("content", call.args.get("new_string", "")) if isinstance(call.args, dict) else ""
+                    self._convergence.record_write(len(_content))
+
                 # Track syntax errors for post-turn fix injection
                 if call.name in ("write_file", "append_file", "edit_file"):
                     if result_str and "SYNTAX ERROR" in result_str:
                         _file = call.args.get("path", "unknown") if isinstance(call.args, dict) else "unknown"
                         _syntax_error_files.append(str(_file))
+
+            # End convergence tracking turn (records zero if no writes)
+            self._convergence.end_turn()
 
             # RC1: If syntax errors were detected this turn, force the agent to fix them
             if _syntax_error_files:
@@ -789,8 +890,15 @@ class ForgeAgent:
 
             old_config = self.model_config
             old_provider = self.provider
+            old_max = self.max_turns
+            old_soft = self.soft_max_turns
+            old_verify = self._verify_budget
             self.model_config = new_config
             self.provider = get_provider(new_config.model_id)
+            # Reduced budget for escalation — not a fresh full run
+            self.max_turns = self._escalation_turns
+            self.soft_max_turns = self._escalation_turns
+            self._verify_budget = max(1, self._escalation_turns // 5)
 
             # Gather artifacts summary so escalated model knows about prior work
             artifact_summary = ""
@@ -813,6 +921,9 @@ class ForgeAgent:
 
             self.model_config = old_config
             self.provider = old_provider
+            self.max_turns = old_max
+            self.soft_max_turns = old_soft
+            self._verify_budget = old_verify
             return escalated_result
 
         # Session end — fire stop hooks
@@ -1112,6 +1223,16 @@ class ForgeAgent:
         self.sandbox.validate_write(path)
         rel = self._relative_path(path)
 
+        # Warn if appending to an existing file the agent never read (and didn't just create)
+        warning = ""
+        if path.exists() and str(path) not in self._files_read:
+            was_created = str(path) in artifacts and artifacts[str(path)].get("action") == "write"
+            if not was_created:
+                warning = (
+                    "WARNING: You are appending to a file you never read. "
+                    "Consider read_file first to avoid duplicating content. "
+                )
+
         # Auto-claim via BuildContext if available
         if self.build_context is not None:
             if not self.build_context.claim_file(str(rel), self.agent_id):
@@ -1143,7 +1264,7 @@ class ForgeAgent:
         full_content = path.read_text(encoding="utf-8", errors="replace")
         completeness = self._check_completeness(full_content, path.suffix)
 
-        return f"Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}{completeness}"
+        return f"{warning}Appended to {rel}: +{len(chunk)} chars (total: {total}){verify}{completeness}"
 
     async def _tool_edit_file(self, args: dict, artifacts: dict) -> str:
         path = self._resolve_path(args["path"])
@@ -1300,8 +1421,49 @@ class ForgeAgent:
             return f" (INCOMPLETE: {', '.join(issues)} — replace with real implementation)"
         return ""
 
+    # Patterns that indicate file writes in bash commands
+    _BASH_WRITE_PATTERNS = [
+        (re.compile(r'(?:^|[\s;|&])(?:>|>>)\s*\S'), "Shell redirect"),
+        (re.compile(r'\|\s*tee\s'), "Pipe to tee"),
+        (re.compile(r'(?:^|[\s;|&])sed\s+.*-i'), "sed in-place edit"),
+        (re.compile(r'(?:^|[\s;|&])(?:mv|cp)\s'), "mv/cp file operation"),
+        (re.compile(r'open\s*\([^)]*["\']w'), "Python file write"),
+        (re.compile(r'\.write\s*\('), "Python .write() call"),
+    ]
+
+    def _check_bash_writes(self, command: str) -> str | None:
+        """Check bash command for file-write patterns.
+
+        Returns error message if blocked, None if allowed.
+        For readonly agents: blocks ALL write patterns.
+        For normal agents: validates redirect targets against sandbox.
+        """
+        for pattern, label in self._BASH_WRITE_PATTERNS:
+            if pattern.search(command):
+                if self._is_readonly:
+                    return (
+                        f"BLOCKED: Bash command contains '{label}' but this is a READ-ONLY task. "
+                        f"You cannot write files. Use read_file and bash (read-only commands) only."
+                    )
+                # For non-readonly agents, validate redirect targets against sandbox
+                redirect_match = re.search(r'(?:>|>>)\s*(\S+)', command)
+                if redirect_match:
+                    target = redirect_match.group(1).strip("'\"")
+                    try:
+                        target_path = (self.project_root / target).resolve()
+                        self.sandbox.validate_write(target_path)
+                    except Exception as exc:
+                        return f"BLOCKED: Bash redirect target '{target}' failed sandbox check: {exc}"
+        return None
+
     async def _tool_bash(self, args: dict) -> str:
         command = args["command"]
+
+        # Check for file-write patterns in bash commands
+        write_check = self._check_bash_writes(command)
+        if write_check:
+            return write_check
+
         cwd = args.get("cwd", str(self.project_root))
         cwd_path = Path(cwd).resolve()
         if not cwd_path.exists():
@@ -1798,6 +1960,33 @@ class ForgeAgent:
                         continue
             final.append(msg)
         compacted = final
+
+        # Post-dedup pass: drop orphaned toolResult messages (Bedrock requires
+        # every toolResult in user msg to pair with a toolUse in preceding assistant msg)
+        def _count_tool_blocks(msg, key):
+            content = msg.get("content", "")
+            if not isinstance(content, list):
+                return 0
+            return sum(
+                1 for b in content
+                if isinstance(b, dict) and (key in b or b.get("type") == key.replace("toolUse", "tool_use").replace("toolResult", "tool_result"))
+            )
+
+        cleaned = []
+        for i, msg in enumerate(compacted):
+            if msg.get("role") == "user" and _count_tool_blocks(msg, "toolResult") > 0:
+                # Find preceding assistant
+                prev_assistant = cleaned[-1] if cleaned and cleaned[-1].get("role") == "assistant" else None
+                if prev_assistant is None:
+                    continue  # orphaned — no preceding assistant at all
+                prev_tool_uses = _count_tool_blocks(prev_assistant, "toolUse")
+                cur_tool_results = _count_tool_blocks(msg, "toolResult")
+                if prev_tool_uses < cur_tool_results:
+                    # More results than uses — drop this message to avoid Bedrock error
+                    logger.debug("Dropping orphaned toolResult message (%d results, %d uses)", cur_tool_results, prev_tool_uses)
+                    continue
+            cleaned.append(msg)
+        compacted = cleaned
 
         # Emit compact event with rough token estimates (chars / 4)
         if self.on_event:

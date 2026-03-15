@@ -109,6 +109,52 @@ def get_prompt_budget(context_window: int) -> dict:
         }
 
 
+def compute_turn_budget(task_metadata: dict, max_turns_ceiling: int = 50) -> dict:
+    """Compute adaptive turn budget based on task complexity.
+
+    Returns dict with keys: soft_limit, hard_limit, verify_budget, escalation_turns.
+    The max_turns_ceiling is the user-configured max_turns that we never exceed.
+    """
+    files = task_metadata.get("files", [])
+    num_files = len(files)
+    acceptance = task_metadata.get("acceptance_criteria", [])
+    blocked_by = task_metadata.get("blocked_by", [])
+
+    # Base budget scales with file count
+    # 1-file needs room for write+append+verify+fix cycles (~15 turns)
+    if num_files == 0:
+        base = 6
+    elif num_files == 1:
+        base = 15
+    elif num_files == 2:
+        base = 18
+    else:
+        base = min(12 + num_files * 4, 30)
+
+    # Modifiers: integration tests or dependencies add budget
+    ac_text = " ".join(str(c) for c in acceptance).lower()
+    if any(kw in ac_text for kw in ("curl", "localhost", "http://", "server")):
+        base += 4
+    if blocked_by:
+        base += 2
+
+    # Apply ceiling
+    soft_limit = min(base, max_turns_ceiling)
+
+    # Derived limits
+    hard_limit = max(soft_limit + 4, int(soft_limit * 1.3))
+    hard_limit = min(hard_limit, max_turns_ceiling + 4)  # never wildly exceed ceiling
+    verify_budget = max(2, soft_limit // 4)
+    escalation_turns = max(8, soft_limit // 2)
+
+    return {
+        "soft_limit": soft_limit,
+        "hard_limit": hard_limit,
+        "verify_budget": verify_budget,
+        "escalation_turns": escalation_turns,
+    }
+
+
 def resolve_model(model_str: str) -> str:
     """Resolve alias or passthrough full model ID."""
     return MODEL_ALIASES.get(model_str, model_str)

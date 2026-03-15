@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
     MODEL_ALIASES, DEFAULT_MODELS, resolve_model, get_model_config, get_provider,
-    ForgeProject, init_forge_dir,
+    ForgeProject, init_forge_dir, compute_turn_budget,
 )
 
 logger = logging.getLogger("forge.cli")
@@ -1562,17 +1562,27 @@ class ForgeShell:
             else:
                 task_event_cb = None
 
+            # Compute adaptive turn budget from task metadata
+            _task_meta = task.metadata or {}
+            _budget = compute_turn_budget(
+                _task_meta,
+                max_turns_ceiling=self.config.get("max_turns", 30),
+            )
+
             agent = ForgeAgent(
                 model_config=task_mc,
                 project_root=self.project_path,
                 tools=task_tools,
-                max_turns=self.config.get("max_turns", 30),
+                max_turns=_budget["soft_limit"],
+                soft_max_turns=_budget["soft_limit"],
                 agent_id=f"forge-{role_name}-{task.id}",
                 escalation_model=escalation,
                 build_context=build_ctx,
                 cancellation=cancellation,
                 on_event=task_event_cb,
             )
+            agent._verify_budget = _budget["verify_budget"]
+            agent._escalation_turns = _budget["escalation_turns"]
 
             spec_text = ""
             spec_path = self.project_path / "spec.md"
@@ -1606,7 +1616,19 @@ class ForgeShell:
             # File ownership boundaries from planning metadata
             ownership_hint = ""
             task_files = (task.metadata or {}).get("files", [])
-            if task_files:
+
+            # Read-only enforcement: tasks with no assigned files lose write tools
+            is_readonly_task = not task_files
+            if is_readonly_task:
+                READ_ONLY_TOOLS = {"read_file", "bash", "grep", "glob_files", "list_directory", "think"}
+                agent.tools = [t for t in agent.tools if t["name"] in READ_ONLY_TOOLS]
+                agent._is_readonly = True
+                ownership_hint = (
+                    "\n\n## CRITICAL: READ-ONLY TASK\n"
+                    "You have NO assigned files. Do NOT write/edit any files.\n"
+                    "REPORT bugs — do NOT fix them. Use read_file and bash to investigate."
+                )
+            elif task_files:
                 ownership_hint = (
                     f"\n\n## CRITICAL: File Ownership Boundaries\n"
                     f"You may ONLY create/modify these files: {', '.join(task_files)}\n"
@@ -1711,7 +1733,15 @@ class ForgeShell:
                     "Strategy: write_file (first 80 lines) → append_file (next 80) → repeat.\n"
                 )
 
-            files_hint = ", ".join(expected_files) if expected_files else "as specified"
+            # Context budget: truncate context_hint if total prompt exceeds 35% of context window
+            max_prompt_chars = int(ctx * 0.35 * 4)  # 35% of context, ~4 chars/token
+            total = len(spec_text) + len(ownership_hint) + len(context_hint) + len(read_instruction) + len(spec_constraints) + 500
+            if total > max_prompt_chars:
+                budget = max(2000, max_prompt_chars - (total - len(context_hint)))
+                logger.warning("Task %s: context truncated from %d to %d chars", task.subject, total, max_prompt_chars)
+                context_hint = context_hint[:budget] + "\n... (truncated to fit context window)"
+
+            files_hint = ", ".join(expected_files) if expected_files else "NONE — read-only task"
             prompt = (
                 f"## Project Spec\n{spec_text}\n\n"
                 f"## Your Task\n{task.subject}: {task.description}\n\n"
@@ -1720,7 +1750,10 @@ class ForgeShell:
                 f"Only write YOUR files. Do NOT create files that belong to other tasks.\n\n"
                 f"## Instructions\n"
                 f"Implement this task COMPLETELY. Use write_file to create EVERY file listed above. "
-                f"For large files, use write_file for the first section then append_file for remaining sections. "
+                f"CRITICAL: Include ALL functions listed in the task description in your FIRST write_file call. "
+                f"Do NOT write a partial file (e.g. only init_db) and edit it later — write the COMPLETE file "
+                f"with every function in one shot. If it's too long, write the first half with write_file then "
+                f"IMMEDIATELY call append_file with the remaining functions. "
                 f"Read existing files first with read_file if you need context. "
                 f"Write complete, working code — not stubs or placeholders. "
                 f"Do NOT describe file contents in text — use write_file/append_file tools with the full content."
@@ -1740,6 +1773,11 @@ class ForgeShell:
                 model_id=task_mc.model_id,
                 autonomy_level=self.assistant.read_autonomy_level(),
             )
+
+            # Pass acceptance criteria to agent for self-test during self-correction
+            acceptance = (task.metadata or {}).get("acceptance_criteria", [])
+            if acceptance and isinstance(acceptance, list):
+                agent._acceptance_criteria = acceptance
 
             wave_start = time.time()
             try:
@@ -1802,9 +1840,12 @@ class ForgeShell:
                     store.update(task.id, status="completed", artifacts=result.artifacts)
                     return (wave_idx, task.subject, "pass", duration, tc, fc, task_cost, model_used)
 
-            except Exception:
+            except Exception as exc:
                 duration = time.time() - wave_start
-                store.update(task.id, status="failed")
+                _raw = getattr(agent, '_last_artifacts', None)
+                partial = _raw if isinstance(_raw, dict) else {}
+                logger.warning("Task %s crashed: %s", task.subject, exc, exc_info=True)
+                store.update(task.id, status="failed", artifacts=partial)
                 return (wave_idx, task.subject, "fail", duration, 0, 0, 0.0, "")
 
     def _assign_formation_role(self, task: Any, formation: Any) -> Any:
@@ -2233,8 +2274,14 @@ class ForgeShell:
                 json.dumps(artifact_manifest, indent=2)
             )
 
-        # ── Post-build integration check (formation-based) ────────────────
+        # ── Post-build pipeline: verify → integration-check → re-verify → gate ──
         if not build_paused:
+            # Step 1: Early verification BEFORE integration-check can touch files
+            pre_verify_result = None
+            if "--no-verify" not in arg:
+                pre_verify_result = await self._run_verification(store)
+
+            # Step 2: Integration check (formation-based) — only if issues found
             from forge_verify import scan_file_references
             issues = scan_file_references(self.project_path)
             if issues:
@@ -2250,6 +2297,20 @@ class ForgeShell:
                     if t.status == "completed" and t.metadata:
                         all_gen_files.extend(t.metadata.get("files", []))
                 all_gen_files = list(dict.fromkeys(all_gen_files))
+
+                # Extract affected files from issue descriptions (Fix 6: scope fixer)
+                import re as _re_fix
+                affected_files = set()
+                for iss in issues:
+                    # Extract filenames like "app.py:", "templates/index.html", etc.
+                    for m in _re_fix.finditer(r'(\S+\.(?:py|js|html|css|json|yml|yaml))', iss):
+                        candidate = m.group(1).rstrip(":")
+                        if candidate in all_gen_files or any(candidate in f for f in all_gen_files):
+                            affected_files.add(candidate)
+                # If we couldn't extract specific files, fall back to matching gen files
+                if not affected_files:
+                    affected_files = set(all_gen_files)
+                fixer_files = sorted(affected_files)
 
                 # Create integration tasks
                 issues_text = "\n".join(f"- {iss}" for iss in issues)
@@ -2281,7 +2342,7 @@ class ForgeShell:
                         f"- Always READ the file BEFORE editing to see its actual content\n"
                         f"- Only fix the specific issues — do not rewrite entire files\n"
                     ),
-                    metadata={"agent": "fixer", "files": all_gen_files, "integration_fix": True},
+                    metadata={"agent": "fixer", "files": fixer_files, "integration_fix": True},
                     blocked_by=[auditor_task.id],
                 )
                 verifier_task = store.create(
@@ -2352,9 +2413,12 @@ class ForgeShell:
                 else:
                     console.print("  [success]Integration issues resolved![/]")
 
-        # Skip gate review and verification if build was paused
-        if not build_paused:
-            # Gate review (skip with --no-review)
+            # Step 3: Re-verify after integration fixes (if fixes were applied)
+            verify_result = pre_verify_result
+            if "--no-verify" not in arg and issues:
+                verify_result = await self._run_verification(store)
+
+            # Step 4: Gate review (skip with --no-review)
             if "--no-review" not in arg:
                 spec_text = ""
                 spec_path = self.project_path / "spec.md"
@@ -2371,9 +2435,9 @@ class ForgeShell:
                 else:
                     console.print(f"  [warning]Gate: CONDITIONAL[/] — {gate_result['summary']}")
 
-            # Runtime verification (skip with --no-verify)
-            if "--no-verify" not in arg:
-                await self._run_verification(store)
+            # Step 5: L4 Functional gate — repair if functional tests failed
+            if "--no-verify" not in arg and verify_result:
+                await self._functional_repair_gate(store, arg, verify_result)
 
         # Post-build integrity check: verify expected files exist on disk
         missing_files = []
@@ -2575,8 +2639,12 @@ class ForgeShell:
                 "summary": str(exc)[:200],
             }
 
-    async def _run_verification(self, store: Any) -> None:
-        """Run runtime verification: start app, test with browser, report results."""
+    async def _run_verification(self, store: Any) -> "VerifyResult | None":
+        """Run runtime verification: start app, test with browser, report results.
+
+        Returns the VerifyResult so callers (e.g. functional repair gate) can
+        inspect L4 results without re-running the entire pipeline.
+        """
         from forge_verify import BuildVerifier
 
         spec_text = ""
@@ -2617,8 +2685,10 @@ class ForgeShell:
                 console.print(f"    {icon}  {check.name}: {check.detail[:80]}")
                 if check.evidence_path:
                     console.print(f"         [muted]screenshot: {check.evidence_path}[/]")
+            return vr
         except Exception as exc:
             console.print(f"  [warning]Verify: SKIP[/] — {exc}")
+            return None
 
     async def _agent_repair_preview(self, port: int) -> bool:
         """Run a ForgeAgent to diagnose and fix why GET / fails.
@@ -2706,6 +2776,129 @@ class ForgeShell:
             return result.tool_calls_made > 0 and not result.error
         except Exception:
             return False
+
+    async def _functional_repair_gate(self, store: Any, arg: str, initial_result: Any = None) -> None:
+        """Dispatch repair agents for L4 functional test failures.
+
+        Uses the VerifyResult from _run_verification (passed as initial_result)
+        for the first check to avoid re-running the entire L1-L4 pipeline.
+        Only re-runs verification after a repair agent makes changes.
+        Up to 2 repair cycles.
+        """
+        from forge_verify import BuildVerifier
+
+        spec_text = ""
+        spec_path = self.project_path / "spec.md"
+        if spec_path.exists():
+            try:
+                spec_text = spec_path.read_text()[:4000]
+            except Exception:
+                pass
+
+        for repair_cycle in range(2):
+            # First iteration: reuse the VerifyResult from _run_verification
+            # Subsequent iterations: re-run verification after repair
+            if repair_cycle == 0 and initial_result is not None:
+                vr = initial_result
+            else:
+                verifier = BuildVerifier(self.project_path, spec_text=spec_text)
+                try:
+                    completed = store.list(status="completed") if store else []
+                    vr = await verifier.verify(tasks=completed)
+                except Exception:
+                    return
+
+            # Find L4 functional failures
+            functional_fails = [
+                c for c in vr.checks
+                if not c.passed and c.name in (
+                    "button_functionality", "form_roundtrip", "api_roundtrip",
+                    "js_handlers", "functional_summary",
+                )
+            ]
+
+            if not functional_fails:
+                if repair_cycle > 0:
+                    console.print("  [success]Functional gate: PASS[/] (after repair)")
+                return
+
+            # Report failures
+            console.print()
+            fail_details = [f"{c.name}: {c.detail}" for c in functional_fails]
+            if repair_cycle == 0:
+                console.print(f"  [warning]Functional gate: {len(functional_fails)} issue(s) detected[/]")
+            for fd in fail_details[:5]:
+                console.print(f"    [muted]• {fd[:100]}[/]")
+
+            # Spawn repair agent
+            console.print(f"  [info]Running functional repair agent (cycle {repair_cycle + 1}/2)...[/]")
+
+            from forge_agent import ForgeAgent
+            repair_mc = get_model_config(self.model, max_tokens=4096)
+
+            # Build file tree for context
+            all_gen_files = []
+            for t in store.list():
+                if t.status == "completed" and t.metadata:
+                    all_gen_files.extend(t.metadata.get("files", []))
+            all_gen_files = list(dict.fromkeys(all_gen_files))
+            file_tree_text = "\n".join(f"  {f}" for f in all_gen_files[:20])
+
+            failures_text = "\n".join(f"- {fd}" for fd in fail_details)
+            repair_prompt = (
+                f"## Functional Test Failures\n"
+                f"The app loads but these features DON'T WORK:\n\n"
+                f"{failures_text}\n\n"
+                f"## Project Files\n{file_tree_text}\n\n"
+                f"## Your Task\n"
+                f"1. Read the files involved (start with the main HTML and JS files)\n"
+                f"2. For each failure:\n"
+                f"   - 'button_functionality': Find the button, check its event listener. "
+                f"     Wire it to the correct API call with fetch() and update the DOM.\n"
+                f"   - 'form_roundtrip': Check the form's submit handler. "
+                f"     Ensure it POSTs data and refreshes the list.\n"
+                f"   - 'api_roundtrip': Check the API route returns proper JSON.\n"
+                f"   - 'js_handlers': Add addEventListener to unwired buttons.\n"
+                f"3. Fix each issue using edit_file\n"
+                f"4. After fixing, test with bash: start the server and curl the endpoints\n\n"
+                f"CRITICAL: Actually FIX the code. Do not describe what to do — use your tools."
+            )
+
+            # Restrict repair agent tools: edit only, no full rewrites
+            REPAIR_TOOLS = {"read_file", "edit_file", "bash", "grep", "glob_files", "list_directory", "think"}
+            from forge_agent import BUILT_IN_TOOLS as _ALL_TOOLS
+            repair_tools = [t for t in _ALL_TOOLS if t["name"] in REPAIR_TOOLS]
+
+            repair_agent = ForgeAgent(
+                model_config=repair_mc,
+                project_root=self.project_path,
+                tools=repair_tools,
+                max_turns=12,
+                agent_id=f"forge-functional-repair-{repair_cycle}",
+            )
+
+            try:
+                repair_result = await repair_agent.run(
+                    prompt=repair_prompt,
+                    system=(
+                        "You are a code repair agent specializing in fixing broken web app features. "
+                        "Read the code, find why buttons/forms don't work, and fix them. "
+                        "Common issues: missing event listeners, fetch() not calling the right URL, "
+                        "DOM not updated after API response, missing function implementations. "
+                        "Be concise — read, diagnose, fix."
+                    ),
+                )
+                if repair_result.tool_calls_made > 0:
+                    console.print(f"    [success]Repair agent made {repair_result.tool_calls_made} tool calls[/]")
+                else:
+                    console.print(f"    [warning]Repair agent made no changes[/]")
+                    return  # No point re-verifying if nothing changed
+            except Exception as e:
+                console.print(f"    [error]Repair agent failed: {e}[/]")
+                return
+
+        # Final report after max repair cycles
+        console.print("  [warning]Functional gate: some issues may remain after 2 repair cycles[/]")
 
     # ── /status ──────────────────────────────────────────────────────────
 

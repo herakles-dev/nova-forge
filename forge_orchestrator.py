@@ -83,6 +83,62 @@ def _recover_json(raw: str) -> list | None:
     except json.JSONDecodeError:
         pass
 
+    # Fix nested double quotes inside JSON string values (common Nova Lite issue)
+    # Pattern: "some text "inner text" more text" → "some text \"inner text\" more text"
+    # Strategy: find strings with unescaped inner quotes by tracking quote state
+    def _fix_inner_quotes(s: str) -> str:
+        result = []
+        i = 0
+        while i < len(s):
+            if s[i] == '"':
+                # Start of a JSON string — find the "real" end
+                result.append('"')
+                i += 1
+                # Scan for the closing quote: it's the one followed by , ] } : or whitespace+one of those
+                j = i
+                while j < len(s):
+                    if s[j] == '\\':
+                        result.append(s[j:j+2])
+                        j += 2
+                        continue
+                    if s[j] == '"':
+                        # Is this the real closing quote?
+                        rest = s[j+1:].lstrip()
+                        if not rest or rest[0] in ',]}:':
+                            result.append('"')
+                            i = j + 1
+                            break
+                        else:
+                            # Inner quote — escape it
+                            result.append('\\"')
+                            j += 1
+                            continue
+                    result.append(s[j])
+                    j += 1
+                else:
+                    i = j
+            else:
+                result.append(s[i])
+                i += 1
+        return "".join(result)
+
+    fixed_quotes = _fix_inner_quotes(raw)
+    if fixed_quotes != raw:
+        try:
+            data = json.loads(fixed_quotes)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+        # Also try with trailing comma cleanup
+        cleaned_fixed = re.sub(r",\s*([}\]])", r"\1", fixed_quotes)
+        try:
+            data = json.loads(cleaned_fixed)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+
     # Python dict literal → JSON (single quotes → double quotes, True/False/None)
     try:
         import ast
@@ -273,7 +329,15 @@ class ForgeOrchestrator:
                 "Read spec.md and create a tasks.json file with the implementation tasks.\n\n"
                 "Format: JSON array of objects, each with:\n"
                 '  {"subject": "...", "description": "...", "sprint": "sprint-01", '
-                '"risk": "low|medium|high", "blocked_by": [], "files": ["path/file.py"]}\n\n'
+                '"risk": "low|medium|high", "blocked_by": [], "files": ["path/file.py"], '
+                '"acceptance_criteria": ["curl ... | grep ...", "bash command that proves it works"]}\n\n'
+                "ACCEPTANCE CRITERIA:\n"
+                "Each task MUST include an 'acceptance_criteria' field — a list of 1-3 bash/curl commands\n"
+                "that PROVE the code works at runtime. These are NOT syntax checks — they test BEHAVIOR.\n"
+                "Examples:\n"
+                '  - "curl -s http://localhost:5000/api/tasks | python3 -c \'import sys,json; d=json.load(sys.stdin); assert isinstance(d, list)\'"\n'
+                '  - "curl -s -X POST http://localhost:5000/api/tasks -H \'Content-Type: application/json\' -d \'{\"title\":\"test\"}\' -w \'%{http_code}\' | grep -q 201"\n'
+                '  - "python3 -c \'import models; models.create_tables(); assert models.get_tasks() is not None\'"\n\n'
                 + size_hint +
                 "DECOMPOSITION STRATEGY — FILE-CENTRIC TASKS:\n"
                 "Create ONE task per output file. Each task builds that file COMPLETELY with all "
@@ -296,23 +360,37 @@ class ForgeOrchestrator:
                 '"description": "SQLite helper functions: create_tables(), get_tasks(), create_task(title, order), '
                 'update_task(id, title, order), delete_task(id), create_session(task_id, start, end), get_stats(). '
                 'Use raw sqlite3 — NOT SQLAlchemy.",\n'
-                '    "files": ["models.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": []},\n'
+                '    "files": ["models.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [],\n'
+                '    "acceptance_criteria": ["python3 -c \\"import models; assert models.get_tasks() is not None\\""]},\n'
                 '   {"subject": "Create app.py — Flask server with all API routes", '
                 '"description": "Flask app with routes: GET/POST /api/tasks, PUT/DELETE /api/tasks/<id>, '
                 'POST /api/sessions, GET /api/stats. Import helpers from models.py. Serve templates/index.html.",\n'
-                '    "files": ["app.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [0]},\n'
+                '    "files": ["app.py"], "sprint": "sprint-01", "risk": "low", "blocked_by": [0],\n'
+                '    "acceptance_criteria": ["curl -s http://localhost:5000/api/tasks | python3 -c \\"import sys,json; assert isinstance(json.load(sys.stdin),list)\\""]},\n'
                 '   {"subject": "Create templates/index.html — complete single-page UI", '
                 '"description": "Full HTML page with task list, timer, chart container, dark mode toggle. '
                 'Links to static/style.css and static/app.js.",\n'
-                '    "files": ["templates/index.html"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1]},\n'
+                '    "files": ["templates/index.html"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1],\n'
+                '    "acceptance_criteria": ["test -s templates/index.html"]},\n'
                 '   {"subject": "Create static/app.js — all frontend JavaScript", '
                 '"description": "Complete JS: task CRUD with drag-and-drop, Pomodoro timer with SVG progress, '
                 'Chart.js bar chart, dark mode toggle, Web Audio API beep. All in one file.",\n'
-                '    "files": ["static/app.js"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1]},\n'
+                '    "files": ["static/app.js"], "sprint": "sprint-01", "risk": "medium", "blocked_by": [1],\n'
+                '    "acceptance_criteria": ["test -s static/app.js"]},\n'
                 '   {"subject": "Create static/style.css — all styles", '
                 '"description": "Complete CSS: glassmorphism, gradients, dark mode CSS variables, responsive layout.",\n'
-                '    "files": ["static/style.css"], "sprint": "sprint-01", "risk": "low", "blocked_by": []}]\n\n'
+                '    "files": ["static/style.css"], "sprint": "sprint-01", "risk": "low", "blocked_by": [],\n'
+                '    "acceptance_criteria": ["test -s static/style.css"]}]\n\n'
                 "Write the tasks.json file now.\n\n"
+                "INTEGRATION TEST TASK:\n"
+                "After all build tasks, add ONE final task in the LAST wave that:\n"
+                "1. Starts the app server (e.g. 'python3 app.py &')\n"
+                "2. Waits for it to start (sleep 2)\n"
+                "3. Runs ALL acceptance_criteria from all earlier tasks\n"
+                "4. If any fail, reads the code, fixes the bug, and retries\n"
+                "5. Stops the server (kill %1)\n"
+                "This task should be named 'Integration test — verify all features work' with "
+                "'blocked_by' referencing ALL other task indices, and 'files' should be empty [].\n\n"
                 "VALIDATION: After writing tasks.json, read it back with read_file to verify "
                 "it parses correctly. If you see a SYNTAX ERROR, fix it immediately with write_file."
             ),
@@ -383,6 +461,52 @@ class ForgeOrchestrator:
 
                     # Merge tasks that share files to prevent parallel conflicts
                     tasks_data = self._dedup_tasks(tasks_data)
+
+                    # Auto-inject requirements.txt task if Python project lacks one
+                    has_deps_task = any(
+                        "requirements.txt" in (t.get("files") or []) or
+                        "package.json" in (t.get("files") or [])
+                        for t in tasks_data
+                    )
+                    has_py_files = any(
+                        any(f.endswith(".py") for f in (t.get("files") or []))
+                        for t in tasks_data
+                    )
+                    if not has_deps_task and has_py_files:
+                        # Infer dependencies from task descriptions
+                        all_descs = " ".join(t.get("description", "") for t in tasks_data)
+                        dep_hints = []
+                        for pkg in ["flask", "fastapi", "uvicorn", "sqlalchemy", "requests",
+                                    "click", "rich", "jinja2", "gunicorn", "pydantic"]:
+                            if pkg in all_descs.lower():
+                                dep_hints.append(pkg)
+                        deps_str = ", ".join(dep_hints) if dep_hints else "inferred from imports"
+                        # Shift blocked_by indices for all existing tasks
+                        for t in tasks_data:
+                            t["blocked_by"] = [b + 1 for b in (t.get("blocked_by") or [])]
+                        # Insert at index 0 (wave 0, no blockers)
+                        tasks_data.insert(0, {
+                            "subject": "Create requirements.txt — Python dependencies",
+                            "description": f"Create requirements.txt with all needed packages ({deps_str}). "
+                                           f"One package per line, pin versions if known.",
+                            "files": ["requirements.txt"],
+                            "sprint": "sprint-01",
+                            "risk": "low",
+                            "blocked_by": [],
+                            "acceptance_criteria": ["test -s requirements.txt"],
+                        })
+                        logger.info("Auto-injected requirements.txt task at index 0")
+
+                    # Fix integration test task: ensure it depends on ALL other tasks
+                    # LLMs often get the blocked_by indices wrong after merges
+                    for idx, t in enumerate(tasks_data):
+                        subj_lower = t.get("subject", "").lower()
+                        if ("integration test" in subj_lower or "verify all features" in subj_lower) and not t.get("files"):
+                            # This is the auto-generated integration test task
+                            # Make it depend on ALL prior tasks (0-based indices)
+                            t["blocked_by"] = list(range(idx))
+                            logger.debug("Auto-fixed integration test task blocked_by to %s", t["blocked_by"])
+
                     task_count = len(tasks_data)
                     # Load into TaskStore
                     store = TaskStore(self.project.tasks_file)
@@ -404,6 +528,11 @@ class ForgeOrchestrator:
                                     task_id = b + 1
                                     if task_id <= i:  # only reference prior tasks
                                         resolved.append(str(task_id))
+                                    else:
+                                        logger.warning(
+                                            "Task %d (%s): blocked_by int %d out of range (forward ref or > task count)",
+                                            i, t.get("subject", "?"), b,
+                                        )
                                 elif isinstance(b, str):
                                     # Try parsing as integer first
                                     try:
@@ -411,12 +540,21 @@ class ForgeOrchestrator:
                                         task_id = idx + 1
                                         if task_id <= i:
                                             resolved.append(str(task_id))
+                                        else:
+                                            logger.warning(
+                                                "Task %d (%s): blocked_by str-int '%s' out of range",
+                                                i, t.get("subject", "?"), b,
+                                            )
                                     except ValueError:
                                         # Try matching by subject name
                                         key = b.lower().strip()
                                         if key in subject_index and subject_index[key] < i:
                                             resolved.append(str(subject_index[key] + 1))
-                                        # Silently skip unresolvable references
+                                        else:
+                                            logger.warning(
+                                                "Task %d (%s): blocked_by '%s' unresolvable (no matching subject)",
+                                                i, t.get("subject", "?"), b,
+                                            )
                             blocked_str = resolved or None
                         # Normalize LLM-generated metadata values
                         raw_sprint = str(t.get("sprint", "sprint-01"))
@@ -435,9 +573,21 @@ class ForgeOrchestrator:
                                 "sprint": raw_sprint,
                                 "risk": raw_risk,
                                 "files": t.get("files", []),
+                                "acceptance_criteria": t.get("acceptance_criteria", []),
                             },
                             blocked_by=blocked_str,
                         )
+                    # Semantic validation: warn if description implies dependency but blocked_by is empty
+                    _dep_keywords = ("depends on", "after", "requires", "once", "when")
+                    for i, t in enumerate(tasks_data):
+                        desc = (t.get("description", "") or "").lower()
+                        if not t.get("blocked_by") and any(kw in desc for kw in _dep_keywords):
+                            logger.warning(
+                                "Task %d (%s): description implies dependency ('%s') but blocked_by is empty",
+                                i, t.get("subject", "?"),
+                                next(kw for kw in _dep_keywords if kw in desc),
+                            )
+
                     # Warn about file ownership conflicts
                     file_owners: dict[str, list[str]] = {}
                     for t in tasks_data:
@@ -776,11 +926,30 @@ class ForgeOrchestrator:
             root = find(i)
             groups.setdefault(root, []).append(i)
 
-        # Merge each group
+        # Build old → new index remapping table
+        old_to_new: dict[int, int] = {}
+        sorted_groups = sorted(groups.items())
+        new_idx = 0
+        for _root, members in sorted_groups:
+            for m in members:
+                old_to_new[m] = new_idx
+            new_idx += 1
+
+        # Merge each group with proper blocked_by remapping
         merged: list[dict] = []
-        for root, members in sorted(groups.items()):
+        for current_new_idx, (_root, members) in enumerate(sorted_groups):
             if len(members) == 1:
-                merged.append(tasks_data[members[0]])
+                # Singleton: shallow copy and remap blocked_by
+                task = dict(tasks_data[members[0]])
+                old_blocked = task.get("blocked_by", [])
+                new_blocked: list[int] = []
+                for b in old_blocked:
+                    if isinstance(b, int) and b in old_to_new:
+                        mapped = old_to_new[b]
+                        if mapped != current_new_idx:
+                            new_blocked.append(mapped)
+                task["blocked_by"] = sorted(set(new_blocked))
+                merged.append(task)
             else:
                 # Combine into single task
                 subjects = [tasks_data[m].get("subject", "") for m in members]
@@ -800,13 +969,21 @@ class ForgeOrchestrator:
                     key=lambda r: risk_order.get(r, 0),
                 )
 
+                # Union all constituent blocked_by sets, remap through old_to_new
+                all_blocked: set[int] = set()
+                for m in members:
+                    for b in tasks_data[m].get("blocked_by", []):
+                        if isinstance(b, int) and b in old_to_new:
+                            all_blocked.add(old_to_new[b])
+                all_blocked.discard(current_new_idx)  # remove self-references
+
                 combined = {
                     "subject": " + ".join(s for s in subjects if s),
                     "description": "\n\n".join(d for d in descriptions if d),
                     "files": all_files,
                     "sprint": tasks_data[members[0]].get("sprint", "sprint-01"),
                     "risk": max_risk,
-                    "blocked_by": [],  # dependencies rebuilt after merge
+                    "blocked_by": sorted(all_blocked),
                 }
                 merged.append(combined)
                 logger.info(

@@ -26,3 +26,16 @@
 {"timestamp": "2026-03-14T05:14:02.413924", "run_name": "", "path": "runs/2026-03/run_20260314_051402.json", "models": ["nova-lite"], "grades": {"nova-lite": "A"}, "scores": {"nova-lite": 89.6}}
 {"timestamp": "2026-03-14T05:18:15.322647", "run_name": "", "path": "runs/2026-03/run_20260314_051815.json", "models": ["nova-pro"], "grades": {"nova-pro": "A"}, "scores": {"nova-pro": 90.4}}
 {"timestamp": "2026-03-14T05:40:40.592903", "run_name": "", "path": "runs/2026-03/run_20260314_054040.json", "models": ["nova-premier"], "grades": {"nova-premier": "A"}, "scores": {"nova-premier": 89.2}}
+{"timestamp": "2026-03-15T00:37:15.124076", "run_name": "", "path": "runs/2026-03/run_20260315_003715.json", "models": ["nova-lite"], "grades": {"nova-lite": "S"}, "scores": {"nova-lite": 100.0}}
+{"timestamp": "2026-03-15T20:15:20.484767", "run_name": "", "path": "runs/2026-03/run_20260315_201520.json", "models": ["nova-pro"], "grades": {"nova-pro": "B"}, "scores": {"nova-pro": 76.1}}
+{"timestamp": "2026-03-15T20:25:52.159059", "run_name": "", "path": "runs/2026-03/run_20260315_202552.json", "models": ["nova-pro"], "grades": {"nova-pro": "B"}, "scores": {"nova-pro": 80.2}}
+{"timestamp": "2026-03-15T20:29:19.732280", "run_name": "", "path": "runs/2026-03/run_20260315_202919.json", "models": ["nova-lite"], "grades": {"nova-lite": "C"}, "scores": {"nova-lite": 66.0}}
+{"timestamp": "2026-03-15T20:36:06.006321", "run_name": "", "path": "runs/2026-03/run_20260315_203606.json", "models": ["nova-lite"], "grades": {"nova-lite": "A"}, "scores": {"nova-lite": 93.5}}
+{"timestamp": "2026-03-15T20:36:56.783171", "run_name": "", "path": "runs/2026-03/run_20260315_203656.json", "models": ["nova-pro"], "grades": {"nova-pro": "B"}, "scores": {"nova-pro": 77.7}}
+{"timestamp": "2026-03-15T20:43:58.780226", "run_name": "", "path": "runs/2026-03/run_20260315_204358.json", "models": ["nova-lite"], "grades": {"nova-lite": "S"}, "scores": {"nova-lite": 95.0}}
+{"timestamp": "2026-03-15T20:46:51.335514", "run_name": "", "path": "runs/2026-03/run_20260315_204651.json", "models": ["nova-pro"], "grades": {"nova-pro": "B"}, "scores": {"nova-pro": 82.7}}
+{"timestamp": "2026-03-15T21:14:23.458770", "run_name": "", "path": "runs/2026-03/run_20260315_211423.json", "models": ["nova-lite"], "grades": {"nova-lite": "A"}, "scores": {"nova-lite": 92.5}}
+{"timestamp": "2026-03-15T21:17:25.373295", "run_name": "", "path": "runs/2026-03/run_20260315_211725.json", "models": ["nova-pro"], "grades": {"nova-pro": "A"}, "scores": {"nova-pro": 90.8}}
+{"timestamp": "2026-03-15T21:27:43.985537", "run_name": "", "path": "runs/2026-03/run_20260315_212743.json", "models": ["nova-pro"], "grades": {"nova-pro": "A"}, "scores": {"nova-pro": 90.8}}
+{"timestamp": "2026-03-15T21:30:59.225503", "run_name": "", "path": "runs/2026-03/run_20260315_213059.json", "models": ["nova-lite"], "grades": {"nova-lite": "S"}, "scores": {"nova-lite": 95.0}}
+{"timestamp": "2026-03-15T21:41:29.458020", "run_name": "", "path": "runs/2026-03/run_20260315_214129.json", "models": ["nova-pro"], "grades": {"nova-pro": "B"}, "scores": {"nova-pro": 81.4}}

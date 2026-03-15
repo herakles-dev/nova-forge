@@ -1,5 +1,114 @@
 # Benchmark Changelog
 
+## 2026-03-15
+
+| **nova-pro**: B (81%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 273s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-lite**: S (95%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 143s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: A (91%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 570s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: A (91%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 468s | Cost: $0.0075
+
+---
+## 2026-03-15
+
+| **nova-lite**: A (92%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 287s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: B (83%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 320s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-lite**: S (95%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 147s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: B (78%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 214s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-lite**: A (94%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 165s | Cost: $0.0000
+
+**Regressions:**
+- ! nova-lite efficiency: 100.0% -> 75.0%
+
+**Deltas:** nova-lite: C -> A
+
+---
+## 2026-03-15
+
+| **nova-lite**: C (66%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 151s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: B (80%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 283s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: B (76%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 647s | Cost: $0.0038
+
+---
+## 2026-03-15
+
+| **nova-lite**: S (100%) |
+
+Git: `13781b3` on `main` (dirty)
+Duration: 159s | Cost: $0.0000
+
+---
 ## 2026-03-14
 
 | **nova-premier**: A (89%) |
