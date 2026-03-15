@@ -235,3 +235,90 @@ class TestModelPresets:
         assert preset["default_model"] == "nova-pro"
         assert preset["phases"]["coding"] == "nova-pro"
         assert preset["phases"]["escalation"] == "nova-premier"
+
+
+# ── compute_turn_budget tests ──────────────────────────────────────────────
+
+
+class TestComputeTurnBudget:
+    """Tests for config.compute_turn_budget() — adaptive turn budget by task complexity."""
+
+    def setup_method(self):
+        from config import compute_turn_budget
+        self.compute = compute_turn_budget
+
+    def test_zero_files_returns_base_12(self):
+        result = self.compute({"files": []})
+        assert result["soft_limit"] == 12
+
+    def test_one_file_returns_base_15(self):
+        result = self.compute({"files": ["app.py"]})
+        assert result["soft_limit"] == 15
+
+    def test_two_files_returns_base_18(self):
+        result = self.compute({"files": ["app.py", "models.py"]})
+        assert result["soft_limit"] == 18
+
+    def test_three_files_returns_scaled(self):
+        result = self.compute({"files": ["a.py", "b.py", "c.py"]})
+        # 3 files: min(12 + 3*4, 30) = min(24, 30) = 24
+        assert result["soft_limit"] == 24
+
+    def test_many_files_capped_at_30(self):
+        files = [f"f{i}.py" for i in range(10)]
+        result = self.compute({"files": files})
+        # 10 files: min(12 + 10*4, 30) = min(52, 30) = 30
+        assert result["soft_limit"] == 30
+
+    def test_server_acceptance_criteria_adds_budget(self):
+        result_plain = self.compute({"files": ["app.py"]})
+        result_server = self.compute({
+            "files": ["app.py"],
+            "acceptance_criteria": ["curl http://localhost:5000/api/tasks"],
+        })
+        assert result_server["soft_limit"] == result_plain["soft_limit"] + 4
+
+    def test_blocked_by_adds_budget(self):
+        result_plain = self.compute({"files": ["app.py"]})
+        result_blocked = self.compute({
+            "files": ["app.py"],
+            "blocked_by": [1, 2],
+        })
+        assert result_blocked["soft_limit"] == result_plain["soft_limit"] + 2
+
+    def test_hard_limit_exceeds_soft(self):
+        result = self.compute({"files": ["app.py"]})
+        assert result["hard_limit"] > result["soft_limit"]
+
+    def test_hard_limit_formula(self):
+        result = self.compute({"files": ["app.py"]})
+        soft = result["soft_limit"]
+        expected_hard = max(soft + 4, int(soft * 1.3))
+        assert result["hard_limit"] == expected_hard
+
+    def test_verify_budget_is_quarter_of_soft(self):
+        result = self.compute({"files": ["app.py", "models.py"]})
+        assert result["verify_budget"] == max(2, result["soft_limit"] // 4)
+
+    def test_escalation_turns_is_half_of_soft(self):
+        result = self.compute({"files": ["app.py", "models.py"]})
+        assert result["escalation_turns"] == max(8, result["soft_limit"] // 2)
+
+    def test_ceiling_caps_soft_limit(self):
+        files = [f"f{i}.py" for i in range(10)]
+        result = self.compute({"files": files}, max_turns_ceiling=20)
+        assert result["soft_limit"] <= 20
+
+    def test_ceiling_caps_hard_limit(self):
+        files = [f"f{i}.py" for i in range(10)]
+        result = self.compute({"files": files}, max_turns_ceiling=20)
+        # hard_limit never wildly exceeds ceiling: max(soft+4, soft*1.3) capped at ceiling+4
+        assert result["hard_limit"] <= 24  # ceiling + 4
+
+    def test_missing_files_key_uses_zero(self):
+        result = self.compute({})
+        assert result["soft_limit"] == 12
+
+    def test_returns_all_required_keys(self):
+        result = self.compute({"files": ["app.py"]})
+        assert set(result.keys()) == {"soft_limit", "hard_limit", "verify_budget", "escalation_turns"}

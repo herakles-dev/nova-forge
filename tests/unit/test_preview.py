@@ -520,3 +520,165 @@ class TestPreviewResilience:
             with pytest.raises(PreviewError, match="cloudflared not found"):
                 mgr._reconnect_tunnel()
         mgr.stop()
+
+
+# ── 127.0.0.1 binding security tests ─────────────────────────────────────
+
+class TestLocalhostBinding:
+    """All server commands must bind to 127.0.0.1, never 0.0.0.0."""
+
+    def test_static_server_binds_localhost(self, tmp_path):
+        """python3 -m http.server must use --bind 127.0.0.1."""
+        (tmp_path / "index.html").write_text("<html>test</html>")
+        si = detect_stack(tmp_path)
+        assert si.kind == "static"
+        assert "--bind 127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_flask_server_binds_localhost(self, tmp_path):
+        """Flask app.run must use host='127.0.0.1'."""
+        (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
+        si = detect_stack(tmp_path)
+        assert si.kind == "flask"
+        assert "127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_flask_factory_binds_localhost(self, tmp_path):
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask\ndef create_app():\n    app = Flask(__name__)\n    return app\n"
+        )
+        si = detect_stack(tmp_path)
+        assert si.kind == "flask"
+        assert "127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_fastapi_server_binds_localhost(self, tmp_path):
+        """uvicorn must use --host 127.0.0.1."""
+        (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()")
+        si = detect_stack(tmp_path)
+        assert si.kind == "fastapi"
+        assert "--host 127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_django_server_binds_localhost(self, tmp_path):
+        """Django runserver must use 127.0.0.1:PORT."""
+        (tmp_path / "manage.py").write_text("#!/usr/bin/env python\nimport django\n")
+        si = detect_stack(tmp_path)
+        assert si.kind == "django"
+        assert "127.0.0.1:" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_streamlit_server_binds_localhost(self, tmp_path):
+        """Streamlit must use --server.address=127.0.0.1."""
+        (tmp_path / "app.py").write_text("import streamlit as st\nst.title('hi')")
+        si = detect_stack(tmp_path)
+        assert si.kind == "streamlit"
+        assert "127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_vite_server_binds_localhost(self, tmp_path):
+        """Vite must use --host 127.0.0.1."""
+        (tmp_path / "package.json").write_text('{"devDependencies":{"vite":"5.0.0"}}')
+        si = detect_stack(tmp_path)
+        assert si.kind == "vite"
+        assert "--host 127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_php_server_binds_localhost(self, tmp_path):
+        """php -S must bind to 127.0.0.1."""
+        (tmp_path / "index.php").write_text('<?php echo "hi"; ?>')
+        si = detect_stack(tmp_path)
+        assert si.kind == "php"
+        assert "127.0.0.1:" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_rails_server_binds_localhost(self, tmp_path):
+        """rails s must use -b 127.0.0.1."""
+        (tmp_path / "Gemfile").write_text("gem 'rails'")
+        (tmp_path / "config.ru").write_text("run Rails.application")
+        si = detect_stack(tmp_path)
+        assert si.kind == "rails"
+        assert "-b 127.0.0.1" in si.server_cmd
+        assert "0.0.0.0" not in si.server_cmd
+
+    def test_docker_port_mapping_binds_localhost(self, tmp_path):
+        """Docker -p must use 127.0.0.1:HOST:CONTAINER prefix."""
+        (tmp_path / "Dockerfile").write_text("FROM python:3.11\nEXPOSE 9000")
+        si = detect_stack(tmp_path)
+        assert si.kind == "docker"
+        assert "127.0.0.1:" in si.server_cmd
+        assert "-p 127.0.0.1:" in si.server_cmd
+
+    def test_no_stack_has_zero_binding(self, tmp_path):
+        """No detected stack should ever bind to 0.0.0.0."""
+        stacks = [
+            ("flask", lambda p: (p / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")),
+            ("fastapi", lambda p: (p / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()")),
+            ("static", lambda p: (p / "index.html").write_text("<html></html>")),
+            ("django", lambda p: (p / "manage.py").write_text("import django\n")),
+            ("streamlit", lambda p: (p / "app.py").write_text("import streamlit as st\n")),
+            ("docker", lambda p: (p / "Dockerfile").write_text("FROM nginx\nEXPOSE 80")),
+            ("php", lambda p: (p / "index.php").write_text("<?php ?>")),
+        ]
+        for kind, setup in stacks:
+            d = tmp_path / kind
+            d.mkdir()
+            setup(d)
+            si = detect_stack(d)
+            assert "0.0.0.0" not in si.server_cmd, (
+                f"Stack {si.kind} binds to 0.0.0.0: {si.server_cmd}"
+            )
+
+
+# ── Edge cases for stack detection ────────────────────────────────────────
+
+class TestStackDetectionEdgeCases:
+    """Additional edge cases for detect_stack."""
+
+    def test_multiple_python_files_in_dir(self, tmp_path):
+        """When multiple .py files exist, flask detection still works."""
+        (tmp_path / "utils.py").write_text("x = 1\n")
+        (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
+        si = detect_stack(tmp_path)
+        assert si.kind == "flask"
+
+    def test_compose_only_not_detected_as_docker(self, tmp_path):
+        """docker-compose.yml without Dockerfile should not detect as docker."""
+        (tmp_path / "docker-compose.yml").write_text("version: '3'\nservices:\n  web:\n    image: nginx\n")
+        si = detect_stack(tmp_path)
+        assert si.kind != "docker"
+
+    def test_detect_stack_returns_valid_port_range(self, tmp_path):
+        """All detected stacks should have port > 0."""
+        (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
+        si = detect_stack(tmp_path)
+        assert si.port > 0
+        assert si.port < 65536
+
+    def test_extract_expose_port_with_tcp_suffix(self, tmp_path):
+        """EXPOSE 8080/tcp should extract 8080."""
+        df = tmp_path / "Dockerfile"
+        df.write_text("FROM nginx\nEXPOSE 8080/tcp\n")
+        assert _extract_expose_port(df) == 8080
+
+    def test_extract_expose_port_multiple_lines(self, tmp_path):
+        """First EXPOSE line wins."""
+        df = tmp_path / "Dockerfile"
+        df.write_text("FROM nginx\nEXPOSE 3000\nEXPOSE 5000\n")
+        assert _extract_expose_port(df) == 3000
+
+    def test_read_pkg_deps_malformed_json(self, tmp_path):
+        """Malformed package.json returns empty set."""
+        pkg = tmp_path / "package.json"
+        pkg.write_text("{bad json")
+        assert _read_pkg_deps(pkg) == set()
+
+    def test_stackinfo_custom_health_path(self):
+        si = StackInfo(kind="api", entry="main.py", cwd=Path("."),
+                       server_cmd="cmd", port=8000, health_path="/health")
+        assert si.health_path == "/health"
+
+    def test_stackinfo_custom_startup_timeout(self):
+        si = StackInfo(kind="rust", entry="Cargo.toml", cwd=Path("."),
+                       server_cmd="cargo run", port=8080, startup_timeout=45)
+        assert si.startup_timeout == 45

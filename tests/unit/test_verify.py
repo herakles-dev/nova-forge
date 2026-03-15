@@ -444,3 +444,256 @@ class TestHTMLSrcHrefScanning:
         (tmp_path / "page.html").write_text('<script src="missing.js"></script>')
         issues = scan_file_references(tmp_path)
         assert any("missing.js" in i and "not found" in i for i in issues)
+
+
+# ── VerifyResult edge cases ───────────────────────────────────────────────
+
+class TestVerifyResultEdgeCases:
+    """Additional tests for VerifyResult status transitions and summary."""
+
+    def test_status_stays_pass_with_only_passes(self):
+        vr = VerifyResult()
+        vr.add("a", True, "ok")
+        vr.add("b", True, "ok")
+        vr.add("c", True, "ok")
+        assert vr.status == "pass"
+
+    def test_status_becomes_partial_on_first_failure(self):
+        vr = VerifyResult()
+        vr.add("a", True, "ok")
+        vr.add("b", True, "ok")
+        vr.add("c", False, "bad")
+        assert vr.status in ("partial", "fail")
+        assert vr.failed == 1
+        assert vr.passed == 2
+
+    def test_status_becomes_fail_with_majority_failures(self):
+        vr = VerifyResult()
+        vr.add("a", False, "bad")
+        vr.add("b", False, "bad")
+        vr.add("c", False, "bad")
+        assert vr.status == "fail"
+        assert vr.failed == 3
+        assert vr.passed == 0
+
+    def test_summary_format_with_all_passing(self):
+        vr = VerifyResult()
+        vr.add("a", True)
+        vr.add("b", True)
+        assert vr.summary == "2/2 checks passed"
+
+    def test_empty_verify_result(self):
+        vr = VerifyResult()
+        assert vr.passed == 0
+        assert vr.failed == 0
+        assert vr.summary == "0/0 checks passed"
+        assert vr.status == "pass"
+        assert vr.checks == []
+
+    def test_screenshot_dir_stored(self):
+        vr = VerifyResult(screenshot_dir="/tmp/screenshots")
+        assert vr.screenshot_dir == "/tmp/screenshots"
+
+
+# ── _get_module_exports ───────────────────────────────────────────────────
+
+class TestGetModuleExports:
+    """Tests for the _get_module_exports AST helper."""
+
+    def test_extracts_functions(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "mod.py"
+        f.write_text("def foo():\n    pass\ndef bar():\n    pass\n")
+        exports = _get_module_exports(f)
+        assert "foo" in exports
+        assert "bar" in exports
+
+    def test_extracts_classes(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "mod.py"
+        f.write_text("class MyClass:\n    pass\n")
+        exports = _get_module_exports(f)
+        assert "MyClass" in exports
+
+    def test_extracts_assignments(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "mod.py"
+        f.write_text("DB = 'test.db'\nAPP_NAME = 'test'\n")
+        exports = _get_module_exports(f)
+        assert "DB" in exports
+        assert "APP_NAME" in exports
+
+    def test_handles_syntax_error(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "mod.py"
+        f.write_text("def broken(\n")
+        exports = _get_module_exports(f)
+        assert exports == set()
+
+    def test_handles_nonexistent_file(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "nonexistent.py"
+        exports = _get_module_exports(f)
+        assert exports == set()
+
+    def test_extracts_async_functions(self, tmp_path):
+        from forge_verify import _get_module_exports
+        f = tmp_path / "mod.py"
+        f.write_text("async def fetch():\n    pass\n")
+        exports = _get_module_exports(f)
+        assert "fetch" in exports
+
+
+# ── _diagnose_root_404 edge cases ─────────────────────────────────────────
+
+class TestDiagnoseRoot404EdgeCases:
+    """Additional edge cases for root route diagnosis."""
+
+    def test_diagnose_500_error(self, tmp_path):
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(500)
+        assert "500" in msg
+        assert "server error" in msg.lower() or "runtime" in msg.lower()
+
+    def test_diagnose_0_connection_error(self, tmp_path):
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(0)
+        assert "no HTTP response" in msg or "failed" in msg.lower()
+
+    def test_diagnose_unknown_status(self, tmp_path):
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(418)
+        assert "418" in msg
+
+    def test_diagnose_404_with_no_index(self, tmp_path):
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(404)
+        assert "404" in msg
+        assert "missing index.html" in msg or "no root route" in msg
+
+    def test_diagnose_render_template_vs_static(self, tmp_path):
+        """render_template() but index.html in static/ (not templates/)."""
+        (tmp_path / "static").mkdir()
+        (tmp_path / "static" / "index.html").write_text("<h1>hi</h1>")
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask, render_template\n"
+            "app = Flask(__name__)\n"
+            "@app.route('/')\n"
+            "def index(): return render_template('index.html')\n"
+        )
+        v = BuildVerifier(tmp_path)
+        msg = v._diagnose_root_404(404)
+        assert "render_template" in msg
+        assert "static/" in msg
+
+
+# ── L1 checks: additional coverage ────────────────────────────────────────
+
+class TestImportCheckEdgeCases:
+    """Additional edge cases for import checking."""
+
+    def test_from_import_with_alias(self, tmp_path):
+        """from config import DB as database should not false-positive."""
+        (tmp_path / "config.py").write_text("DB = 'test.db'\n")
+        (tmp_path / "app.py").write_text("from config import DB as database\n")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_imports(r)
+        assert r.checks[0].passed
+
+    def test_relative_import_not_flagged(self, tmp_path):
+        """Relative imports (import os) should not be flagged."""
+        (tmp_path / "app.py").write_text("import os\nimport sys\nimport json\n")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_imports(r)
+        assert r.checks[0].passed
+
+    def test_no_python_files_skips_import_check(self, tmp_path):
+        """When no .py files in root, import check adds no checks."""
+        (tmp_path / "index.html").write_text("<html></html>")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_imports(r)
+        assert len(r.checks) == 0
+
+    def test_multiple_broken_imports(self, tmp_path):
+        """Multiple broken imports all listed."""
+        (tmp_path / "app.py").write_text(
+            "from nonexistent_xyz import Foo\n"
+            "from missing_pkg_abc import Bar\n"
+        )
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_imports(r)
+        assert not r.checks[0].passed
+        assert "nonexistent_xyz" in r.checks[0].detail
+        assert "missing_pkg_abc" in r.checks[0].detail
+
+
+class TestSyntaxCheckEdgeCases:
+    """Additional edge cases for syntax checking."""
+
+    def test_multiple_syntax_errors(self, tmp_path):
+        (tmp_path / "a.py").write_text("def broken(\n")
+        (tmp_path / "b.py").write_text("class Foo(\n")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_syntax(r)
+        assert not r.checks[0].passed
+        assert "2 file(s)" in r.checks[0].detail
+
+    def test_valid_mixed_with_invalid(self, tmp_path):
+        (tmp_path / "good.py").write_text("x = 1\n")
+        (tmp_path / "bad.py").write_text("def broken(\n")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_syntax(r)
+        assert not r.checks[0].passed
+        assert "1 file(s)" in r.checks[0].detail
+
+    def test_deeply_nested_python_files(self, tmp_path):
+        """Python files in nested directories are checked."""
+        nested = tmp_path / "src" / "api" / "routes"
+        nested.mkdir(parents=True)
+        (nested / "handlers.py").write_text("x = 1\n")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_syntax(r)
+        assert r.checks[0].passed
+        assert "1 Python" in r.checks[0].detail
+
+
+class TestFileReferenceEdgeCases:
+    """Additional edge cases for file reference checking."""
+
+    def test_no_python_files_passes(self, tmp_path):
+        """No Python files in project means file_references passes or is not added."""
+        (tmp_path / "readme.txt").write_text("hello")
+        v = BuildVerifier(tmp_path)
+        r = VerifyResult()
+        v._check_file_references(r)
+        # Should not add a failing check when there are no files to scan
+        failing = [c for c in r.checks if not c.passed and c.name == "file_references"]
+        assert len(failing) == 0
+
+
+# ── Skip path additional cases ────────────────────────────────────────────
+
+class TestSkipPathAdditional:
+    """Extra skip path edge cases."""
+
+    def test_skips_forge_dir(self, tmp_path):
+        assert _skip_path(tmp_path / ".forge" / "settings.json", tmp_path)
+
+    def test_skips_pycache(self, tmp_path):
+        assert _skip_path(tmp_path / "__pycache__" / "module.pyc", tmp_path)
+
+    def test_skips_artifacts(self, tmp_path):
+        assert _skip_path(tmp_path / "artifacts" / "output.json", tmp_path)
+
+    def test_outside_root_is_skipped(self):
+        """A path outside the root directory is skipped."""
+        root = Path("/home/user/project")
+        outside = Path("/etc/passwd")
+        assert _skip_path(outside, root)

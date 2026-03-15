@@ -161,7 +161,8 @@ class TestAppendBuildContext:
 class TestAppendAutoVerify:
     """Test syntax check runs after append on .py files."""
 
-    def test_append_auto_verify_python(self, tmp_path):
+    def test_append_auto_verify_python_syntax_ok(self, tmp_path):
+        """Valid Python appended should trigger py_compile and report syntax OK."""
         agent = _make_agent(tmp_path)
         target = tmp_path / "valid.py"
 
@@ -172,6 +173,52 @@ class TestAppendAutoVerify:
 
         assert "Appended" in result
         assert target.exists()
+        assert "syntax OK" in result, (
+            f"Expected 'syntax OK' from py_compile auto-verify, got: {result}"
+        )
+
+    def test_append_auto_verify_invalid_python_reports_error(self, tmp_path):
+        """Invalid Python appended should report syntax issue."""
+        agent = _make_agent(tmp_path)
+        target = tmp_path / "bad.py"
+
+        artifacts = {}
+        result = _run(
+            agent._tool_append_file({"path": "bad.py", "content": "def broken(\n"}, artifacts)
+        )
+
+        assert "Appended" in result
+        assert "Syntax issue" in result, (
+            f"Expected 'Syntax issue' for invalid Python, got: {result}"
+        )
+
+    def test_append_auto_verify_path_with_spaces(self, tmp_path):
+        """Auto-verify uses repr() quoting which must handle paths with spaces."""
+        spaced_dir = tmp_path / "my project"
+        spaced_dir.mkdir()
+        agent = _make_agent(spaced_dir)
+
+        artifacts = {}
+        result = _run(
+            agent._tool_append_file({"path": "app.py", "content": "y = 2\n"}, artifacts)
+        )
+
+        assert "Appended" in result
+        assert "syntax OK" in result, (
+            f"repr() quoting should handle spaces in path, got: {result}"
+        )
+
+    def test_append_auto_verify_non_python_no_syntax_check(self, tmp_path):
+        """Non-Python files should not report syntax OK."""
+        agent = _make_agent(tmp_path)
+
+        artifacts = {}
+        result = _run(
+            agent._tool_append_file({"path": "readme.md", "content": "# Hello\n"}, artifacts)
+        )
+
+        assert "Appended" in result
+        assert "syntax OK" not in result
 
 
 class TestAppendArtifacts:

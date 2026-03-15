@@ -113,10 +113,12 @@ def test_estimate_tokens_longer():
 
 
 def test_estimate_tokens_unicode():
-    """Unicode chars counted by length (bytes not counted)."""
-    text = "hello world"
+    """Unicode chars counted by length, 4-char ratio applies to len()."""
+    text = "hello world"  # 11 chars
     result = estimate_tokens(text)
-    assert result >= 1
+    assert result == 11 // 4 or result == max(1, 11 // 4), (
+        f"Expected ~{11 // 4} tokens for 11-char string, got {result}"
+    )
 
 
 # ── read_file large file auto-truncation ─────────────────────────────────────
@@ -304,15 +306,18 @@ async def test_grep_few_matches_no_summary(tmp_path):
 # ── compaction threshold ──────────────────────────────────────────────────────
 
 def test_compaction_threshold_32k():
-    """32K model compaction threshold is 0.60, not 0.80."""
+    """32K model compaction threshold is 0.60, more aggressive than larger models."""
     budget = get_prompt_budget(32_000)
     assert budget["compaction_threshold"] == 0.60
-    # Verify 80% would be higher (old value)
-    assert 0.60 < 0.80
+    # 32K model should compact more aggressively than 200K+
+    budget_200k = get_prompt_budget(200_000)
+    assert budget["compaction_threshold"] < budget_200k["compaction_threshold"], (
+        "32K model should compact more aggressively (lower threshold) than 200K model"
+    )
 
 
 def test_compaction_threshold_200k():
-    """200K model compaction threshold is 0.75."""
+    """200K model compaction threshold is 0.65 (lowered from 0.75 for more headroom)."""
     budget = get_prompt_budget(200_000)
     assert budget["compaction_threshold"] == 0.65
 
@@ -382,3 +387,56 @@ def test_compact_messages_drops_read_file_content(tmp_path):
     )
     assert "read — dropped" in all_content
     assert "very long file content" not in all_content
+
+
+# ── Additional compaction edge cases ─────────────────────────────────────────
+
+def test_compact_messages_preserves_head_message(tmp_path):
+    """The first message (system/user prompt) is always preserved."""
+    agent = make_agent(tmp_path, "bedrock/us.amazon.nova-2-lite-v1:0")
+
+    first_msg = {"role": "user", "content": "Build a todo app with Flask"}
+    messages = [first_msg]
+    for i in range(20):
+        messages.append({"role": "assistant", "content": f"Response {i}"})
+        messages.append({"role": "user", "content": f"Tool result {i}"})
+
+    result = agent._compact_messages(messages)
+    assert result[0]["content"] == first_msg["content"], (
+        "First message (system prompt) must always be preserved verbatim"
+    )
+
+
+def test_compact_messages_preserves_tail_messages(tmp_path):
+    """The most recent messages (tail) are preserved verbatim."""
+    agent = make_agent(tmp_path, "bedrock/us.amazon.nova-2-lite-v1:0")
+
+    messages = [{"role": "user", "content": "Initial prompt"}]
+    for i in range(20):
+        messages.append({"role": "assistant", "content": f"Response {i}"})
+        messages.append({"role": "user", "content": f"Tool result {i}"})
+
+    result = agent._compact_messages(messages)
+    # Last message should be preserved
+    assert result[-1]["content"] == messages[-1]["content"]
+
+
+def test_get_prompt_budget_zones_positive(tmp_path):
+    """All prompt budget zones must be positive integers."""
+    for ctx_window in [32_000, 200_000, 1_000_000]:
+        budget = get_prompt_budget(ctx_window)
+        for key in ["system_prompt", "project_index", "chat_history", "memory", "working_space"]:
+            assert budget[key] > 0, f"{key} must be positive for {ctx_window} context"
+        assert 0 < budget["compaction_threshold"] < 1, (
+            f"compaction_threshold must be between 0 and 1 for {ctx_window} context"
+        )
+
+
+def test_get_prompt_budget_working_space_is_largest(tmp_path):
+    """Working space should be the largest zone in every budget tier."""
+    for ctx_window in [32_000, 200_000, 1_000_000]:
+        budget = get_prompt_budget(ctx_window)
+        for key in ["system_prompt", "project_index", "chat_history", "memory"]:
+            assert budget["working_space"] > budget[key], (
+                f"working_space should be larger than {key} at {ctx_window} context"
+            )

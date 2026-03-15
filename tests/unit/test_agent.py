@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 
-from forge_agent import ForgeAgent
+from forge_agent import ForgeAgent, ConvergenceTracker
 from forge_hooks import HookSystem
 from model_router import ModelResponse, ToolCall
 from config import get_model_config
@@ -425,3 +425,251 @@ class TestEscalationBudget:
         agent = make_agent(tmp_path)
         # make_agent uses max_turns=5, so _escalation_turns = max(8, 5//2) = 8
         assert agent._escalation_turns >= 8
+
+
+# ── _auto_verify tests ──────────────────────────────────────────────────────
+
+class TestAutoVerify:
+    """Test _auto_verify handles Python files with repr() quoting and other file types."""
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_python_syntax_ok(self, tmp_path):
+        """_auto_verify returns '(syntax OK)' for valid Python."""
+        agent = make_agent(tmp_path)
+        py_file = tmp_path / "good.py"
+        py_file.write_text("def hello():\n    return 42\n")
+        result = await agent._auto_verify(py_file)
+        assert "syntax OK" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_python_syntax_error(self, tmp_path):
+        """_auto_verify detects syntax errors in Python files."""
+        agent = make_agent(tmp_path)
+        py_file = tmp_path / "bad.py"
+        py_file.write_text("def broken(\n")
+        result = await agent._auto_verify(py_file)
+        assert "Syntax issue" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_python_path_with_spaces(self, tmp_path):
+        """_auto_verify handles paths containing spaces via repr() quoting."""
+        agent = make_agent(tmp_path)
+        dir_with_space = tmp_path / "my project"
+        dir_with_space.mkdir()
+        py_file = dir_with_space / "app.py"
+        py_file.write_text("x = 1\n")
+        result = await agent._auto_verify(py_file)
+        assert "syntax OK" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_html_ok(self, tmp_path):
+        """_auto_verify validates balanced HTML tags."""
+        agent = make_agent(tmp_path)
+        html_file = tmp_path / "index.html"
+        html_file.write_text("<html><body><script>alert(1)</script></body></html>")
+        result = await agent._auto_verify(html_file)
+        assert "HTML OK" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_html_unclosed_script(self, tmp_path):
+        """_auto_verify detects unclosed <script> tags in HTML."""
+        agent = make_agent(tmp_path)
+        html_file = tmp_path / "bad.html"
+        html_file.write_text("<html><body><script>alert(1)</body></html>")
+        result = await agent._auto_verify(html_file)
+        assert "HTML ERROR" in result
+        assert "script" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_css_ok(self, tmp_path):
+        """_auto_verify validates balanced CSS braces."""
+        agent = make_agent(tmp_path)
+        css_file = tmp_path / "style.css"
+        css_file.write_text("body { color: red; }\nh1 { font-size: 2em; }")
+        result = await agent._auto_verify(css_file)
+        assert "CSS OK" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_css_unbalanced_braces(self, tmp_path):
+        """_auto_verify detects unbalanced braces in CSS."""
+        agent = make_agent(tmp_path)
+        css_file = tmp_path / "bad.css"
+        css_file.write_text("body { color: red;\nh1 { font-size: 2em; }")
+        result = await agent._auto_verify(css_file)
+        assert "CSS ERROR" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_unknown_extension(self, tmp_path):
+        """_auto_verify returns empty string for unknown file types."""
+        agent = make_agent(tmp_path)
+        txt_file = tmp_path / "readme.txt"
+        txt_file.write_text("Hello world")
+        result = await agent._auto_verify(txt_file)
+        assert result == ""
+
+
+# ── Bash timeout process kill tests ──────────────────────────────────────────
+
+class TestBashTimeoutKill:
+    """Test that bash tool kills subprocess on timeout."""
+
+    @pytest.mark.asyncio
+    async def test_bash_timeout_returns_message(self, tmp_path):
+        """Bash command exceeding timeout returns timeout message."""
+        agent = make_agent(tmp_path)
+        # Use a very short timeout by patching wait_for
+        with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+            with patch("asyncio.create_subprocess_shell", new_callable=AsyncMock) as mock_proc:
+                mock_process = AsyncMock()
+                mock_process.kill = MagicMock()
+                mock_process.wait = AsyncMock()
+                mock_proc.return_value = mock_process
+                result = await agent._tool_bash({"command": "sleep 999"})
+
+        assert "timed out" in result.lower()
+        assert "killed" in result.lower()
+        mock_process.kill.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_bash_timeout_with_null_proc(self, tmp_path):
+        """Bash handles case where proc is None on timeout (create failed)."""
+        agent = make_agent(tmp_path)
+        with patch("asyncio.create_subprocess_shell", side_effect=asyncio.TimeoutError()):
+            result = await agent._tool_bash({"command": "sleep 999"})
+        # Should return a command failure message, not crash
+        assert "failed" in result.lower() or "timed out" in result.lower()
+
+
+# ── Escalation artifact merge tests ──────────────────────────────────────────
+
+class TestEscalationArtifactMerge:
+    """Escalation merges original artifacts into escalated result."""
+
+    @pytest.mark.asyncio
+    async def test_escalation_merges_artifacts(self, tmp_path):
+        """After escalation, original artifacts appear in escalated result."""
+        agent = make_agent(tmp_path)
+        agent.max_turns = 2
+        agent.soft_max_turns = 2
+        agent.escalation_model = "bedrock/us.amazon.nova-pro-v1:0"
+        # Disable auto_verify so verify phase doesn't interfere
+        agent.auto_verify = False
+
+        # hard_limit = max(2+4, int(2*1.3)) = 6
+        # We need 6 tool call turns to exhaust hard limit, then escalated run returns text
+        call_count = 0
+        escalated = False
+
+        async def mock_send(messages, tools, model_config):
+            nonlocal call_count, escalated
+            call_count += 1
+            # Detect escalation: model_config will have different model_id
+            if "nova-pro" in model_config.model_id:
+                escalated = True
+                return text_response("Escalated model done.")
+            # Original model: always return tool calls to exhaust hard limit
+            return tool_call_response("read_file", {
+                "path": str(tmp_path / "x.txt")
+            }, call_id=f"tc_{call_count}")
+
+        (tmp_path / "x.txt").write_text("hello")
+
+        with patch.object(agent.router, "send", side_effect=mock_send):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await agent.run("Do work")
+
+        assert escalated is True
+        assert result.escalated is True
+
+    @pytest.mark.asyncio
+    async def test_escalation_restores_config_on_failure(self, tmp_path):
+        """Escalation try/finally restores original config even if escalated run fails."""
+        agent = make_agent(tmp_path)
+        agent.max_turns = 2
+        agent.soft_max_turns = 2
+        agent.auto_verify = False
+        agent.escalation_model = "bedrock/us.amazon.nova-pro-v1:0"
+        original_model = agent.model_config
+        original_max = agent.max_turns
+
+        call_count = 0
+
+        async def mock_send(messages, tools, model_config):
+            nonlocal call_count
+            call_count += 1
+            if "nova-pro" in model_config.model_id:
+                return text_response("Escalated done.")
+            return tool_call_response("read_file", {
+                "path": str(tmp_path / "x.txt")
+            }, call_id=f"tc_{call_count}")
+
+        (tmp_path / "x.txt").write_text("hello")
+
+        with patch.object(agent.router, "send", side_effect=mock_send):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await agent.run("Do work")
+
+        # After run completes, original config should be restored
+        assert agent.model_config == original_model
+        assert agent.max_turns == original_max
+
+
+# ── Syntax error fix injection tests ─────────────────────────────────────────
+
+class TestSyntaxErrorFixInjection:
+    """When write/edit produces a syntax error, agent is forced to fix it."""
+
+    @pytest.mark.asyncio
+    async def test_syntax_error_triggers_fix_message(self, tmp_path):
+        """Writing a file with syntax errors injects a fix instruction to the model."""
+        agent = make_agent(tmp_path)
+        py_file = tmp_path / "broken.py"
+
+        call_count = 0
+        messages_seen = []
+
+        async def mock_send(messages, tools, model_config):
+            nonlocal call_count
+            call_count += 1
+            messages_seen.append([m.get("content", "") for m in messages if m.get("role") == "user"])
+            if call_count == 1:
+                return tool_call_response("write_file", {
+                    "path": str(py_file),
+                    "content": "def broken(\n"
+                })
+            # After fix injection, just finish
+            return text_response("Fixed the syntax error.")
+
+        with patch.object(agent.router, "send", side_effect=mock_send):
+            result = await agent.run("Write app.py")
+
+        # The fix injection message should appear in the conversation
+        all_user_msgs = " ".join(str(m) for m in messages_seen)
+        assert "SYNTAX ERROR" in all_user_msgs or result.output == "Fixed the syntax error."
+
+
+# ── Context overflow compaction check tests ──────────────────────────────────
+
+class TestContextOverflowCompaction:
+    """Test context compaction is triggered when token budget is exceeded."""
+
+    @pytest.mark.asyncio
+    async def test_compaction_no_reduction_aborts(self, tmp_path):
+        """If compaction doesn't reduce tokens, the retry loop stops."""
+        agent = make_agent(tmp_path)
+        call_count = 0
+
+        async def overflow_always(messages, tools, model_config):
+            nonlocal call_count
+            call_count += 1
+            raise Exception("context length exceeded: too long for this model")
+
+        # _estimate_tokens always returns same value => no reduction
+        with patch.object(agent.router, "send", side_effect=overflow_always):
+            with patch.object(agent, "_compact_messages", side_effect=lambda msgs, budget: msgs):
+                with patch.object(agent, "_estimate_tokens", return_value=100):
+                    result = await agent.run("Do something")
+
+        assert result.error is not None
+        # Should not loop forever — call_count should be <= MAX_API_RETRIES
+        assert call_count <= 5

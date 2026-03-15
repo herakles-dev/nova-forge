@@ -104,6 +104,45 @@ class TestDedupTasks:
         result = ForgeOrchestrator._dedup_tasks(tasks)
         assert result[0]["risk"] == "high"
 
+    def test_empty_files_list_no_overlap(self):
+        """Tasks with empty files lists should not overlap with each other."""
+        tasks = [
+            {"subject": "A", "files": [], "risk": "low"},
+            {"subject": "B", "files": [], "risk": "low"},
+            {"subject": "C", "files": ["c.py"], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        assert len(result) == 3
+
+    def test_mixed_empty_and_nonempty_files(self):
+        """Task with empty files list should not merge with tasks having files."""
+        tasks = [
+            {"subject": "Setup", "files": [], "risk": "low"},
+            {"subject": "Build", "files": ["main.py"], "risk": "low"},
+            {"subject": "Test", "files": ["main.py", "test.py"], "risk": "low"},
+        ]
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # Setup stays separate (empty files); Build+Test merge (share main.py)
+        assert len(result) == 2
+        merged = next(t for t in result if "main.py" in t.get("files", []))
+        assert "test.py" in merged["files"]
+
+    def test_large_task_set_performance(self):
+        """Dedup should handle 50+ tasks without errors."""
+        tasks = []
+        for i in range(50):
+            tasks.append({
+                "subject": f"Task {i}",
+                "files": [f"file_{i}.py", f"file_{i+1}.py"],
+                "risk": "low",
+            })
+        result = ForgeOrchestrator._dedup_tasks(tasks)
+        # All tasks share a chain of files, so they should merge into one
+        assert len(result) == 1
+        # Verify all files are present
+        all_files = set(result[0]["files"])
+        assert len(all_files) == 51  # file_0 through file_50
+
     def test_real_world_todo_app(self):
         """Reproduces the Bug #5 scenario from manual testing."""
         tasks = [

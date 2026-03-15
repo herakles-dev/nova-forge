@@ -474,3 +474,267 @@ class TestFormatHistory:
         header_line = [l for l in lines if "nova-lite" in l and "Date" in l]
         if header_line:
             assert "nova-pro" not in header_line[0]
+
+    def test_model_filter_nonexistent(self, tmp_path):
+        """Filtering by a model not present returns appropriate message."""
+        store = BenchmarkStore(tmp_path)
+        meta = RunMetadata()
+        store.save_run([_make_result(model="nova-lite", grade="A")], meta)
+
+        output = format_history(tmp_path, model_filter="nova-premier")
+        assert "No history for model" in output
+        assert "nova-premier" in output
+
+
+# ── TestRegressionDetection — edge cases ──────────────────────────────────
+
+
+class TestRegressionEdgeCases:
+    def test_dimension_drop_detected(self):
+        """>10% dimension score drop triggers an alert."""
+        cur_dims = {"task_completion": 60.0, "code_quality": 85.0}
+        prev_dims = {"task_completion": 90.0, "code_quality": 85.0}
+        current = [_make_result(model="nova-lite", dims=cur_dims)]
+        prev = _make_run_data([_make_result(model="nova-lite", dims=prev_dims)])
+
+        alerts = detect_regressions(current, prev)
+        dim_alerts = [a for a in alerts if a.dimension == "task_completion"]
+        assert len(dim_alerts) == 1
+        assert dim_alerts[0].severity == "warning"
+        assert "90.0" in dim_alerts[0].old_value
+        assert "60.0" in dim_alerts[0].new_value
+
+    def test_dimension_small_drop_no_alert(self):
+        """<=10% dimension score drop does NOT trigger alert."""
+        cur_dims = {"task_completion": 82.0, "code_quality": 85.0}
+        prev_dims = {"task_completion": 90.0, "code_quality": 85.0}
+        current = [_make_result(model="nova-lite", dims=cur_dims)]
+        prev = _make_run_data([_make_result(model="nova-lite", dims=prev_dims)])
+
+        alerts = detect_regressions(current, prev)
+        dim_alerts = [a for a in alerts if a.dimension == "task_completion"]
+        assert len(dim_alerts) == 0
+
+    def test_multi_model_independent_regressions(self):
+        """Regressions for each model are detected independently."""
+        current = [
+            _make_result(model="nova-lite", grade="B", score=78.0),
+            _make_result(model="nova-pro", grade="D", score=40.0),
+        ]
+        prev = _make_run_data([
+            _make_result(model="nova-lite", grade="A", score=88.0),
+            _make_result(model="nova-pro", grade="A", score=90.0),
+        ])
+
+        alerts = detect_regressions(current, prev)
+        lite_alerts = [a for a in alerts if a.model == "nova-lite" and a.dimension == "grade"]
+        pro_alerts = [a for a in alerts if a.model == "nova-pro" and a.dimension == "grade"]
+        assert len(lite_alerts) == 1
+        assert lite_alerts[0].severity == "warning"
+        assert len(pro_alerts) == 1
+        assert pro_alerts[0].severity == "critical"
+
+    def test_new_model_no_alert(self):
+        """A model in current but not in previous produces no alert."""
+        current = [_make_result(model="nova-premier", grade="A", score=95.0)]
+        prev = _make_run_data([_make_result(model="nova-lite", grade="A", score=88.0)])
+
+        alerts = detect_regressions(current, prev)
+        assert alerts == []
+
+    def test_empty_results_no_crash(self):
+        """Empty current results produce no alerts and no crash."""
+        prev = _make_run_data([_make_result()])
+        alerts = detect_regressions([], prev)
+        assert alerts == []
+
+    def test_server_ok_to_ok_no_alert(self):
+        """Server staying OK produces no server alert."""
+        current = [_make_result(model="nova-lite", server_ok=True)]
+        prev = _make_run_data([_make_result(model="nova-lite", server_ok=True)])
+        alerts = detect_regressions(current, prev)
+        server_alerts = [a for a in alerts if a.dimension == "server"]
+        assert len(server_alerts) == 0
+
+    def test_score_exactly_5_no_alert(self):
+        """Score drop of exactly 5% does NOT trigger alert (needs >5)."""
+        current = [_make_result(model="nova-lite", grade="A", score=85.0)]
+        prev = _make_run_data([_make_result(model="nova-lite", grade="A", score=90.0)])
+        alerts = detect_regressions(current, prev)
+        score_alerts = [a for a in alerts if a.dimension == "score"]
+        assert len(score_alerts) == 0
+
+
+# ── TestCheckDiff — edge cases ────────────────────────────────────────────
+
+
+class TestCheckDiffEdgeCases:
+    def test_new_check_no_diff(self):
+        """A check present in current but not previous is not a diff."""
+        cur_checks = [
+            _make_check("syntax_ok", "code_quality", True),
+            _make_check("new_check", "task_completion", True),
+        ]
+        prev_checks = [_make_check("syntax_ok", "code_quality", True)]
+
+        current = [_make_result(model="nova-lite", checks=cur_checks)]
+        prev = _make_run_data([_make_result(model="nova-lite", checks=prev_checks)])
+
+        diffs = diff_checks(current, prev)
+        assert len(diffs) == 0
+
+    def test_multi_model_diffs(self):
+        """Check diffs are tracked per model."""
+        cur = [
+            _make_result(model="nova-lite", checks=[_make_check("syntax_ok", "code_quality", False)]),
+            _make_result(model="nova-pro", checks=[_make_check("syntax_ok", "code_quality", True)]),
+        ]
+        prev = _make_run_data([
+            _make_result(model="nova-lite", checks=[_make_check("syntax_ok", "code_quality", True)]),
+            _make_result(model="nova-pro", checks=[_make_check("syntax_ok", "code_quality", False)]),
+        ])
+
+        diffs = diff_checks(cur, prev)
+        assert len(diffs) == 2
+        lite_diff = [d for d in diffs if d.model == "nova-lite"][0]
+        pro_diff = [d for d in diffs if d.model == "nova-pro"][0]
+        assert lite_diff.old_state is True and lite_diff.new_state is False
+        assert pro_diff.old_state is False and pro_diff.new_state is True
+
+    def test_diff_preserves_dimension(self):
+        """CheckDiff.dimension is populated from check data."""
+        cur_checks = [_make_check("file_exists", "task_completion", False)]
+        prev_checks = [_make_check("file_exists", "task_completion", True)]
+        current = [_make_result(model="nova-lite", checks=cur_checks)]
+        prev = _make_run_data([_make_result(model="nova-lite", checks=prev_checks)])
+
+        diffs = diff_checks(current, prev)
+        assert len(diffs) == 1
+        assert diffs[0].dimension == "task_completion"
+
+
+# ── TestOptimizationHints — edge cases ────────────────────────────────────
+
+
+class TestOptimizationHintEdgeCases:
+    def test_uses_worst_score_across_models(self):
+        """When multiple models have the same dimension, worst score triggers hint."""
+        results = [
+            _make_result(model="nova-lite", dims={"task_completion": 90.0, "code_quality": 90.0}),
+            _make_result(model="nova-pro", dims={"task_completion": 50.0, "code_quality": 90.0}),
+        ]
+        hints = generate_optimization_hints(results)
+        tc_hints = [h for h in hints if h.dimension == "task_completion"]
+        assert len(tc_hints) == 1
+        assert tc_hints[0].score == 50.0
+        assert "nova-pro" in tc_hints[0].suggestion
+
+    def test_empty_results_no_crash(self):
+        """Empty results produce no hints."""
+        hints = generate_optimization_hints([])
+        assert hints == []
+
+    def test_missing_dimension_scores_no_crash(self):
+        """Results without dimension_scores key produce no hints."""
+        results = [{"model_alias": "nova-lite", "grade": "A", "overall_score": 90.0}]
+        hints = generate_optimization_hints(results)
+        assert hints == []
+
+    def test_hint_threshold_boundary(self):
+        """Score exactly at threshold does NOT generate hint."""
+        results = [_make_result(
+            model="nova-lite",
+            dims={"task_completion": 70.0, "code_quality": 70.0, "runtime_viability": 60.0, "efficiency": 60.0, "interface_fidelity": 60.0},
+        )]
+        hints = generate_optimization_hints(results)
+        # All scores are AT threshold, not below
+        assert hints == []
+
+
+# ── TestChangelog — edge cases ────────────────────────────────────────────
+
+
+class TestChangelogEdgeCases:
+    def test_changelog_includes_regressions(self, tmp_path):
+        """Regressions are listed in the changelog entry."""
+        run_data = _make_run_data([_make_result(model="nova-lite", grade="B")])
+        regressions = [RegressionAlert(
+            model="nova-lite", dimension="grade",
+            old_value="A", new_value="B", severity="warning",
+        )]
+        append_changelog(tmp_path, run_data, previous=None, regressions=regressions)
+        content = (tmp_path / "CHANGELOG.md").read_text()
+        assert "Regressions" in content
+        assert "nova-lite grade" in content
+        assert "A -> B" in content
+
+    def test_changelog_includes_deltas(self, tmp_path):
+        """Grade deltas vs previous run are shown."""
+        run1 = _make_run_data([_make_result(model="nova-lite", grade="B")])
+        append_changelog(tmp_path, run1, previous=None, regressions=[])
+
+        run2 = _make_run_data([_make_result(model="nova-lite", grade="A")])
+        append_changelog(tmp_path, run2, previous=run1, regressions=[])
+        content = (tmp_path / "CHANGELOG.md").read_text()
+        assert "Deltas" in content
+        assert "B -> A" in content
+
+
+# ── TestBenchmarkStore — edge cases ───────────────────────────────────────
+
+
+class TestBenchmarkStoreEdgeCases:
+    def test_load_latest_no_runs(self, tmp_path):
+        """load_latest returns None when no runs exist."""
+        store = BenchmarkStore(tmp_path)
+        assert store.load_latest() is None
+
+    def test_load_latest_model_no_runs(self, tmp_path):
+        """load_latest with model filter returns None when no runs exist."""
+        store = BenchmarkStore(tmp_path)
+        assert store.load_latest(model="nova-pro") is None
+
+    def test_load_run_nonexistent_path(self, tmp_path):
+        """load_run on a missing path returns None."""
+        store = BenchmarkStore(tmp_path)
+        assert store.load_run(tmp_path / "does_not_exist.json") is None
+
+    def test_load_run_invalid_json(self, tmp_path):
+        """load_run on invalid JSON returns None."""
+        store = BenchmarkStore(tmp_path)
+        bad = tmp_path / "bad.json"
+        bad.write_text("{invalid json...")
+        assert store.load_run(bad) is None
+
+    def test_list_runs_empty(self, tmp_path):
+        """list_runs returns empty list when no index exists."""
+        store = BenchmarkStore(tmp_path)
+        assert store.list_runs() == []
+
+    def test_list_runs_respects_limit(self, tmp_path):
+        """list_runs with limit=2 only returns 2 even if more exist."""
+        store = BenchmarkStore(tmp_path)
+        meta = RunMetadata()
+        for i in range(5):
+            store.save_run([_make_result(score=80.0 + i)], meta, run_name=f"run-{i}")
+
+        runs = store.list_runs(limit=2)
+        assert len(runs) == 2
+
+    def test_save_run_metadata_roundtrip(self, tmp_path):
+        """Metadata fields survive save + load roundtrip."""
+        store = BenchmarkStore(tmp_path)
+        meta = RunMetadata(
+            git_commit="abc1234",
+            git_branch="feature/test",
+            git_dirty=True,
+            python_version="3.11.0",
+            platform="Linux",
+            spec_hash="aabbccddee12",
+        )
+        path = store.save_run([_make_result()], meta)
+        data = json.loads(path.read_text())
+        assert data["metadata"]["git_commit"] == "abc1234"
+        assert data["metadata"]["git_branch"] == "feature/test"
+        assert data["metadata"]["git_dirty"] is True
+        assert data["metadata"]["spec_hash"] == "aabbccddee12"

@@ -265,3 +265,187 @@ class TestGetDeepDiveQuestions:
         assert "deployment" in categories
         assert "testing" in categories
         assert "features" in categories
+
+
+# ── analyze_goal — edge cases ─────────────────────────────────────────────
+
+class TestAnalyzeGoalEdgeCases:
+    def test_empty_goal_returns_all_false(self):
+        """Empty string has no signals."""
+        a = make_assistant()
+        ctx = a.analyze_goal("")
+        assert ctx["has_auth"] is False
+        assert ctx["has_data"] is False
+        assert ctx["has_frontend"] is False
+        assert ctx["has_api"] is False
+        assert ctx["has_realtime"] is False
+        assert ctx["complexity_hint"] == "simple"
+        assert ctx["goal"] == ""
+        assert ctx["stack"] == ""
+
+    def test_visual_without_frontend(self):
+        """Visual keywords alone can set has_visual=True even without frontend."""
+        a = make_assistant()
+        ctx = a.analyze_goal("a beautiful styled modern design theme")
+        assert ctx["has_visual"] is True
+
+    def test_complexity_medium(self):
+        """2-3 feature signals -> medium complexity."""
+        a = make_assistant()
+        ctx = a.analyze_goal("A user login page with stored data")
+        assert ctx["complexity_hint"] == "medium"
+        assert ctx["has_auth"] is True
+        assert ctx["has_data"] is True
+
+    def test_stack_flask_triggers_api(self):
+        a = make_assistant()
+        ctx = a.analyze_goal("something", "fastapi")
+        assert ctx["has_api"] is True
+
+    def test_all_signals_triggered(self):
+        """Goal with all keywords sets every flag."""
+        a = make_assistant()
+        ctx = a.analyze_goal(
+            "A live chat app with user accounts, database storage, "
+            "REST API, dashboard interface, real-time notifications"
+        )
+        assert ctx["has_auth"] is True
+        assert ctx["has_data"] is True
+        assert ctx["has_frontend"] is True
+        assert ctx["has_api"] is True
+        assert ctx["has_realtime"] is True
+        assert ctx["has_visual"] is True
+        assert ctx["complexity_hint"] == "ambitious"
+
+
+# ── Question bank — completeness ──────────────────────────────────────────
+
+class TestQuestionBankCompleteness:
+    def test_all_8_categories_present(self):
+        """DEEP_DIVE_QUESTIONS should have all 8 categories."""
+        expected = {"features", "data", "auth", "visual_aesthetic",
+                    "api_design", "realtime", "deployment", "testing"}
+        assert set(DEEP_DIVE_QUESTIONS.keys()) == expected
+
+    def test_no_duplicate_keys_across_categories(self):
+        """Question keys should be unique across all categories."""
+        seen_keys = set()
+        for cat, questions in DEEP_DIVE_QUESTIONS.items():
+            for q in questions:
+                key = q["key"]
+                assert key not in seen_keys, f"Duplicate key '{key}' in {cat}"
+                seen_keys.add(key)
+
+    def test_api_design_conditional_on_has_api(self):
+        """API design questions only show when has_api=True."""
+        ctx_yes = {"has_api": True}
+        ctx_no = {"has_api": False}
+        for q in DEEP_DIVE_QUESTIONS["api_design"]:
+            assert q["condition"](ctx_yes) is True
+            assert q["condition"](ctx_no) is False
+
+    def test_realtime_conditional_on_has_realtime(self):
+        """Realtime questions only show when has_realtime=True."""
+        ctx_yes = {"has_realtime": True}
+        ctx_no = {"has_realtime": False}
+        for q in DEEP_DIVE_QUESTIONS["realtime"]:
+            assert q["condition"](ctx_yes) is True
+            assert q["condition"](ctx_no) is False
+
+    def test_select_questions_have_choices(self):
+        """All select/checkbox questions have choices or choices_fn."""
+        for cat, questions in DEEP_DIVE_QUESTIONS.items():
+            for q in questions:
+                if q["type"] in ("select", "checkbox"):
+                    has_choices = "choices" in q or "choices_fn" in q
+                    assert has_choices, (
+                        f"{cat}/{q['key']} is type={q['type']} but has no choices or choices_fn"
+                    )
+
+
+# ── Dynamic choices — edge cases ──────────────────────────────────────────
+
+class TestDynamicChoicesEdgeCases:
+    def test_feature_choices_no_duplicates(self):
+        """Feature choices should have no duplicate values."""
+        choices = _feature_choices({"goal": "a social analytics dashboard with exports"})
+        values = [c[1] for c in choices]
+        assert len(values) == len(set(values)), f"Duplicate values: {values}"
+
+    def test_feature_choices_always_has_search_export_settings(self):
+        """Even without goal keywords, search/export/settings are always offered."""
+        choices = _feature_choices({"goal": ""})
+        values = {c[1] for c in choices}
+        assert "search" in values
+        assert "export" in values
+        assert "settings" in values
+
+    def test_data_entity_with_comments_keyword(self):
+        """'comment' keyword adds comments entity."""
+        choices = _data_entity_choices({"goal": "blog with comments", "has_auth": False})
+        values = {c[1] for c in choices}
+        assert "comments" in values
+
+    def test_data_entity_always_has_items(self):
+        """Items/records entity is always present."""
+        choices = _data_entity_choices({"goal": "", "has_auth": False})
+        values = {c[1] for c in choices}
+        assert "items" in values
+
+    def test_feature_choices_notifications_keyword(self):
+        """'notification' keyword adds notification feature."""
+        choices = _feature_choices({"goal": "a task manager with notifications"})
+        values = {c[1] for c in choices}
+        assert "notifications" in values
+
+
+# ── build_scope_summary — additional sections ────────────────────────────
+
+class TestBuildScopeSummaryEdgeCases:
+    def test_api_design_section(self):
+        """API design info appears in scope summary."""
+        a = make_assistant()
+        core = {"goal": "API project"}
+        deep = {"api_style": "rest", "api_auth": "jwt"}
+        summary = a.build_scope_summary(core, deep)
+        assert "## API Design" in summary
+        assert "Style: rest" in summary
+        assert "Auth: jwt" in summary
+
+    def test_realtime_section(self):
+        """Realtime type appears in scope summary."""
+        a = make_assistant()
+        core = {"goal": "Chat app"}
+        deep = {"realtime_type": "websocket"}
+        summary = a.build_scope_summary(core, deep)
+        assert "## Real-time Features" in summary
+        assert "websocket" in summary
+
+    def test_risk_level_section(self):
+        """Risk level from core answers appears in scope summary."""
+        a = make_assistant()
+        core = {"goal": "App", "risk": "high"}
+        deep = {}
+        summary = a.build_scope_summary(core, deep)
+        assert "## Risk Level" in summary
+        assert "high" in summary
+
+    def test_data_entities_listed(self):
+        """Data entities are listed individually."""
+        a = make_assistant()
+        core = {"goal": "App"}
+        deep = {"database": "sqlite", "data_entities": ["users", "posts", "comments"]}
+        summary = a.build_scope_summary(core, deep)
+        assert "## Data Model" in summary
+        assert "Entity: users" in summary
+        assert "Entity: posts" in summary
+        assert "Entity: comments" in summary
+
+    def test_features_extra_text(self):
+        """Extra features text is appended to core features."""
+        a = make_assistant()
+        core = {"goal": "App"}
+        deep = {"features_main": ["create"], "features_extra": "Dark mode toggle"}
+        summary = a.build_scope_summary(core, deep)
+        assert "## Core Features" in summary
+        assert "Dark mode toggle" in summary

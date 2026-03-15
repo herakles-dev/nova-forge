@@ -61,6 +61,94 @@ class TestComplianceChecker:
         assert "Compliance Report" in summary
         assert "FAIL" in summary or "PASS" in summary
 
+    def test_all_10_gate_names_present(self, project):
+        """Verify every gate name is in the report."""
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        names = [g.name for g in report.gates]
+        expected = [
+            "forge_dir", "state_dir", "audit_dir", "settings_file",
+            "autonomy_state", "task_state", "forge_md",
+            "schemas_accessible", "agents_accessible", "no_legacy",
+        ]
+        for name in expected:
+            assert name in names, f"Gate {name!r} missing from report"
+
+    def test_check_returns_gate_results(self, project):
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        for g in report.gates:
+            assert isinstance(g, GateResult)
+            assert isinstance(g.passed, bool)
+            assert isinstance(g.detail, str)
+            assert g.severity in ("required", "advisory")
+
+    def test_fix_idempotent(self, project):
+        """Running fix twice does not break anything."""
+        cc = ComplianceChecker(project)
+        fixes1 = cc.fix()
+        fixes2 = cc.fix()
+        # Second fix should apply fewer or zero fixes
+        assert len(fixes2) <= len(fixes1)
+
+    def test_gate_task_state_is_advisory(self, project):
+        """task_state gate is advisory — failing it should not block compliance."""
+        cc = ComplianceChecker(project)
+        cc.fix()
+        report = cc.check()
+        task_gate = [g for g in report.gates if g.name == "task_state"][0]
+        assert task_gate.severity == "advisory"
+
+    def test_no_legacy_passes_on_clean_project(self, project):
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        legacy_gate = [g for g in report.gates if g.name == "no_legacy"][0]
+        assert legacy_gate.passed
+        assert "clean" in legacy_gate.detail
+
+    def test_no_legacy_fails_with_spec_yml(self, project):
+        (project / "spec.yml").write_text("name: old\n")
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        legacy_gate = [g for g in report.gates if g.name == "no_legacy"][0]
+        assert not legacy_gate.passed
+        assert "spec.yml" in legacy_gate.detail
+
+    def test_no_legacy_fails_with_state_md(self, project):
+        (project / "state.md").write_text("# State\n")
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        legacy_gate = [g for g in report.gates if g.name == "no_legacy"][0]
+        assert not legacy_gate.passed
+        assert "state.md" in legacy_gate.detail
+
+    def test_fix_does_not_delete_legacy_files(self, project):
+        """fix() renames legacy files, never deletes them."""
+        (project / "spec.yml").write_text("name: test\n")
+        (project / "state.md").write_text("# State\n")
+        cc = ComplianceChecker(project)
+        cc.fix()
+        # Originals gone, backups exist
+        assert not (project / "spec.yml").exists()
+        assert not (project / "state.md").exists()
+        assert (project / ".spec.yml.legacy").exists()
+        assert (project / ".state.md.legacy").exists()
+        # Content preserved
+        assert "name: test" in (project / ".spec.yml.legacy").read_text()
+
+    def test_schemas_gate_checks_real_schemas_dir(self, project):
+        """schemas_accessible gate checks the project's schemas/ directory."""
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        schemas_gate = [g for g in report.gates if g.name == "schemas_accessible"][0]
+        assert schemas_gate.severity == "advisory"
+
+    def test_agents_gate_checks_real_agents_dir(self, project):
+        cc = ComplianceChecker(project)
+        report = cc.check()
+        agents_gate = [g for g in report.gates if g.name == "agents_accessible"][0]
+        assert agents_gate.severity == "advisory"
+
 
 class TestGateResult:
     def test_gate_result_defaults(self):
@@ -95,6 +183,48 @@ class TestComplianceReport:
             ],
         )
         assert r.is_compliant
+
+    def test_classification_not_compliant(self):
+        r = ComplianceReport(
+            project="test",
+            gates=[GateResult("a", False, "fail"), GateResult("b", False, "fail")],
+        )
+        assert not r.is_compliant
+        assert r.classification == "NOT_COMPLIANT"
+
+    def test_passed_count_and_failed_count(self):
+        r = ComplianceReport(
+            project="test",
+            gates=[
+                GateResult("a", True, "ok"),
+                GateResult("b", False, "fail"),
+                GateResult("c", True, "ok"),
+            ],
+        )
+        assert r.passed_count == 2
+        assert r.failed_count == 1
+        assert r.total == 3
+
+    def test_summary_includes_pass_and_fail(self):
+        r = ComplianceReport(
+            project="test",
+            gates=[
+                GateResult("gate_a", True, "ok"),
+                GateResult("gate_b", False, "broken", auto_fixable=True),
+            ],
+        )
+        summary = r.summary()
+        assert "PASS" in summary
+        assert "FAIL" in summary
+        assert "gate_a" in summary
+        assert "gate_b" in summary
+        assert "auto-fixable" in summary
+
+    def test_empty_report_is_compliant(self):
+        r = ComplianceReport(project="test", gates=[])
+        assert r.is_compliant
+        assert r.classification == "COMPLIANT"
+        assert r.total == 0
 
 
 class TestMigrator:

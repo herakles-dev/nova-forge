@@ -428,6 +428,43 @@ class TestThinkToolReadTrackingAutoVerify:
             f"Expected Syntax issue for invalid JSON, got: {result}"
         )
 
+    @pytest.mark.asyncio
+    async def test_auto_verify_python_path_with_spaces(self, tmp_path):
+        """Writing a .py file in a directory with spaces uses repr() quoting correctly."""
+        spaced_dir = tmp_path / "my project"
+        spaced_dir.mkdir()
+        agent = make_agent(spaced_dir)
+        target = spaced_dir / "app.py"
+        agent._files_read.add(str(target))
+
+        result = await agent._run_tool(
+            "write_file",
+            {"path": str(target), "content": "x = 1\n"},
+            {},
+        )
+        assert "syntax OK" in result, (
+            f"Expected 'syntax OK' for valid .py in spaced path, got: {result}"
+        )
+        # Must NOT report syntax error
+        assert "Syntax issue" not in result
+
+    @pytest.mark.asyncio
+    async def test_auto_verify_edit_triggers_syntax_check(self, tmp_path):
+        """Editing a .py file also triggers auto-verify."""
+        agent = make_agent(tmp_path)
+        target = tmp_path / "source.py"
+        target.write_text("x = 1\n")
+        agent._files_read.add(str(target))
+
+        result = await agent._run_tool(
+            "edit_file",
+            {"path": str(target), "old_string": "x = 1", "new_string": "x = 2"},
+            {},
+        )
+        assert "syntax OK" in result, (
+            f"Expected 'syntax OK' after editing valid .py file, got: {result}"
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # S5.15 — list_directory + search_replace_all tools
@@ -806,46 +843,21 @@ class TestSuggestNextAction:
         summary = shell._get_task_summary_for(tmp_path)
         assert summary is None
 
-    def test_suggest_next_action_no_tasks_prints_hint(self, tmp_path, capsys):
-        """With no tasks, _suggest_next_action prints a build/interview hint."""
+    @pytest.mark.parametrize("summary_input", [
+        None,
+        {"total": 5, "completed": 5, "failed": 0, "pending": 0},
+        {"total": 5, "completed": 3, "failed": 2, "pending": 0},
+        {"total": 5, "completed": 2, "failed": 0, "pending": 3},
+        {"total": 0, "completed": 0, "failed": 0, "pending": 0},
+    ], ids=["no_tasks", "all_complete", "with_failures", "with_pending", "empty_summary"])
+    def test_suggest_next_action_no_crash(self, tmp_path, summary_input):
+        """_suggest_next_action must never raise for any task summary state."""
         from forge_cli import ForgeShell
         shell = ForgeShell.__new__(ForgeShell)
         shell.project_path = tmp_path
 
-        # Patch _get_task_summary to return None (no tasks)
-        with patch.object(ForgeShell, "_get_task_summary", return_value=None):
-            shell._suggest_next_action()
-        # No exception = pass (Rich console output is hard to capture here)
-
-    def test_suggest_next_action_all_complete_no_failures(self, tmp_path):
-        """With all tasks complete, _suggest_next_action doesn't raise."""
-        from forge_cli import ForgeShell
-        shell = ForgeShell.__new__(ForgeShell)
-        shell.project_path = tmp_path
-
-        summary = {"total": 5, "completed": 5, "failed": 0, "pending": 0}
-        with patch.object(ForgeShell, "_get_task_summary", return_value=summary):
-            shell._suggest_next_action()  # Should not raise
-
-    def test_suggest_next_action_with_failures_no_exception(self, tmp_path):
-        """With failed tasks, _suggest_next_action runs without raising."""
-        from forge_cli import ForgeShell
-        shell = ForgeShell.__new__(ForgeShell)
-        shell.project_path = tmp_path
-
-        summary = {"total": 5, "completed": 3, "failed": 2, "pending": 0}
-        with patch.object(ForgeShell, "_get_task_summary", return_value=summary):
-            shell._suggest_next_action()  # Should not raise
-
-    def test_suggest_next_action_with_pending_tasks_no_exception(self, tmp_path):
-        """With pending tasks, _suggest_next_action runs without raising."""
-        from forge_cli import ForgeShell
-        shell = ForgeShell.__new__(ForgeShell)
-        shell.project_path = tmp_path
-
-        summary = {"total": 5, "completed": 2, "failed": 0, "pending": 3}
-        with patch.object(ForgeShell, "_get_task_summary", return_value=summary):
-            shell._suggest_next_action()  # Should not raise
+        with patch.object(ForgeShell, "_get_task_summary", return_value=summary_input):
+            shell._suggest_next_action()  # Must not raise
 
     def test_get_task_summary_for_returns_dict_structure(self, tmp_path):
         """_get_task_summary_for returns a dict with the expected keys when tasks exist."""

@@ -121,15 +121,22 @@ class TestBuildContext:
 
     def test_thread_safety(self):
         """Concurrent claims from multiple threads shouldn't crash."""
+        import threading as _threading
+        lock = _threading.Lock()
         results = {"success": 0, "conflict": 0}
 
         def claim_worker(agent_id):
+            local_success = 0
+            local_conflict = 0
             for i in range(50):
                 path = f"file_{i % 10}.py"
                 if self.ctx.claim_file(path, agent_id):
-                    results["success"] += 1
+                    local_success += 1
                 else:
-                    results["conflict"] += 1
+                    local_conflict += 1
+            with lock:
+                results["success"] += local_success
+                results["conflict"] += local_conflict
 
         threads = [
             threading.Thread(target=claim_worker, args=(f"agent-{i}",))
@@ -144,6 +151,56 @@ class TestBuildContext:
         assert results["success"] + results["conflict"] == 200
         # At most 10 unique files can be successfully claimed by one agent
         assert results["success"] >= 10
+
+    def test_thread_safety_announcements(self):
+        """Concurrent announcements from multiple threads shouldn't crash or lose data."""
+        import threading as _threading
+
+        def announce_worker(agent_id):
+            for i in range(20):
+                self.ctx.announce(agent_id, "event", f"detail-{i}")
+
+        threads = [
+            threading.Thread(target=announce_worker, args=(f"agent-{i}",))
+            for i in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        anns = self.ctx.get_announcements()
+        assert len(anns) == 80  # 4 agents * 20 announcements each
+
+    def test_release_unclaimed_file_is_noop(self):
+        """Releasing a file that was never claimed should be a no-op."""
+        self.ctx.release_file("unclaimed.py", "agent-1")
+        assert self.ctx.is_claimed("unclaimed.py") is None
+
+    def test_update_claim_status_wrong_agent_ignored(self):
+        """Only the owning agent can update claim status."""
+        self.ctx.claim_file("app.py", "agent-1")
+        self.ctx.update_claim_status("app.py", "agent-2", "writing")
+        claim = self.ctx.is_claimed("app.py")
+        assert claim.status == "claimed"  # Unchanged
+
+    def test_to_context_budget_limit(self):
+        """Context output should respect the budget_chars limit."""
+        for i in range(50):
+            self.ctx.claim_file(f"very_long_filename_{i:04d}.py", f"agent-{i % 3}")
+            self.ctx.announce(f"agent-{i % 3}", "file_created", f"very_long_filename_{i:04d}.py")
+
+        result = self.ctx.to_context("agent-99", budget_chars=200)
+        # Should not vastly exceed budget
+        assert len(result) < 500
+
+    def test_stats_no_activity(self):
+        """Stats on a fresh context should show all zeros."""
+        fresh = BuildContext(Path("/tmp/fresh"))
+        stats = fresh.stats()
+        assert stats["claims"] == 0
+        assert stats["conflicts"] == 0
+        assert stats["announcements"] == 0
 
 
 # ── TestProjectIndexExtensions ───────────────────────────────────────────────

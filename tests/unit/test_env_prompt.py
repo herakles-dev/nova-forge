@@ -177,6 +177,55 @@ class TestGatherEnvironmentContextEmpty:
         assert len(ctx["forge_md"]) <= 2000
 
 
+class TestGatherEnvironmentContextEdgeCases:
+    """Edge cases for gather_environment_context."""
+
+    def test_empty_requirements_txt(self, tmp_path):
+        """Empty requirements.txt should not produce a packages key."""
+        (tmp_path / "requirements.txt").write_text("")
+        ctx = gather_environment_context(tmp_path)
+        assert "packages" not in ctx
+
+    def test_whitespace_only_requirements_txt(self, tmp_path):
+        """Requirements.txt with only whitespace should not produce a packages key."""
+        (tmp_path / "requirements.txt").write_text("  \n  \n")
+        ctx = gather_environment_context(tmp_path)
+        assert "packages" not in ctx
+
+    def test_malformed_package_json_does_not_crash(self, tmp_path):
+        """Malformed package.json should be handled gracefully."""
+        (tmp_path / "package.json").write_text("{not valid json")
+        ctx = gather_environment_context(tmp_path)
+        # Should not crash, and packages should be absent
+        assert isinstance(ctx, dict)
+        assert "packages" not in ctx
+
+    def test_package_json_without_dependencies(self, tmp_path):
+        """package.json without dependencies key should not produce packages."""
+        (tmp_path / "package.json").write_text('{"name": "test", "version": "1.0.0"}')
+        ctx = gather_environment_context(tmp_path)
+        assert "packages" not in ctx
+
+    def test_requirements_with_version_specifiers_stripped(self, tmp_path):
+        """Version specifiers (==, >=, <=, ~=) should be stripped from dep names."""
+        (tmp_path / "requirements.txt").write_text("flask==3.0.0\nrequests>=2.31\nnumpy~=1.24\n")
+        ctx = gather_environment_context(tmp_path)
+        pkg = ctx["packages"]
+        assert "flask" in pkg
+        assert "==" not in pkg
+        assert ">=" not in pkg
+        assert "~=" not in pkg
+
+    def test_forge_md_exact_2000_chars_not_truncated(self, tmp_path):
+        """FORGE.md at exactly 2000 chars should not be truncated."""
+        forge_dir = tmp_path / ".forge"
+        forge_dir.mkdir()
+        content = "x" * 2000
+        (forge_dir / "FORGE.md").write_text(content)
+        ctx = gather_environment_context(tmp_path)
+        assert ctx["forge_md"] == content
+
+
 # ── build_enriched_system_prompt ──────────────────────────────────────────────
 
 

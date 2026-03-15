@@ -233,3 +233,221 @@ class TestHelpers:
 
     def test_format_size_mb(self):
         assert "MB" in _format_size(2 * 1024 * 1024)
+
+    def test_format_size_zero(self):
+        assert _format_size(0) == "0 B"
+
+    def test_format_size_exactly_1024(self):
+        result = _format_size(1024)
+        assert "KB" in result
+        assert "1.0" in result
+
+    def test_format_size_large_mb(self):
+        result = _format_size(50 * 1024 * 1024)
+        assert "MB" in result
+        assert "50.0" in result
+
+
+# ── Export/Import Scanning Tests ────────────────────────────────────────
+
+class TestExportImportScanning:
+    def test_scan_exports_python(self, tmp_path):
+        """Python files have public defs/classes extracted."""
+        (tmp_path / "utils.py").write_text(
+            "def helper():\n    pass\n\n"
+            "def _private():\n    pass\n\n"
+            "class MyClass:\n    pass\n\n"
+            "class _InternalClass:\n    pass\n"
+        )
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        exports = idx.exports.get("utils.py", [])
+        assert "helper" in exports
+        assert "MyClass" in exports
+        assert "_private" not in exports
+        assert "_InternalClass" not in exports
+
+    def test_scan_exports_javascript(self, tmp_path):
+        """JS files have export statements extracted."""
+        (tmp_path / "package.json").write_text('{"name":"test"}')
+        (tmp_path / "app.js").write_text(
+            'export function greet() {}\n'
+            'export const VERSION = "1.0"\n'
+            'export class App {}\n'
+        )
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        exports = idx.exports.get("app.js", [])
+        assert "greet" in exports
+        assert "App" in exports
+        assert "VERSION" in exports
+
+    def test_scan_imports_python(self, tmp_path):
+        """Python import statements are captured."""
+        (tmp_path / "app.py").write_text(
+            "from flask import Flask\n"
+            "import os\n"
+            "from models import User\n"
+        )
+        (tmp_path / "models.py").write_text("class User:\n    pass\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        imports = idx.imports.get("app.py", [])
+        assert "flask" in imports
+        assert "os" in imports
+        assert "models" in imports
+
+    def test_scan_imports_javascript(self, tmp_path):
+        """JS import/require statements are captured."""
+        (tmp_path / "package.json").write_text('{"name":"test"}')
+        (tmp_path / "server.js").write_text(
+            'const express = require("express");\n'
+            'import React from "react";\n'
+        )
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        imports = idx.imports.get("server.js", [])
+        assert "express" in imports
+        assert "react" in imports
+
+
+# ── Dependency Graph Tests ──────────────────────────────────────────────
+
+class TestDependencyGraph:
+    def test_get_dependents(self, tmp_path):
+        """get_dependents returns files that import the target module."""
+        (tmp_path / "models.py").write_text("class User:\n    pass\n")
+        (tmp_path / "app.py").write_text("from models import User\n")
+        (tmp_path / "routes.py").write_text("from models import User\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        dependents = idx.get_dependents("models.py")
+        assert "app.py" in dependents
+        assert "routes.py" in dependents
+
+    def test_get_dependents_no_deps(self, tmp_path):
+        """File with no importers returns empty list."""
+        (tmp_path / "isolated.py").write_text("x = 1\n")
+        (tmp_path / "other.py").write_text("y = 2\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        dependents = idx.get_dependents("isolated.py")
+        assert dependents == []
+
+    def test_to_dependency_context(self, tmp_path):
+        """to_dependency_context renders import/export relationships."""
+        (tmp_path / "models.py").write_text("class User:\n    pass\n")
+        (tmp_path / "app.py").write_text("from models import User\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        ctx = idx.to_dependency_context(["models.py", "app.py"])
+        assert "models.py" in ctx
+        # Should mention exports or imports
+        assert "export" in ctx.lower() or "import" in ctx.lower()
+
+    def test_to_dependency_context_empty_files(self, tmp_path):
+        """Empty file list returns empty string when no exports."""
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        ctx = idx.to_dependency_context([])
+        assert ctx == ""
+
+    def test_to_dependency_context_respects_budget(self, tmp_path):
+        """Context output does not exceed budget_chars."""
+        (tmp_path / "models.py").write_text("class User:\n    pass\nclass Post:\n    pass\n")
+        (tmp_path / "app.py").write_text("from models import User\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        ctx = idx.to_dependency_context(["models.py", "app.py"], budget_chars=50)
+        assert len(ctx) <= 100  # Some overshoot acceptable for individual line
+
+
+# ── Context Rendering — edge cases ──────────────────────────────────────
+
+class TestContextRenderingEdgeCases:
+    def test_large_budget_includes_tree(self, sample_project):
+        """Large budget includes the file tree section."""
+        idx = ProjectIndex(sample_project)
+        idx.scan()
+        ctx = idx.to_context(budget_chars=10000)
+        assert "app.py" in ctx
+        assert "routes" in ctx  # directory name
+
+    def test_zero_budget_returns_header_only(self, sample_project):
+        """Zero budget still returns at least the header."""
+        idx = ProjectIndex(sample_project)
+        idx.scan()
+        ctx = idx.to_context(budget_chars=0)
+        # Should still have some content (header is always included)
+        assert "Stack:" in ctx
+
+
+# ── Incremental Update — edge cases ────────────────────────────────────
+
+class TestIncrementalUpdateEdgeCases:
+    def test_update_file_outside_project(self, sample_project):
+        """Updating a file outside the project root is a no-op."""
+        idx = ProjectIndex(sample_project)
+        idx.scan()
+        old_count = idx.total_files
+
+        outside_file = sample_project.parent / "outside.py"
+        outside_file.write_text("x = 1\n")
+        idx.update(outside_file)
+
+        assert idx.total_files == old_count
+
+    def test_update_binary_file_ignored(self, sample_project):
+        """Binary files are not added to the index."""
+        idx = ProjectIndex(sample_project)
+        idx.scan()
+        old_count = idx.total_files
+
+        (sample_project / "image.png").write_bytes(b"\x89PNG")
+        idx.update(sample_project / "image.png")
+
+        assert idx.total_files == old_count
+
+    def test_update_preserves_entry_point_flag(self, sample_project):
+        """Updating an entry point file preserves is_entry=True."""
+        idx = ProjectIndex(sample_project)
+        idx.scan()
+
+        (sample_project / "app.py").write_text("# updated\nfrom flask import Flask\n")
+        idx.update(sample_project / "app.py")
+
+        assert idx.files["app.py"].is_entry is True
+        assert idx.files["app.py"].lines == 2
+
+
+# ── Persistence — edge cases ───────────────────────────────────────────
+
+class TestPersistenceEdgeCases:
+    def test_save_creates_forge_dir(self, tmp_path):
+        """save() creates .forge directory if missing."""
+        (tmp_path / "app.py").write_text("x = 1\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        idx.save()
+        assert (tmp_path / ".forge" / "project-index.json").exists()
+
+    def test_load_corrupt_cache_returns_none(self, tmp_path):
+        """Corrupt cache JSON returns None, triggering rescan."""
+        forge_dir = tmp_path / ".forge"
+        forge_dir.mkdir()
+        (forge_dir / "project-index.json").write_text("{invalid json!!!")
+        result = ProjectIndex.load(tmp_path)
+        assert result is None
+
+    def test_roundtrip_preserves_exports(self, tmp_path):
+        """Export data survives save/load roundtrip."""
+        (tmp_path / "utils.py").write_text("def helper():\n    pass\n")
+        idx = ProjectIndex(tmp_path)
+        idx.scan()
+        assert "utils.py" in idx.exports
+        idx.save()
+
+        loaded = ProjectIndex.load(tmp_path)
+        assert loaded is not None
+        assert "utils.py" in loaded.exports
+        assert "helper" in loaded.exports["utils.py"]

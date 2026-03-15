@@ -250,3 +250,131 @@ class TestSeparatorReExport:
     def test_separator_importable(self):
         from forge_prompt import Separator as Sep
         assert Sep is Separator
+
+
+# ── ask_confirm non-TTY fallback ────────────────────────────────────────
+
+class TestAskConfirmNonTTY:
+    """Non-TTY fallback for ask_confirm."""
+
+    def _run(self, coro):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def test_returns_true_default(self):
+        """Default=True returns True when non-TTY."""
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            result = self._run(ask_confirm("Continue?", default=True))
+        assert result is True
+
+    def test_returns_false_default(self):
+        """Default=False returns False when non-TTY."""
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            result = self._run(ask_confirm("Continue?", default=False))
+        assert result is False
+
+
+# ── ask_text non-TTY fallback ───────────────────────────────────────────
+
+class TestAskTextNonTTY:
+    """Non-TTY fallback for ask_text."""
+
+    def _run(self, coro):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def test_returns_default(self):
+        """Returns default value when non-TTY."""
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            result = self._run(ask_text("Name?", default="test"))
+        assert result == "test"
+
+    def test_returns_none_no_default(self):
+        """Returns None when non-TTY and no default."""
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            result = self._run(ask_text("Name?"))
+        assert result is None
+
+
+# ── ask_checkbox non-TTY fallback ───────────────────────────────────────
+
+class TestAskCheckboxNonTTY:
+    """Non-TTY fallback for ask_checkbox."""
+
+    def _run(self, coro):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def test_returns_empty_list(self):
+        """Non-TTY returns empty list."""
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            result = self._run(ask_checkbox("Pick", ["a", "b", "c"]))
+        assert result == []
+
+
+# ── build_model_choices — edge cases ────────────────────────────────────
+
+class TestBuildModelChoicesEdgeCases:
+    """Edge cases for model choice builder."""
+
+    def test_no_providers_all_enabled(self):
+        """When available_providers is None, all models are enabled."""
+        choices = build_model_choices(available_providers=None)
+        for c in choices:
+            if isinstance(c, Choice) and not isinstance(c, Separator):
+                assert not c.disabled, f"{c.value} should be enabled when no providers given"
+
+    def test_all_providers_disabled(self):
+        """When all providers disabled, all models are disabled."""
+        providers = {"bedrock": False, "openrouter": False, "anthropic": False}
+        choices = build_model_choices(available_providers=providers)
+        for c in choices:
+            if isinstance(c, Choice) and not isinstance(c, Separator):
+                assert c.disabled, f"{c.value} should be disabled"
+
+    def test_no_current_model_no_marker(self):
+        """When current_model is None, no choice has (current) marker."""
+        choices = build_model_choices(current_model=None)
+        for c in choices:
+            if isinstance(c, Choice) and not isinstance(c, Separator):
+                assert "(current)" not in c.title
+
+    def test_choices_values_are_strings(self):
+        """All choice values are non-empty strings."""
+        choices = build_model_choices()
+        for c in choices:
+            if isinstance(c, Choice) and not isinstance(c, Separator):
+                assert isinstance(c.value, str)
+                assert len(c.value) > 0
+
+
+# ── _first_selectable — edge cases ─────────────────────────────────────
+
+class TestFirstSelectableEdgeCases:
+    """Additional edge cases for _first_selectable."""
+
+    def test_only_disabled_returns_none(self):
+        """All choices disabled returns None."""
+        choices = [
+            Choice(title="A", value="a", disabled="reason"),
+            Choice(title="B", value="b", disabled="reason"),
+        ]
+        assert _first_selectable(choices) is None
+
+    def test_plain_strings_first_returned(self):
+        """Plain string list returns first element."""
+        assert _first_selectable(["alpha", "beta", "gamma"]) == "alpha"
+
+    def test_single_choice_returns_its_value(self):
+        """Single non-disabled choice returns its value."""
+        choices = [Choice(title="Only", value="only")]
+        assert _first_selectable(choices) == "only"

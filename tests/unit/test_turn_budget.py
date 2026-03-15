@@ -130,3 +130,70 @@ class TestConvergenceTracker:
         assert ct._initial_write == 500
         ct.record_write(100)
         assert ct._initial_write == 500  # unchanged
+
+    def test_negative_bytes_clamped_to_zero(self):
+        """Negative byte values are clamped to zero (never negative)."""
+        ct = ConvergenceTracker()
+        ct.record_write(-50)
+        ct.end_turn()
+        assert ct._turn_writes == [0]
+
+    def test_zero_initial_write_does_not_trigger_ratio_stop(self):
+        """When initial_write is 0, ratio check is skipped (no division by zero)."""
+        ct = ConvergenceTracker(window=3)
+        for _ in range(5):
+            ct.end_turn()
+        # All zeros, initial_write=0 — should trigger the all-zero check
+        assert ct.should_stop() is True
+
+    def test_exact_window_boundary(self):
+        """At exactly window turns of zero writes, should_stop returns True."""
+        ct = ConvergenceTracker(window=3)
+        ct.record_write(100)
+        ct.end_turn()
+        # Exactly 3 zero-write turns
+        for _ in range(3):
+            ct.end_turn()
+        assert ct.should_stop() is True
+
+    def test_custom_min_change_ratio(self):
+        """Custom min_change_ratio works — higher threshold triggers earlier."""
+        ct = ConvergenceTracker(window=3, min_change_ratio=0.5)
+        ct.record_write(1000)
+        ct.end_turn()
+        for _ in range(3):
+            ct.record_write(100)  # 10% of 1000 — below 50% threshold
+            ct.end_turn()
+        assert ct.should_stop() is True
+
+
+# ── compute_turn_budget edge cases ───────────────────────────────────────────
+
+
+class TestComputeTurnBudgetEdgeCases:
+    """Additional edge case tests for compute_turn_budget."""
+
+    def test_verify_budget_scales_with_soft_limit(self):
+        """verify_budget is at least 2 and scales as soft_limit // 4."""
+        budget = compute_turn_budget({"files": ["a.py", "b.py", "c.py"]})
+        assert budget["verify_budget"] == max(2, budget["soft_limit"] // 4)
+
+    def test_ceiling_caps_hard_limit(self):
+        """hard_limit never wildly exceeds ceiling."""
+        budget = compute_turn_budget(
+            {"files": [f"f{i}.py" for i in range(10)]},
+            max_turns_ceiling=15,
+        )
+        assert budget["hard_limit"] <= 15 + 4
+
+    def test_acceptance_criteria_without_server_keyword_no_bonus(self):
+        """Acceptance criteria without server keywords do not add bonus."""
+        meta = {"files": ["app.py"], "acceptance_criteria": ["check output format"]}
+        budget = compute_turn_budget(meta)
+        assert budget["soft_limit"] == 15  # No bonus
+
+    def test_multiple_blocked_by_still_adds_2(self):
+        """Multiple blocked_by items still add only +2."""
+        meta = {"files": ["app.py"], "blocked_by": ["t1", "t2", "t3"]}
+        budget = compute_turn_budget(meta)
+        assert budget["soft_limit"] == 17  # 15 + 2, not 15 + 6

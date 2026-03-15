@@ -196,6 +196,70 @@ class TestBuildSystemPrompt:
         assert "fail" in prompt.lower()
         assert "different approach" in prompt.lower() or "blocker" in prompt.lower()
 
+    def test_slim_prompt_has_dependency_read_rule(self, builder):
+        """SLIM prompt must tell agents to read dependencies before writing code."""
+        prompt = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-2-lite-v1:0",
+        )
+        # Must include the dependency-read directive
+        assert "read_file" in prompt.lower() or "read" in prompt.lower()
+        # Specifically: "Before writing code that imports/uses other files, read them"
+        assert "import" in prompt.lower() or "uses other file" in prompt.lower()
+
+    def test_slim_prompt_has_self_correction_rule(self, builder):
+        """SLIM prompt must include the verify/read-back directive."""
+        prompt = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-2-lite-v1:0",
+        )
+        # Must mention verifying/reading-back written files
+        assert "verify" in prompt.lower() or "read back" in prompt.lower()
+
+    def test_focused_prompt_has_self_correction_section(self, builder):
+        """Focused prompt (300K) must have a Self-Correction section."""
+        prompt = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-pro-v1:0",
+        )
+        assert "Self-Correction" in prompt
+        assert "read back" in prompt.lower()
+
+    def test_chunk_limit_standardized_to_80(self, builder):
+        """Both SLIM and focused prompts should say ~80 lines, not contradictory values."""
+        slim = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-2-lite-v1:0",
+        )
+        focused = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-pro-v1:0",
+        )
+        # Both must reference ~80 as the chunk limit
+        assert "~80" in slim or "80 lines" in slim
+        assert "~80" in focused or "80" in focused
+        # Neither should say a contradictory limit like ~60 or ~100
+        assert "~60 lines" not in slim
+        assert "~100 lines" not in slim
+        assert "~60 lines" not in focused
+        assert "~100 lines" not in focused
+
+    def test_previewability_says_127_0_0_1(self, builder):
+        """Previewability section must say 127.0.0.1, not 0.0.0.0."""
+        # Test focused prompt (Pro)
+        focused = builder.build_system_prompt(
+            role="builder",
+            model_id="bedrock/us.amazon.nova-pro-v1:0",
+        )
+        assert "127.0.0.1" in focused
+        assert "0.0.0.0" not in focused
+
+    def test_full_prompt_previewability_says_127_0_0_1(self, builder):
+        """Full prompt (>1M) previewability section must also say 127.0.0.1."""
+        from prompt_builder import _SECTION_PREVIEWABILITY
+        assert "127.0.0.1" in _SECTION_PREVIEWABILITY
+        assert "0.0.0.0" not in _SECTION_PREVIEWABILITY
+
     def test_build_system_prompt_role_profiles(self, builder):
         # builder role
         builder_prompt = builder.build_system_prompt(role="builder")
@@ -291,3 +355,44 @@ class TestBuildSystemPrompt:
         assert "Project Context" not in prompt
         assert "Project Memory" not in prompt
         assert "Project Structure" not in prompt
+
+
+class TestPromptConstants:
+    """Direct validation of prompt constant content."""
+
+    def test_slim_section_contains_write_file_directive(self):
+        from prompt_builder import _SECTION_SLIM
+        assert "MUST call the write_file tool" in _SECTION_SLIM
+
+    def test_slim_section_mentions_append_file_for_large_files(self):
+        from prompt_builder import _SECTION_SLIM
+        assert "append_file" in _SECTION_SLIM
+
+    def test_slim_section_no_stubs_example(self):
+        from prompt_builder import _SECTION_SLIM
+        assert "WRONG" in _SECTION_SLIM
+        assert "RIGHT" in _SECTION_SLIM
+
+    def test_focused_section_has_verification(self):
+        from prompt_builder import _SECTION_FOCUSED
+        assert "Verification" in _SECTION_FOCUSED
+        assert "python3 -c" in _SECTION_FOCUSED
+
+    def test_focused_section_chunk_limit_80(self):
+        from prompt_builder import _SECTION_FOCUSED
+        assert "~80" in _SECTION_FOCUSED
+
+    def test_role_profiles_contain_all_expected_roles(self):
+        from prompt_builder import ROLE_PROFILES
+        expected = {"builder", "reviewer", "planner", "tester", "implementer", "chat"}
+        assert set(ROLE_PROFILES.keys()) == expected
+
+    def test_autonomy_levels_cover_0_through_5(self):
+        from prompt_builder import _SECTION_AUTONOMY_GUIDANCE
+        assert set(_SECTION_AUTONOMY_GUIDANCE.keys()) == {0, 1, 2, 3, 4, 5}
+        for level, text in _SECTION_AUTONOMY_GUIDANCE.items():
+            assert len(text) > 50, f"Level {level} guidance is too short"
+
+    def test_slim_previewability_mentions_port(self):
+        from prompt_builder import _SECTION_PREVIEWABILITY_SLIM
+        assert "PORT" in _SECTION_PREVIEWABILITY_SLIM

@@ -316,3 +316,94 @@ async def test_mixed_tool_calls_uses_only_valid(tmp_path):
     assert result.output == "Completed with partial tools."
     # The valid tool call ran
     assert result.tool_calls_made == 1
+
+
+@pytest.mark.asyncio
+async def test_truncated_tool_call_self_correction(tmp_path):
+    """Model returns _truncated args — gets specific write-shorter error message."""
+    agent = make_agent(tmp_path)
+    call_count = 0
+
+    truncated_response = ModelResponse(
+        text="",
+        tool_calls=[ToolCall(id="tc_trunc", name="write_file", args={"_truncated": True, "path": "x.py"})],
+        stop_reason="tool_use",
+        usage={"input_tokens": 20, "output_tokens": 10},
+    )
+
+    async def send_sequence(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return truncated_response
+        return text_response("Fixed — wrote shorter content.")
+
+    with patch.object(agent.router, "send", side_effect=send_sequence):
+        result = await agent.run("Write a file")
+
+    assert result.error is None
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_502_error_retries_like_429(tmp_path):
+    """502 Bad Gateway is treated as transient and retried."""
+    agent = make_agent(tmp_path)
+    call_count = 0
+
+    async def flaky_send(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise Exception("502 Bad Gateway")
+        return text_response("Success after 502.")
+
+    with patch.object(agent.router, "send", side_effect=flaky_send):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent.run("Do something")
+
+    assert result.error is None
+    assert result.output == "Success after 502."
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_throttling_error_retries(tmp_path):
+    """Throttling error message is treated as transient."""
+    agent = make_agent(tmp_path)
+    call_count = 0
+
+    async def throttled_send(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise Exception("Request throttled — too many concurrent requests")
+        return text_response("After throttle.")
+
+    with patch.object(agent.router, "send", side_effect=throttled_send):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await agent.run("Do something")
+
+    assert result.error is None
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_context_overflow_no_reduction_gives_up(tmp_path):
+    """Context overflow with no token reduction after compaction gives up."""
+    agent = make_agent(tmp_path)
+    call_count = 0
+
+    async def always_overflow(messages, tools, model_config):
+        nonlocal call_count
+        call_count += 1
+        raise Exception("context length exceeded: input too long")
+
+    # Compaction returns same messages, _estimate_tokens returns same count
+    with patch.object(agent.router, "send", side_effect=always_overflow):
+        with patch.object(agent, "_compact_messages", side_effect=lambda msgs, budget: msgs):
+            with patch.object(agent, "_estimate_tokens", return_value=200):
+                result = await agent.run("Do something")
+
+    assert result.error is not None
+    assert "context" in result.error.lower() or "too long" in result.error.lower()

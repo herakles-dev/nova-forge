@@ -190,3 +190,90 @@ class TestNewFormations:
     def test_daao_routes_complex_large_to_all_hands(self):
         f = select_formation("complex", "large")
         assert f.name == "all-hands-planning"
+
+
+class TestIntegrationCheckFormation:
+    """Tests for the integration-check formation."""
+
+    def test_integration_check_structure(self):
+        f = get_formation("integration-check")
+        assert len(f.roles) == 3
+        role_names = {r.name for r in f.roles}
+        assert role_names == {"auditor", "fixer", "verifier"}
+        assert len(f.wave_order) == 3  # Sequential: audit -> fix -> verify
+
+    def test_integration_check_auditor_readonly(self):
+        f = get_formation("integration-check")
+        auditor = next(r for r in f.roles if r.name == "auditor")
+        assert auditor.tool_policy == "readonly"
+
+    def test_integration_check_verifier_testing(self):
+        f = get_formation("integration-check")
+        verifier = next(r for r in f.roles if r.name == "verifier")
+        assert verifier.tool_policy == "testing"
+
+    def test_integration_check_no_ownership_overlaps(self):
+        f = get_formation("integration-check")
+        warnings = validate_ownership(f)
+        assert warnings == []
+
+    def test_integration_check_sequential_waves(self):
+        f = get_formation("integration-check")
+        assert f.wave_order == [["auditor"], ["fixer"], ["verifier"]]
+
+
+class TestFormationEdgeCases:
+    """Edge cases for formation validation and lookup."""
+
+    def test_get_formation_error_message_lists_available(self):
+        """Error message should list available formations."""
+        with pytest.raises(KeyError) as exc_info:
+            get_formation("nonexistent")
+        assert "single-file" in str(exc_info.value)
+        assert "feature-impl" in str(exc_info.value)
+
+    def test_validate_ownership_empty_ownership_skipped(self):
+        """Roles with all-empty ownership lists should not trigger overlaps."""
+        role_a = Role(
+            name="a", model="x", tool_policy="full",
+            ownership={"files": [], "directories": [], "patterns": []},
+        )
+        role_b = Role(
+            name="b", model="x", tool_policy="full",
+            ownership={"files": [], "directories": [], "patterns": []},
+        )
+        f = Formation(
+            name="test", description="", roles=[role_a, role_b],
+            wave_order=[["a", "b"]], gate_criteria=["pass"],
+            tool_policy_defaults="full",
+        )
+        warnings = validate_ownership(f)
+        assert warnings == []
+
+    def test_validate_ownership_cross_wave_no_conflict(self):
+        """Roles in DIFFERENT waves sharing directories should NOT conflict."""
+        role_a = Role(
+            name="a", model="x", tool_policy="full",
+            ownership={"files": [], "directories": ["src/"], "patterns": []},
+        )
+        role_b = Role(
+            name="b", model="x", tool_policy="full",
+            ownership={"files": [], "directories": ["src/"], "patterns": []},
+        )
+        f = Formation(
+            name="test", description="", roles=[role_a, role_b],
+            wave_order=[["a"], ["b"]],  # Different waves
+            gate_criteria=["pass"],
+            tool_policy_defaults="full",
+        )
+        warnings = validate_ownership(f)
+        assert warnings == []  # No conflict because they're in different waves
+
+    def test_all_formations_have_descriptions(self):
+        """Every formation should have a non-empty description."""
+        for name, f in FORMATIONS.items():
+            assert f.description, f"{name} has empty description"
+
+    def test_coding_profile_matches_full_minus_nothing(self):
+        """Coding profile should be identical to full (both have all tools)."""
+        assert TOOL_PROFILES["coding"] == TOOL_PROFILES["full"]

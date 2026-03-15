@@ -372,3 +372,128 @@ def test_unescape_json_with_forward_slash(tmp_path):
     assert '// comment' in result
     assert 'import os' in result
     assert '\\n' not in result
+
+
+# ── _auto_verify repr() quoting tests ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_python_path_with_spaces(tmp_path):
+    """Python auto-verify uses repr() quoting, which must handle paths with spaces."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    # Create a directory with spaces in its name
+    spaced_dir = tmp_path / "my project"
+    spaced_dir.mkdir()
+    agent = ForgeAgent(model_config=mc, project_root=spaced_dir, max_turns=1)
+
+    py_file = spaced_dir / "app.py"
+    py_file.write_text("x = 1\n")
+    result = await agent._auto_verify(py_file)
+    assert "syntax OK" in result, (
+        f"repr() quoting should handle spaces in path, got: {result}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_python_path_with_special_chars(tmp_path):
+    """Paths with parentheses are handled by repr() quoting."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    # Create a directory with special chars (parentheses) -- common in temp paths
+    special_dir = tmp_path / "project (v2)"
+    special_dir.mkdir()
+    agent = ForgeAgent(model_config=mc, project_root=special_dir, max_turns=1)
+
+    py_file = special_dir / "app.py"
+    py_file.write_text("y = 2\n")
+    result = await agent._auto_verify(py_file)
+    assert "syntax OK" in result, (
+        f"repr() quoting should handle parentheses in path, got: {result}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_empty_py_file(tmp_path):
+    """Empty .py file is valid syntax and should pass."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    agent = ForgeAgent(model_config=mc, project_root=tmp_path, max_turns=1)
+
+    py_file = tmp_path / "empty.py"
+    py_file.write_text("")
+    result = await agent._auto_verify(py_file)
+    assert "syntax OK" in result
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_json_valid(tmp_path):
+    """Valid JSON file passes auto-verify with repr() quoting."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    agent = ForgeAgent(model_config=mc, project_root=tmp_path, max_turns=1)
+
+    json_file = tmp_path / "data.json"
+    json_file.write_text('{"key": "value", "num": 42}')
+    result = await agent._auto_verify(json_file)
+    assert "syntax OK" in result
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_json_invalid(tmp_path):
+    """Invalid JSON file reports syntax issue."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    agent = ForgeAgent(model_config=mc, project_root=tmp_path, max_turns=1)
+
+    json_file = tmp_path / "bad.json"
+    json_file.write_text('{"key": "value",}')
+    result = await agent._auto_verify(json_file)
+    assert "Syntax issue" in result
+
+
+@pytest.mark.asyncio
+async def test_auto_verify_unknown_extension_returns_empty(tmp_path):
+    """Files with unknown extensions return empty string (no check available)."""
+    from forge_agent import ForgeAgent
+    from config import get_model_config
+
+    mc = get_model_config("openrouter/google/gemini-2.0-flash-001")
+    agent = ForgeAgent(model_config=mc, project_root=tmp_path, max_turns=1)
+
+    txt_file = tmp_path / "notes.txt"
+    txt_file.write_text("just plain text")
+    result = await agent._auto_verify(txt_file)
+    assert result == ""
+
+
+def test_verify_html_empty_file(tmp_path):
+    """Empty HTML file should produce a warning."""
+    from forge_agent import ForgeAgent
+
+    html_file = tmp_path / "empty.html"
+    html_file.write_text("")
+    result = ForgeAgent._verify_html(html_file)
+    assert "WARNING" in result
+    assert "empty" in result.lower()
+
+
+def test_verify_css_empty_file(tmp_path):
+    """Empty CSS file should produce a warning."""
+    from forge_agent import ForgeAgent
+
+    css_file = tmp_path / "empty.css"
+    css_file.write_text("")
+    result = ForgeAgent._verify_css(css_file)
+    assert "WARNING" in result
+    assert "empty" in result.lower()

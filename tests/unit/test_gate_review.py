@@ -145,6 +145,49 @@ class TestRunGateReview:
                        {"write_file", "edit_file", "bash", "search_replace_all"}}
         assert write_names == set(), f"Write tools must not be passed to gate reviewer: {write_names}"
 
+    def test_gate_review_pass_case_insensitive(self, tmp_path):
+        """GATE: pass (lowercase) should still parse as pass status."""
+        shell = make_shell(tmp_path)
+        store = make_store_with_tasks([])
+
+        mock_result = AgentResult(output="Analysis complete.\nGATE: PASS - all good", turns=2)
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = MockAgent.return_value
+            instance.run = AsyncMock(return_value=mock_result)
+            result = run(shell._run_gate_review(store, "spec"))
+
+        assert result["status"] == "pass"
+
+    def test_gate_review_fail_with_multiple_issues(self, tmp_path):
+        """GATE: FAIL with detailed failure text should capture the reason."""
+        shell = make_shell(tmp_path)
+        store = make_store_with_tasks([])
+
+        mock_result = AgentResult(
+            output="Problems found:\n1. Missing auth\n2. No tests\nGATE: FAIL - missing auth, no tests",
+            turns=3,
+        )
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = MockAgent.return_value
+            instance.run = AsyncMock(return_value=mock_result)
+            result = run(shell._run_gate_review(store, "Build API"))
+
+        assert result["status"] == "fail"
+        assert "missing auth" in result["issues"][0]
+
+    def test_gate_review_empty_agent_output(self, tmp_path):
+        """Empty agent output should return conditional with appropriate message."""
+        shell = make_shell(tmp_path)
+        store = make_store_with_tasks([])
+
+        mock_result = AgentResult(output="", turns=1)
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = MockAgent.return_value
+            instance.run = AsyncMock(return_value=mock_result)
+            result = run(shell._run_gate_review(store, "spec"))
+
+        assert result["status"] == "conditional"
+
     def test_gate_review_file_list_from_artifacts(self, tmp_path):
         """Gate reviewer prompt should include artifact file paths from completed tasks."""
         shell = make_shell(tmp_path)

@@ -2,10 +2,12 @@
 
 Covers:
 - parallel wave execution (asyncio.gather within a wave)
-- semaphore concurrency limiting
+- semaphore concurrency limiting (including semaphore=1 serialization)
 - error isolation (one failed task does not block others)
 - sequential wave ordering (wave 1 waits for wave 0)
 - single-task wave (no parallel overhead message)
+- return tuple structure verification
+- edge cases: zero tasks, all-fail waves, large wave counts
 """
 import sys
 import os
@@ -53,8 +55,7 @@ def _make_store(tmp_path: Path, n_tasks: int = 3) -> TaskStore:
     """Initialise a TaskStore with n_tasks independent (no deps) tasks.
 
     Tasks are created as 'in_progress' since _cmd_build marks them before
-    calling _run_single_task. Tests that call _run_single_task directly must
-    also ensure tasks are already in_progress.
+    calling _run_single_task.
     """
     init_forge_dir(tmp_path)
     project_tasks_file = tmp_path / ".forge" / "state" / "tasks.json"
@@ -65,7 +66,6 @@ def _make_store(tmp_path: Path, n_tasks: int = 3) -> TaskStore:
             description=f"Description for task {i}",
             metadata={"project": "test", "sprint": "S1", "risk": "low"},
         )
-        # _cmd_build marks tasks in_progress before calling _run_single_task
         store.update(t.id, status="in_progress")
     return store
 
@@ -114,8 +114,7 @@ class TestParallelWaveExecution:
             assert not isinstance(r, Exception), f"Unexpected exception: {r}"
             assert r[2] == "pass"
 
-        # All three tasks should start nearly simultaneously (within 40 ms of each other)
-        # i.e. parallel, not sequential (sequential would be ~100 ms apart)
+        # All three tasks should start nearly simultaneously (within 40 ms)
         assert len(start_times) == 3
         spread = max(start_times) - min(start_times)
         assert spread < 0.04, (
@@ -144,12 +143,39 @@ class TestParallelWaveExecution:
         assert status == "pass"
         assert w_idx == 0
 
+    @pytest.mark.asyncio
+    async def test_all_tasks_pass_returns_all_pass_statuses(self, tmp_path):
+        """When all tasks succeed, every result should have status 'pass'."""
+        async def fake_agent_run(prompt, system):
+            return _good_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=5)
+        all_tasks = store.list()
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_agent_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(5)
+            coros = [
+                shell._run_single_task(t, store, all_tasks, 0, None, semaphore)
+                for t in all_tasks
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+
+        statuses = [r[2] for r in results]
+        assert all(s == "pass" for s in statuses)
+        assert len(statuses) == 5
+
 
 class TestSemaphoreLimitsConcurrency:
-    """With semaphore=2 and 4 tasks, only 2 should run at a time."""
+    """Semaphore gating tests."""
 
     @pytest.mark.asyncio
-    async def test_semaphore_limits_concurrency(self, tmp_path):
+    async def test_semaphore_limits_to_2(self, tmp_path):
+        """With semaphore=2 and 4 tasks, only 2 should run at a time."""
         concurrency_peak = 0
         active = 0
         lock = asyncio.Lock()
@@ -183,21 +209,95 @@ class TestSemaphoreLimitsConcurrency:
         assert concurrency_peak <= 2, (
             f"Expected peak concurrency <= 2, got {concurrency_peak}"
         )
+        assert concurrency_peak >= 1, "At least 1 task must have run"
+
+    @pytest.mark.asyncio
+    async def test_semaphore_1_serializes_execution(self, tmp_path):
+        """With semaphore=1, tasks should run one at a time (serialized)."""
+        concurrency_peak = 0
+        active = 0
+        lock = asyncio.Lock()
+
+        async def fake_run(prompt, system):
+            nonlocal concurrency_peak, active
+            async with lock:
+                active += 1
+                concurrency_peak = max(concurrency_peak, active)
+            await asyncio.sleep(0.01)
+            async with lock:
+                active -= 1
+            return _good_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=3)
+        all_tasks = store.list()
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(1)
+            coros = [
+                shell._run_single_task(t, store, all_tasks, 0, None, semaphore)
+                for t in all_tasks
+            ]
+            await asyncio.gather(*coros, return_exceptions=True)
+
+        assert concurrency_peak == 1, (
+            f"Semaphore=1 should serialize execution, got peak={concurrency_peak}"
+        )
 
     @pytest.mark.asyncio
     async def test_semaphore_value_matches_min_of_limit_and_tasks(self, tmp_path):
         """Semaphore value should be min(provider_limit, task_count)."""
         from forge_cli import PROVIDER_CONCURRENCY
+        from config import get_provider
 
         shell = _make_shell(tmp_path)
-        # nova-lite → bedrock → limit 3; with 2 tasks → semaphore should be 2
-        from config import get_provider
         provider = get_provider(shell.model)
         limit = PROVIDER_CONCURRENCY.get(provider, 4)
 
         n_tasks = 2  # fewer tasks than the provider limit
         semaphore = asyncio.Semaphore(min(limit, n_tasks))
         assert semaphore._value == n_tasks
+
+    @pytest.mark.asyncio
+    async def test_large_semaphore_does_not_exceed_task_count(self, tmp_path):
+        """With semaphore=100 but only 3 tasks, peak concurrency is 3."""
+        concurrency_peak = 0
+        active = 0
+        lock = asyncio.Lock()
+
+        async def fake_run(prompt, system):
+            nonlocal concurrency_peak, active
+            async with lock:
+                active += 1
+                concurrency_peak = max(concurrency_peak, active)
+            await asyncio.sleep(0.01)
+            async with lock:
+                active -= 1
+            return _good_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=3)
+        all_tasks = store.list()
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(100)
+            coros = [
+                shell._run_single_task(t, store, all_tasks, 0, None, semaphore)
+                for t in all_tasks
+            ]
+            await asyncio.gather(*coros, return_exceptions=True)
+
+        assert concurrency_peak <= 3, (
+            f"Peak concurrency should not exceed task count (3), got {concurrency_peak}"
+        )
 
 
 class TestFailedTaskDoesntBlockWave:
@@ -210,7 +310,6 @@ class TestFailedTaskDoesntBlockWave:
         async def fake_run(prompt, system):
             nonlocal call_count
             call_count += 1
-            # The second call raises
             if call_count == 2:
                 raise RuntimeError("Simulated LLM failure")
             return _good_result()
@@ -231,13 +330,11 @@ class TestFailedTaskDoesntBlockWave:
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
 
-        # All 3 coroutines must resolve (no unhandled exception propagation)
         assert len(results) == 3
         statuses = [r[2] if not isinstance(r, Exception) else "exception" for r in results]
-        # Two tasks passed, one failed (exception handled internally)
         assert statuses.count("pass") == 2
         assert statuses.count("fail") == 1
-        assert "exception" not in statuses
+        assert "exception" not in statuses, "Exceptions should be caught internally"
 
     @pytest.mark.asyncio
     async def test_agent_result_error_field_marks_fail(self, tmp_path):
@@ -261,6 +358,31 @@ class TestFailedTaskDoesntBlockWave:
         assert status == "fail"
         assert w_idx == 0
 
+    @pytest.mark.asyncio
+    async def test_all_tasks_fail_returns_all_fail(self, tmp_path):
+        """When every task errors, all results should have 'fail' status."""
+        async def fake_run(prompt, system):
+            return _error_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=3)
+        all_tasks = store.list()
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(3)
+            coros = [
+                shell._run_single_task(t, store, all_tasks, 0, None, semaphore)
+                for t in all_tasks
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+
+        statuses = [r[2] if not isinstance(r, Exception) else "exception" for r in results]
+        assert all(s == "fail" for s in statuses), f"Expected all fail, got {statuses}"
+
 
 class TestSequentialWavesRespected:
     """Wave 1 must only start after wave 0 completes."""
@@ -272,7 +394,6 @@ class TestSequentialWavesRespected:
 
         async def fake_run(prompt, system):
             await asyncio.sleep(0.01)
-            # Record subject from prompt
             for line in prompt.splitlines():
                 if "Wave0 Task" in line or "Wave1 Task" in line:
                     completion_order.append(line.strip())
@@ -281,7 +402,6 @@ class TestSequentialWavesRespected:
 
         shell = _make_shell(tmp_path)
 
-        # Create 2 tasks where Wave1 Task is blocked by Wave0 Task
         init_forge_dir(tmp_path)
         project_tasks_file = tmp_path / ".forge" / "state" / "tasks.json"
         store = TaskStore(project_tasks_file)
@@ -305,14 +425,12 @@ class TestSequentialWavesRespected:
 
             await shell._cmd_build("--no-review")
 
-        # Re-read from disk to see the final persisted state
         store_final = TaskStore(project_tasks_file)
         tasks_after = store_final.list()
         statuses = {t.subject: t.status for t in tasks_after}
         assert statuses["Wave0 Task"] == "completed"
         assert statuses["Wave1 Task"] == "completed"
 
-        # Wave0 Task must appear in completion_order before Wave1 Task
         assert len(completion_order) == 2
         wave0_pos = next(
             (i for i, s in enumerate(completion_order) if "Wave0" in s), None
@@ -352,7 +470,7 @@ class TestReturnTuple:
         w_idx, name, status, dur, tc, fc, *_extra = result
         assert w_idx == 2
         assert isinstance(name, str)
-        assert status in ("pass", "fail")
+        assert status == "pass"
         assert isinstance(dur, float) and dur >= 0
         assert isinstance(tc, int) and tc >= 0
         assert isinstance(fc, int) and fc >= 0
@@ -378,3 +496,67 @@ class TestReturnTuple:
         assert status == "fail"
         assert tc == 0
         assert fc == 0
+
+    @pytest.mark.asyncio
+    async def test_wave_index_propagated_correctly(self, tmp_path):
+        """Wave index from input should appear in the return tuple."""
+        async def fake_run(prompt, system):
+            return _good_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=1)
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            for wave_idx in [0, 1, 5, 99]:
+                semaphore = asyncio.Semaphore(1)
+                result = await shell._run_single_task(
+                    store.list()[0], store, store.list(), wave_idx, None, semaphore
+                )
+                assert result[0] == wave_idx, (
+                    f"Expected wave_index={wave_idx}, got {result[0]}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_duration_is_positive_on_success(self, tmp_path):
+        """Duration (index 3) should be a positive float on successful execution."""
+        async def fake_run(prompt, system):
+            await asyncio.sleep(0.01)
+            return _good_result()
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=1)
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(1)
+            result = await shell._run_single_task(store.list()[0], store, store.list(), 0, None, semaphore)
+
+        dur = result[3]
+        assert dur > 0, f"Duration should be positive, got {dur}"
+
+    @pytest.mark.asyncio
+    async def test_tool_calls_count_from_agent_result(self, tmp_path):
+        """tool_calls_made from AgentResult should appear in the return tuple."""
+        async def fake_run(prompt, system):
+            return AgentResult(output="done", artifacts={}, tool_calls_made=7)
+
+        shell = _make_shell(tmp_path)
+        store = _make_store(tmp_path, n_tasks=1)
+
+        with patch("forge_agent.ForgeAgent") as MockAgent:
+            instance = AsyncMock()
+            instance.run = fake_run
+            MockAgent.return_value = instance
+
+            semaphore = asyncio.Semaphore(1)
+            result = await shell._run_single_task(store.list()[0], store, store.list(), 0, None, semaphore)
+
+        tc = result[4]
+        assert tc == 7, f"Expected tool_calls=7, got {tc}"

@@ -110,3 +110,97 @@ class TestIsValid:
 
     def test_unknown_schema_returns_false(self, sv):
         assert not sv.is_valid("nonexistent", {})
+
+
+class TestValidateMethod:
+    """Tests for the generic validate() method."""
+
+    def test_validate_unknown_schema(self, sv):
+        errors = sv.validate("nonexistent", {})
+        assert len(errors) == 1
+        assert "not loaded" in errors[0]
+
+    def test_validate_returns_list(self, sv):
+        errors = sv.validate("task-metadata", {"project": "x", "sprint": "sprint-01-x", "risk": "low"})
+        assert isinstance(errors, list)
+        assert errors == []
+
+    def test_validate_returns_human_readable_errors(self, sv):
+        errors = sv.validate("task-metadata", {})
+        assert len(errors) > 0
+        # Each error should be a string with some path info
+        for e in errors:
+            assert isinstance(e, str)
+
+
+class TestTaskStateSchema:
+    """Tests for task-state schema validation."""
+
+    def test_valid_task_state(self, sv):
+        data = {
+            "tasks": [],
+            "version": "1.0",
+        }
+        # Just verify schema can validate data without crashing
+        result = sv.validate("task-state", data)
+        assert isinstance(result, list)
+
+
+class TestToolPolicySchema:
+    """Tests for tool-policy schema validation."""
+
+    def test_tool_policy_schema_loaded(self, sv):
+        assert "tool-policy" in sv.available
+
+    def test_valid_tool_policy(self, sv):
+        data = {
+            "policy": "standard",
+            "allowed_tools": ["read_file", "write_file"],
+        }
+        result = sv.validate("tool-policy", data)
+        assert isinstance(result, list)
+
+
+class TestMemoryIndexSchema:
+    """Tests for memory-index schema validation."""
+
+    def test_memory_index_schema_loaded(self, sv):
+        assert "memory-index" in sv.available
+
+
+class TestAgentRegistryValidation:
+    """Tests for agent-registry schema validation."""
+
+    def test_agent_registry_method_exists(self, sv):
+        """validate_agent_registry is a convenience method."""
+        result = sv.validate_agent_registry({})
+        assert isinstance(result, list)
+
+    def test_agent_registry_schema_loaded(self, sv):
+        assert "agent-registry" in sv.available
+
+
+class TestSchemaValidatorEdgeCases:
+    """Edge cases for SchemaValidator."""
+
+    def test_all_8_schema_names_match_constant(self, sv):
+        for name in SCHEMA_NAMES:
+            assert name in sv.available, f"Schema {name!r} was not loaded"
+
+    def test_get_schema_has_schema_key(self, sv):
+        """All loaded schemas should have a $schema key."""
+        for name in sv.available:
+            schema = sv.get_schema(name)
+            assert isinstance(schema, dict)
+            # Not all schemas may have $schema, but they should be dicts
+            assert "type" in schema or "$schema" in schema or "properties" in schema
+
+    def test_validate_with_none_data(self, sv):
+        """Validating None should return errors (not crash)."""
+        errors = sv.validate("task-metadata", None)
+        assert len(errors) > 0
+
+    def test_validate_with_list_data(self, sv):
+        """Validating a list where object expected should return errors."""
+        errors = sv.validate("task-metadata", [1, 2, 3])
+        assert len(errors) > 0

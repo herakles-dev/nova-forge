@@ -144,7 +144,7 @@ def test_get_tools_for_model_routes_by_context():
 
 
 def test_slim_system_prompt_for_32k_model():
-    """32K models should get the slim system prompt (~600 chars)."""
+    """32K models should get the slim system prompt (under 1800 chars)."""
     from prompt_builder import PromptBuilder
 
     pb = PromptBuilder("/tmp")
@@ -157,7 +157,47 @@ def test_slim_system_prompt_for_32k_model():
     assert "Max ~80 lines" in prompt
     # Should NOT contain verbose sections
     assert "You are NOT a chatbot" not in prompt
-    assert len(prompt) < 1800  # Slim should be well under full size (~1600 with M1+M2 rules)
+    # Slim prompt threshold is 1800 chars (bumped from original ~600)
+    assert len(prompt) < 1800, f"Slim prompt is {len(prompt)} chars, expected < 1800"
+
+
+def test_slim_prompt_is_meaningful_not_empty():
+    """Slim prompt must be substantial, not just a stub."""
+    from prompt_builder import PromptBuilder
+
+    pb = PromptBuilder("/tmp")
+    prompt = pb.build_system_prompt(
+        role="builder",
+        model_id="bedrock/us.amazon.nova-2-lite-v1:0",
+    )
+    # Must be at least 500 chars to be useful
+    assert len(prompt) >= 500, f"Slim prompt is only {len(prompt)} chars — too short"
+    # Must have at least 10 lines of guidance
+    assert len(prompt.splitlines()) >= 10
+
+
+def test_slim_vs_focused_boundary_at_32k():
+    """Models at exactly 32K should get slim, models at 32001+ should get focused."""
+    from prompt_builder import PromptBuilder
+    from config import CONTEXT_WINDOWS
+
+    pb = PromptBuilder("/tmp")
+    slim = pb.build_system_prompt(
+        role="builder",
+        model_id="bedrock/us.amazon.nova-2-lite-v1:0",  # 32K
+    )
+    focused = pb.build_system_prompt(
+        role="builder",
+        model_id="bedrock/us.amazon.nova-pro-v1:0",  # 300K
+    )
+    # Focused should be strictly larger than slim
+    assert len(focused) > len(slim), (
+        f"Focused ({len(focused)}) should be larger than slim ({len(slim)})"
+    )
+    # Slim must NOT have the focused section's "Self-Correction" header
+    assert "Self-Correction" not in slim
+    # Focused must have it
+    assert "Self-Correction" in focused
 
 
 def test_full_system_prompt_for_large_model():
@@ -174,6 +214,32 @@ def test_full_system_prompt_for_large_model():
     assert "You ACT" in prompt
     assert "Syntax issue" in prompt
     assert len(prompt) > 1500
+
+
+def test_slim_prompt_does_not_include_code_quality_section():
+    """Slim prompt should not have the verbose Code Quality section."""
+    from prompt_builder import PromptBuilder
+
+    pb = PromptBuilder("/tmp")
+    prompt = pb.build_system_prompt(
+        role="builder",
+        model_id="bedrock/us.amazon.nova-2-lite-v1:0",
+    )
+    assert "## Code Quality" not in prompt
+    assert "## Error Handling" not in prompt
+
+
+def test_focused_prompt_includes_working_code_examples():
+    """Focused prompt should include WORKING vs STUB examples."""
+    from prompt_builder import PromptBuilder
+
+    pb = PromptBuilder("/tmp")
+    prompt = pb.build_system_prompt(
+        role="builder",
+        model_id="bedrock/us.amazon.nova-pro-v1:0",
+    )
+    assert "STUB" in prompt or "WRONG" in prompt
+    assert "WORKING" in prompt
 
 
 # ── Change 5: Smart compaction preserves file paths ──────────────────────────

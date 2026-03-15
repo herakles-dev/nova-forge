@@ -498,3 +498,57 @@ class TestImportNameCheck:
         exports = _get_module_exports(tmp_path / "models.py")
         assert "create_board" in exports
         assert "Board" in exports
+
+
+class TestMultipleDependencies:
+    """Test artifact gathering with multiple upstream dependencies."""
+
+    def test_multiple_completed_deps(self, tmp_path):
+        """Task with 2 completed deps should see both in upstream_results."""
+        shell = _make_shell(tmp_path)
+        dep1 = _make_task(
+            "1", "Create models",
+            status="completed",
+            artifacts={str(tmp_path / "models.py"): {"action": "written"}},
+        )
+        dep2 = _make_task(
+            "2", "Create routes",
+            status="completed",
+            artifacts={str(tmp_path / "routes.py"): {"action": "written"}},
+        )
+        task = _make_task("3", "Write tests", blocked_by=["1", "2"])
+        store = MagicMock()
+        store.get.side_effect = lambda id_: {"1": dep1, "2": dep2}.get(id_)
+        all_tasks = [dep1, dep2, task]
+
+        result = shell._gather_upstream_artifacts(task, store, all_tasks)
+        assert "upstream_results" in result
+        assert "models.py" in result["upstream_results"]
+        assert "routes.py" in result["upstream_results"]
+
+    def test_dep_with_no_artifacts(self, tmp_path):
+        """Completed dep with empty artifacts should not add noise to context."""
+        shell = _make_shell(tmp_path)
+        dep = _make_task("1", "Setup env", status="completed", artifacts={})
+        task = _make_task("2", "Build app", blocked_by=["1"])
+        store = MagicMock()
+        store.get.side_effect = lambda id_: dep if id_ == "1" else None
+        all_tasks = [dep, task]
+
+        result = shell._gather_upstream_artifacts(task, store, all_tasks)
+        # Dep had no artifacts, so upstream_results should not contain dep subject
+        upstream_text = result.get("upstream_results", "")
+        # Empty artifacts means nothing to report for this dep
+        assert "Setup env" not in upstream_text or upstream_text == ""
+
+
+class TestShortenPathEdgeCases:
+    def test_shorten_path_with_deep_nesting(self, tmp_path):
+        shell = _make_shell(tmp_path)
+        abs_path = str(tmp_path / "src" / "routes" / "api" / "v1" / "users.py")
+        result = shell._shorten_path(abs_path)
+        assert result == "src/routes/api/v1/users.py"
+
+    def test_shorten_paths_empty_list(self, tmp_path):
+        shell = _make_shell(tmp_path)
+        assert shell._shorten_paths([]) == []

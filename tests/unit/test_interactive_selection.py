@@ -324,3 +324,87 @@ class TestAutonomyInteractive:
             _run(shell._cmd_autonomy(""))
 
         shell.assistant.set_autonomy_level.assert_not_called()
+
+    def test_autonomy_invalid_number_does_not_crash(self, tmp_path):
+        """Non-numeric string arg to /autonomy does not crash."""
+        shell = _make_shell(tmp_path)
+        shell.assistant.explain_all_autonomy_levels.return_value = "All levels..."
+        # 'abc' is not a number and not '?' — should handle gracefully
+        _run(shell._cmd_autonomy("abc"))
+        # Should not crash; no set_autonomy_level call
+        shell.assistant.set_autonomy_level.assert_not_called()
+
+
+# ── /resume — edge cases ────────────────────────────────────────────────
+
+
+class TestResumeEdgeCases:
+    """Additional edge cases for /resume command."""
+
+    def test_resume_out_of_range_index(self, tmp_path):
+        """Out-of-range numeric index does not crash."""
+        shell = _make_shell(tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        (project_dir / ".forge").mkdir()
+        shell.state["recent_projects"] = [{"name": "my-project", "path": str(project_dir)}]
+
+        original = shell.project_path
+        _run(shell._cmd_resume("99"))
+        # Should not crash; project_path may or may not change depending on error handling
+        # but at minimum it should not raise
+
+    def test_resume_nonexistent_name(self, tmp_path):
+        """Non-matching name arg does not crash."""
+        shell = _make_shell(tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        (project_dir / ".forge").mkdir()
+        shell.state["recent_projects"] = [{"name": "my-project", "path": str(project_dir)}]
+
+        _run(shell._cmd_resume("nonexistent-project"))
+        # Should handle gracefully
+
+
+# ── /model — edge cases ─────────────────────────────────────────────────
+
+
+class TestModelEdgeCases:
+    """Additional edge cases for /model command."""
+
+    def test_model_valid_known_model(self, tmp_path):
+        """Setting a valid known model like nova-pro works."""
+        shell = _make_shell(tmp_path)
+
+        with patch("forge_cli._check_provider", return_value=True), \
+             patch("forge_cli._save_config"):
+            _run(shell._cmd_model("nova-pro"))
+
+        assert "nova-2-pro" in shell.model or "nova-pro" in shell.model
+
+
+# ── /config — edge cases ────────────────────────────────────────────────
+
+
+class TestConfigEdgeCases:
+    """Additional edge cases for /config command."""
+
+    def test_config_show_current(self, tmp_path):
+        """Config with no arg and cancel shows current config without changes."""
+        shell = _make_shell(tmp_path)
+        shell.config["max_turns"] = 30
+        original_max = shell.config["max_turns"]
+
+        with patch("forge_cli.ask_select", new_callable=AsyncMock, return_value=None):
+            _run(shell._cmd_config(""))
+
+        assert shell.config["max_turns"] == original_max
+
+    def test_config_set_auto_build(self, tmp_path):
+        """Setting auto_build via direct arg works."""
+        shell = _make_shell(tmp_path)
+
+        with patch("forge_cli._save_config"):
+            _run(shell._cmd_config("auto_build true"))
+
+        assert shell.config.get("auto_build") is True

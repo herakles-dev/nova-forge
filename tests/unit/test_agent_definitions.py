@@ -38,7 +38,9 @@ class TestAllDefinitionsLoad:
         assert registry.count == 20
 
     def test_all_yaml_files_parse(self):
-        for yml in sorted(AGENTS_DIR.glob("*.yml")):
+        yml_files = sorted(AGENTS_DIR.glob("*.yml"))
+        assert len(yml_files) == 20
+        for yml in yml_files:
             raw = yaml.safe_load(yml.read_text())
             assert isinstance(raw, dict), f"{yml.name} did not parse as dict"
 
@@ -47,6 +49,11 @@ class TestAllDefinitionsLoad:
             raw = yaml.safe_load(yml.read_text())
             for field in REQUIRED_FIELDS:
                 assert field in raw, f"{yml.name} missing required field: {field}"
+
+    def test_yaml_files_are_utf8(self):
+        for yml in sorted(AGENTS_DIR.glob("*.yml")):
+            content = yml.read_text(encoding="utf-8")
+            assert len(content) > 0, f"{yml.name} is empty"
 
 
 class TestFieldValues:
@@ -86,6 +93,13 @@ class TestFieldValues:
                 f"{agent.name} has too-short description"
             )
 
+    def test_names_are_kebab_case(self, registry):
+        import re
+        for agent in registry.list_all():
+            assert re.match(r'^[a-z][a-z0-9-]*$', agent.name), (
+                f"{agent.name} is not kebab-case"
+            )
+
 
 class TestSpecAgents:
     def test_all_9_spec_agents_present(self, registry):
@@ -105,6 +119,13 @@ class TestSpecAgents:
                 f"{name} should have at least 1 formation role"
             )
 
+    def test_spec_agents_have_model_preference(self, registry):
+        for name in EXPECTED_SPEC_AGENTS:
+            agent = registry.get(name)
+            assert agent.model_preference in VALID_MODEL_PREFS, (
+                f"{name} has invalid model_preference"
+            )
+
 
 class TestSpecialists:
     def test_all_11_specialists_present(self, registry):
@@ -117,6 +138,13 @@ class TestSpecialists:
             agent = registry.get(name)
             assert agent.category == "specialist", f"{name} should be category=specialist"
 
+    def test_specialists_have_system_prompts(self, registry):
+        for name in EXPECTED_SPECIALISTS:
+            agent = registry.get(name)
+            assert len(agent.system_prompt.strip()) > 20, (
+                f"{name} has too-short system_prompt"
+            )
+
 
 class TestNoDuplicates:
     def test_unique_names(self):
@@ -126,6 +154,10 @@ class TestNoDuplicates:
             names.append(raw.get("name", yml.stem))
         assert len(names) == len(set(names)), f"Duplicate agent names found: {names}"
 
+    def test_unique_filenames(self):
+        files = [yml.stem for yml in sorted(AGENTS_DIR.glob("*.yml"))]
+        assert len(files) == len(set(files))
+
 
 class TestFormationCoverage:
     """Verify key formations have agents mapped to their roles."""
@@ -133,6 +165,7 @@ class TestFormationCoverage:
     def test_feature_impl_has_backend(self, registry):
         agent = registry.route("feature-impl", "backend-impl")
         assert agent is not None
+        assert isinstance(agent, AgentDefinition)
 
     def test_feature_impl_has_tester(self, registry):
         agent = registry.route("feature-impl", "tester")
@@ -145,3 +178,9 @@ class TestFormationCoverage:
     def test_security_review_has_scanner(self, registry):
         agent = registry.route("security-review", "scanner")
         assert agent is not None
+
+    def test_each_spec_agent_has_at_least_one_formation(self, registry):
+        for name in EXPECTED_SPEC_AGENTS:
+            agent = registry.get(name)
+            formations = {fr.formation for fr in agent.formation_roles}
+            assert len(formations) >= 1, f"{name} has no formation assignments"

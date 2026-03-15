@@ -81,7 +81,7 @@ class TestArtifactManager:
         assert "wave-0/impl/file.py" in data
 
     def test_inject_upstream_inline(self, tmp_path):
-        """Artifacts <= 2KB are inlined into context."""
+        """Artifacts <= 4KB (the current threshold) are inlined into context."""
         am = ArtifactManager(tmp_path / "artifacts")
         project = init_forge_dir(tmp_path)
         store = TaskStore(project.tasks_file)
@@ -99,8 +99,46 @@ class TestArtifactManager:
         assert key in context
         assert context[key] == "small content"
 
+    def test_inject_upstream_inline_at_4kb_boundary(self, tmp_path):
+        """Artifacts exactly at 4096 bytes should be inlined (<=4KB threshold)."""
+        am = ArtifactManager(tmp_path / "artifacts")
+        project = init_forge_dir(tmp_path)
+        store = TaskStore(project.tasks_file)
+
+        dep = store.create(subject="Dep", description="")
+        store.update(dep.id, status="in_progress")
+        # Exactly 4096 bytes — should be inlined, not truncated
+        exact_content = "a" * 4096
+        store.update(dep.id, status="completed", artifacts={"exact": exact_content})
+
+        task = store.create(subject="Main", description="", blocked_by=[dep.id])
+        context = am.inject_upstream(task, store)
+        key = f"task-{dep.id}:exact"
+        assert key in context
+        assert context[key] == exact_content
+        assert "truncated" not in context[key]
+
+    def test_inject_upstream_inline_between_2kb_and_4kb(self, tmp_path):
+        """Artifacts between 2KB and 4KB should be inlined (threshold is 4KB, not 2KB)."""
+        am = ArtifactManager(tmp_path / "artifacts")
+        project = init_forge_dir(tmp_path)
+        store = TaskStore(project.tasks_file)
+
+        dep = store.create(subject="Dep", description="")
+        store.update(dep.id, status="in_progress")
+        # 3000 bytes — between old 2KB threshold and new 4KB threshold
+        content_3k = "b" * 3000
+        store.update(dep.id, status="completed", artifacts={"mid": content_3k})
+
+        task = store.create(subject="Main", description="", blocked_by=[dep.id])
+        context = am.inject_upstream(task, store)
+        key = f"task-{dep.id}:mid"
+        assert key in context
+        assert context[key] == content_3k
+        assert "truncated" not in context[key]
+
     def test_inject_upstream_truncates_large(self, tmp_path):
-        """Artifacts > 2KB get truncated preview."""
+        """Artifacts > 4KB get truncated preview with read_file hint."""
         am = ArtifactManager(tmp_path / "artifacts")
         project = init_forge_dir(tmp_path)
         store = TaskStore(project.tasks_file)
@@ -116,6 +154,44 @@ class TestArtifactManager:
         assert key in context
         assert "truncated" in context[key]
         assert len(context[key]) < 5000
+        # Verify the read_file hint is present in the truncation message
+        assert "read_file" in context[key]
+        assert "MUST call read_file" in context[key]
+
+    def test_inject_upstream_truncates_just_over_4kb(self, tmp_path):
+        """Artifact at 4097 bytes (one byte over threshold) should be truncated."""
+        am = ArtifactManager(tmp_path / "artifacts")
+        project = init_forge_dir(tmp_path)
+        store = TaskStore(project.tasks_file)
+
+        dep = store.create(subject="Dep", description="")
+        store.update(dep.id, status="in_progress")
+        content = "z" * 4097
+        store.update(dep.id, status="completed", artifacts={"over": content})
+
+        task = store.create(subject="Main", description="", blocked_by=[dep.id])
+        context = am.inject_upstream(task, store)
+        key = f"task-{dep.id}:over"
+        assert key in context
+        assert "truncated" in context[key]
+        assert "4097 bytes total" in context[key]
+        assert "read_file" in context[key]
+
+    def test_inject_upstream_skips_non_completed_deps(self, tmp_path):
+        """Only completed deps should have their artifacts injected."""
+        am = ArtifactManager(tmp_path / "artifacts")
+        project = init_forge_dir(tmp_path)
+        store = TaskStore(project.tasks_file)
+
+        dep = store.create(subject="Dep", description="")
+        store.update(dep.id, status="in_progress")
+        # Task is still in_progress, not completed
+        store.update(dep.id, artifacts={"data": "some data"})
+
+        task = store.create(subject="Main", description="", blocked_by=[dep.id])
+        context = am.inject_upstream(task, store)
+        # Should be empty since dep is not completed
+        assert len(context) == 0
 
 
 # ── WaveExecutor ─────────────────────────────────────────────────────────────
@@ -375,6 +451,65 @@ class TestGateReviewer:
         assert result.status == "CONDITIONAL"
         assert "exception" in result.reasons[0].lower()
 
+    def test_parse_verdict_multiple_json_objects_in_output(self):
+        """When output has multiple JSON objects, the code fence one should win."""
+        reviewer = GateReviewer()
+        # First JSON is noise, second (in code fence) is the real verdict
+        output = (
+            'Some analysis: {"irrelevant": true}\n\n'
+            '```json\n'
+            '{"status": "PASS", "reasons": ["All good"], "recommendations": []}\n'
+            '```\n\n'
+            'Additional text with {"noise": "data"}'
+        )
+        result = reviewer._parse_verdict(output)
+        assert result.status == "PASS"
+        assert result.reasons == ["All good"]
+
+    def test_parse_verdict_greedy_brace_with_multiple_objects(self):
+        """Fallback regex is greedy — when no code fence, it matches the widest { ... }.
+        This tests that behavior: two JSON blobs without a fence get matched greedily."""
+        reviewer = GateReviewer()
+        # No code fence — the greedy regex will match from first { to last }
+        output = (
+            '{"status": "FAIL", "reasons": ["Bad"], "recommendations": []} '
+            'and then {"extra": "data"}'
+        )
+        result = reviewer._parse_verdict(output)
+        # The greedy match from first { to last } will try to parse the whole span.
+        # It may succeed or fail depending on the combined text.
+        # Key assertion: it does not crash, and returns a valid GateResult
+        assert result.status in {"PASS", "FAIL", "CONDITIONAL"}
+
+    def test_parse_verdict_malformed_json_returns_conditional(self):
+        """Malformed JSON (trailing comma) should return CONDITIONAL."""
+        reviewer = GateReviewer()
+        output = '```json\n{"status": "PASS", "reasons": ["ok",], "recommendations": []}\n```'
+        result = reviewer._parse_verdict(output)
+        assert result.status == "CONDITIONAL"
+        assert any("malformed" in r.lower() for r in result.reasons)
+
+    def test_parse_verdict_non_list_reasons_coerced(self):
+        """When reasons is a string instead of list, it should be coerced."""
+        reviewer = GateReviewer()
+        result = reviewer._parse_verdict(json.dumps({
+            "status": "PASS",
+            "reasons": "Single reason string",
+            "recommendations": "Single rec",
+        }))
+        assert result.status == "PASS"
+        assert result.reasons == ["Single reason string"]
+        assert result.recommendations == ["Single rec"]
+
+    def test_parse_verdict_missing_reasons_key(self):
+        """Missing reasons key should default to empty list."""
+        reviewer = GateReviewer()
+        result = reviewer._parse_verdict(json.dumps({
+            "status": "PASS",
+        }))
+        assert result.status == "PASS"
+        assert result.reasons == []
+
     def test_build_artifacts_summary(self):
         reviewer = GateReviewer()
         wr = WaveResult(
@@ -388,3 +523,38 @@ class TestGateReviewer:
         assert "Wave 0" in summary
         assert "5.5s" in summary
         assert "Errors: 1" in summary
+
+    def test_build_artifacts_summary_multiple_waves(self):
+        reviewer = GateReviewer()
+        wr0 = WaveResult(
+            wave_index=0,
+            agent_results={"impl": AgentResult(output="done")},
+            artifacts={"impl:app.py": "code"},
+            errors=[],
+            duration=3.0,
+        )
+        wr1 = WaveResult(
+            wave_index=1,
+            agent_results={"tester": AgentResult(output="tested")},
+            artifacts={"tester:result": "passed"},
+            errors=["minor warning"],
+            duration=7.2,
+        )
+        summary = reviewer._build_artifacts_summary([wr0, wr1])
+        assert "Wave 0" in summary
+        assert "Wave 1" in summary
+        assert "3.0s" in summary
+        assert "7.2s" in summary
+
+    def test_build_artifacts_summary_skips_meta_keys(self):
+        """Meta keys starting with _ should not be counted as artifacts."""
+        reviewer = GateReviewer()
+        wr = WaveResult(
+            wave_index=0,
+            agent_results={},
+            artifacts={"_wave_index": 0, "impl:file.py": "code"},
+            errors=[],
+            duration=1.0,
+        )
+        summary = reviewer._build_artifacts_summary([wr])
+        assert "Artifacts produced: 1" in summary

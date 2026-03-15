@@ -653,3 +653,175 @@ class TestModuleConstants:
                 f"Recommendation for '{goal}' returned '{name}' which is not in FORMATIONS. "
                 f"Valid: {list(FORMATIONS.keys())}"
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Skill Detection — Edge Cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSkillDetectionEdgeCases:
+    """Edge cases and boundary conditions for skill detection."""
+
+    def test_set_skill_level_idempotent(self):
+        """Setting the same level twice doesn't break state."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        assistant.set_skill_level("expert")
+        assert assistant.skill_level == "expert"
+        assert assistant._skill_detected is True
+        assistant.set_skill_level("expert")
+        assert assistant.skill_level == "expert"
+
+    def test_set_skill_level_rejects_all_invalid_values(self):
+        """Various invalid strings are all rejected."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        for invalid in ["god_mode", "", "EXPERT", "Beginner", "pro", "123"]:
+            assistant.set_skill_level(invalid)
+            assert assistant.skill_level == "beginner", f"'{invalid}' should not change level"
+
+    def test_detect_first_run_no_builds_no_projects(self):
+        """Zero signals: first_run=True, no builds, no projects -> beginner."""
+        shell = _make_shell(builds_completed=0, first_run=True, recent_projects=[])
+        assistant = ForgeAssistant(shell)
+        level = assistant.detect_skill_level()
+        assert level == "beginner"
+        assert assistant._skill_detected is True
+
+    def test_detect_exactly_2_builds_gives_signal(self):
+        """2 builds contributes 1 signal (below intermediate threshold alone)."""
+        shell = _make_shell(builds_completed=2, first_run=False)
+        assistant = ForgeAssistant(shell)
+        level = assistant.detect_skill_level()
+        # 1 signal from builds + potentially 1 from env file = intermediate or beginner
+        assert level in ("beginner", "intermediate")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Formation Recommendation — Edge Cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFormationRecommendationEdgeCases:
+    """Edge cases for formation keyword matching."""
+
+    def test_performance_keyword_triggers_perf(self):
+        """'performance' keyword triggers perf-optimization."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        name, _ = assistant.get_formation_recommendation("optimize the database performance")
+        assert name == "perf-optimization"
+
+    def test_fix_crash_triggers_bug(self):
+        """'fix' + 'crash' triggers bug-investigation."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        name, _ = assistant.get_formation_recommendation("fix the crash in login")
+        assert name == "bug-investigation"
+
+    def test_security_before_bug(self):
+        """'security' keyword takes priority over 'bug' keywords."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        name, _ = assistant.get_formation_recommendation("debug the security vulnerability")
+        assert name == "security-review"
+
+    def test_empty_description_defaults(self):
+        """Empty string defaults to feature-impl."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        name, reason = assistant.get_formation_recommendation("")
+        assert name == "feature-impl"
+        assert isinstance(reason, str)
+
+    def test_full_stack_keyword(self):
+        """Explicit 'full-stack' phrase triggers new-project."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        name, _ = assistant.get_formation_recommendation("a full-stack application")
+        assert name == "new-project"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Contextual Hints — Edge Cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestContextualHintsEdgeCases:
+    """Additional edge cases for hint delivery."""
+
+    def test_intermediate_gets_tutorial_hints(self):
+        """Intermediate users still get tutorial hints (unlike experts)."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        assistant.skill_level = "intermediate"
+        hint = assistant.contextual_hint("after_plan")
+        assert hint is not None
+        assert len(hint) > 0
+
+    def test_expert_gets_after_preview_hint(self):
+        """Experts get after_preview hint (it's actionable)."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        assistant.skill_level = "expert"
+        hint = assistant.contextual_hint("after_preview")
+        assert hint is not None
+
+    def test_expert_gets_returning_expert_hint(self):
+        """Experts get the returning_expert hint."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        assistant.skill_level = "expert"
+        hint = assistant.contextual_hint("returning_expert")
+        assert hint is not None
+        assert "/status" in hint
+
+    def test_beginner_gets_all_hints_once(self):
+        """Beginner can get every hint key exactly once."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        assistant.skill_level = "beginner"
+        delivered = set()
+        for key in _HINTS:
+            hint = assistant.contextual_hint(key)
+            if hint is not None:
+                delivered.add(key)
+        # Beginner should see all hints
+        assert delivered == set(_HINTS.keys())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Autonomy State — Edge Cases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestAutonomyStateEdgeCases:
+    """Edge cases for autonomy state read/write."""
+
+    def test_overwrite_level(self, tmp_path):
+        """Setting level twice overwrites the first value."""
+        shell = _make_shell(project_path=str(tmp_path))
+        assistant = ForgeAssistant(shell)
+        assistant.set_autonomy_level(3)
+        assistant.set_autonomy_level(1)
+        assert assistant.read_autonomy_level() == 1
+
+    def test_read_missing_level_key(self, tmp_path):
+        """State file with empty JSON returns default 2."""
+        state_dir = tmp_path / ".forge" / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "autonomy.json").write_text("{}")
+        shell = _make_shell(project_path=str(tmp_path))
+        assistant = ForgeAssistant(shell)
+        assert assistant.read_autonomy_level() == 2
+
+    def test_a5_capabilities_same_as_a4_plus_logging(self):
+        """A5 should have everything A4 has plus enhanced audit logging."""
+        shell = _make_shell()
+        assistant = ForgeAssistant(shell)
+        can4, asks4 = assistant.get_autonomy_capabilities(4)
+        can5, asks5 = assistant.get_autonomy_capabilities(5)
+        assert len(can5) >= len(can4)
+        assert len(asks5) == 0
+        assert len(asks4) == 0

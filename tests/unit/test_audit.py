@@ -49,6 +49,7 @@ class TestAuditEntry:
         assert e.outcome == "success"
         assert e.autonomy_level == 2
         assert e.agent_id == "forge-impl-abc123"
+        assert e.task_id == "42"
         assert e.diff_summary == "1 file changed, 10 insertions(+)"
 
     def test_from_dict_minimal(self):
@@ -56,7 +57,11 @@ class TestAuditEntry:
         assert e.timestamp == "2026-01-01T00:00:00Z"
         assert e.project == ""
         assert e.tool == ""
+        assert e.risk == ""
+        assert e.outcome == ""
         assert e.autonomy_level == 0
+        assert e.agent_id == ""
+        assert e.task_id == ""
 
     def test_from_dict_empty(self):
         e = AuditEntry.from_dict({})
@@ -67,7 +72,6 @@ class TestAuditEntry:
 
 class TestAuditQueryEmpty:
     def test_query_no_audit_file(self, project):
-        # Remove the audit.jsonl (it doesn't exist yet)
         aq = AuditQuery(project)
         assert aq.query() == []
 
@@ -76,6 +80,9 @@ class TestAuditQueryEmpty:
         stats = aq.stats()
         assert stats.total_entries == 0
         assert stats.success_count == 0
+        assert stats.error_count == 0
+        assert stats.tools_used == {}
+        assert stats.risk_distribution == {}
 
     def test_recent_empty(self, project):
         aq = AuditQuery(project)
@@ -143,11 +150,18 @@ class TestAuditQueryFilters:
         results = aq.query(risk="high")
         assert len(results) == 1
         assert results[0].tool == "Bash"
+        assert results[0].risk == "high"
+
+    def test_query_by_risk_case_insensitive(self, populated):
+        aq = AuditQuery(populated)
+        results = aq.query(risk="HIGH")
+        assert len(results) == 1
 
     def test_query_by_outcome(self, populated):
         aq = AuditQuery(populated)
         results = aq.query(outcome="error")
         assert len(results) == 1
+        assert results[0].outcome == "error"
 
     def test_query_since_1h(self, populated):
         aq = AuditQuery(populated)
@@ -164,10 +178,26 @@ class TestAuditQueryFilters:
         results = aq.query(limit=1)
         assert len(results) == 1
 
+    def test_query_limit_returns_most_recent(self, populated):
+        aq = AuditQuery(populated)
+        results = aq.query(limit=1)
+        assert results[0].tool == "Write"  # Last entry is Write
+
     def test_query_combined_filters(self, populated):
         aq = AuditQuery(populated)
         results = aq.query(tool="Write", outcome="success")
         assert len(results) == 2
+
+    def test_query_no_match(self, populated):
+        aq = AuditQuery(populated)
+        results = aq.query(tool="NonExistentTool")
+        assert len(results) == 0
+
+    def test_query_combined_tool_and_risk(self, populated):
+        aq = AuditQuery(populated)
+        results = aq.query(tool="Bash", risk="high")
+        assert len(results) == 1
+        assert results[0].agent_id == "agent-2"
 
 
 # ── AuditQuery — stats ───────────────────────────────────────────────────────
@@ -192,6 +222,37 @@ class TestAuditQueryStats:
         assert stats.time_range[0] == "2026-03-09T10:00:00Z"
         assert stats.time_range[1] == "2026-03-09T10:02:00Z"
 
+    def test_stats_single_entry(self, project):
+        entries = [
+            {"timestamp": "2026-03-09T10:00:00Z", "tool": "Write", "risk": "low", "outcome": "success", "agent_id": "a1"},
+        ]
+        _write_entries(project, entries)
+
+        aq = AuditQuery(project)
+        stats = aq.stats()
+        assert stats.total_entries == 1
+        assert stats.time_range[0] == stats.time_range[1]
+
+    def test_stats_unknown_outcomes_not_counted(self, project):
+        entries = [
+            {"timestamp": "2026-03-09T10:00:00Z", "tool": "Write", "outcome": "skipped"},
+        ]
+        _write_entries(project, entries)
+        aq = AuditQuery(project)
+        stats = aq.stats()
+        assert stats.total_entries == 1
+        assert stats.success_count == 0
+        assert stats.error_count == 0
+
+    def test_stats_entries_without_agent_id(self, project):
+        entries = [
+            {"timestamp": "2026-03-09T10:00:00Z", "tool": "Write", "outcome": "success"},
+        ]
+        _write_entries(project, entries)
+        aq = AuditQuery(project)
+        stats = aq.stats()
+        assert stats.agents_active == set()
+
 
 # ── AuditQuery — recent ──────────────────────────────────────────────────────
 
@@ -209,6 +270,25 @@ class TestAuditQueryRecent:
         assert recent[0].tool == "tool-3"
         assert recent[1].tool == "tool-4"
 
+    def test_recent_default_is_10(self, project):
+        entries = [
+            {"timestamp": f"2026-03-09T10:{i:02d}:00Z", "tool": f"tool-{i}"}
+            for i in range(15)
+        ]
+        _write_entries(project, entries)
+        aq = AuditQuery(project)
+        recent = aq.recent()
+        assert len(recent) == 10
+
+    def test_recent_fewer_than_n(self, project):
+        entries = [
+            {"timestamp": "2026-03-09T10:00:00Z", "tool": "tool-0"},
+        ]
+        _write_entries(project, entries)
+        aq = AuditQuery(project)
+        recent = aq.recent(n=5)
+        assert len(recent) == 1
+
 
 # ── AuditQuery — agent_usage / session_log ────────────────────────────────────
 
@@ -224,6 +304,7 @@ class TestAuditQuerySecondaryLogs:
         usage = aq.agent_usage()
         assert len(usage) == 2
         assert usage[0]["agent"] == "backend-architect"
+        assert usage[0]["calls"] == 5
 
     def test_agent_usage_limit(self, project):
         entries = [{"agent": f"agent-{i}"} for i in range(10)]
@@ -232,6 +313,14 @@ class TestAuditQuerySecondaryLogs:
         aq = AuditQuery(project)
         usage = aq.agent_usage(limit=3)
         assert len(usage) == 3
+
+    def test_agent_usage_limit_returns_most_recent(self, project):
+        entries = [{"agent": f"agent-{i}"} for i in range(10)]
+        _write_entries(project, entries, "agent-usage.jsonl")
+        aq = AuditQuery(project)
+        usage = aq.agent_usage(limit=2)
+        assert usage[0]["agent"] == "agent-8"
+        assert usage[1]["agent"] == "agent-9"
 
     def test_session_log(self, project):
         entries = [
@@ -243,6 +332,48 @@ class TestAuditQuerySecondaryLogs:
         logs = aq.session_log()
         assert len(logs) == 1
         assert logs[0]["session_id"] == "s1"
+        assert logs[0]["ended_at"] == "2026-03-09T10:00:00Z"
+
+    def test_session_log_limit(self, project):
+        entries = [{"session_id": f"s{i}"} for i in range(30)]
+        _write_entries(project, entries, "session-log.jsonl")
+        aq = AuditQuery(project)
+        logs = aq.session_log(limit=5)
+        assert len(logs) == 5
+
+
+# ── JSONL integrity ──────────────────────────────────────────────────────────
+
+class TestJSONLIntegrity:
+    def test_each_line_is_valid_json(self, project):
+        entries = [
+            {"timestamp": "2026-03-09T10:00:00Z", "tool": "Write", "outcome": "success"},
+            {"timestamp": "2026-03-09T10:01:00Z", "tool": "Bash", "outcome": "error"},
+        ]
+        _write_entries(project, entries)
+
+        path = project / ".forge" / "audit" / "audit.jsonl"
+        for line in path.read_text().strip().split("\n"):
+            if line.strip():
+                parsed = json.loads(line)
+                assert isinstance(parsed, dict)
+
+    def test_corrupt_jsonl_recovers_gracefully(self, project):
+        path = project / ".forge" / "audit" / "audit.jsonl"
+        path.write_text('{"valid": true}\nNOT_JSON\n{"also_valid": true}\n')
+        aq = AuditQuery(project)
+        # Should not crash; may return partial or empty depending on implementation
+        results = aq.query()
+        # The corrupt line causes the parser to fail; entries list may be partial
+        assert isinstance(results, list)
+
+    def test_empty_lines_in_jsonl_handled(self, project):
+        path = project / ".forge" / "audit" / "audit.jsonl"
+        content = '{"timestamp": "2026-01-01T00:00:00Z", "tool": "Write"}\n\n{"timestamp": "2026-01-02T00:00:00Z", "tool": "Bash"}\n'
+        path.write_text(content)
+        aq = AuditQuery(project)
+        results = aq.query()
+        assert len(results) == 2
 
 
 # ── AuditQuery._parse_since ──────────────────────────────────────────────────
@@ -272,6 +403,14 @@ class TestParseSince:
         delta = now - cutoff
         assert 50 * 60 <= delta.total_seconds() <= 70 * 60
 
+    def test_numeric_only_defaults_to_hours(self):
+        # Edge case: "12" with no unit letter
+        cutoff = AuditQuery._parse_since("12")
+        now = datetime.now(timezone.utc)
+        delta = now - cutoff
+        # last char is '2' which is not m/h/d, so defaults to 1h
+        assert 50 * 60 <= delta.total_seconds() <= 70 * 60
+
 
 # ── AuditQuery._after ────────────────────────────────────────────────────────
 
@@ -284,10 +423,22 @@ class TestAfter:
         cutoff = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
         assert not AuditQuery._after("2026-03-09T10:00:00+00:00", cutoff)
 
+    def test_after_exact_boundary(self):
+        cutoff = datetime(2026, 3, 9, 10, 0, tzinfo=timezone.utc)
+        assert AuditQuery._after("2026-03-09T10:00:00+00:00", cutoff)
+
     def test_after_unparseable_returns_true(self):
         cutoff = datetime(2026, 3, 9, 10, 0, tzinfo=timezone.utc)
         assert AuditQuery._after("not-a-timestamp", cutoff)
 
+    def test_after_empty_string_returns_true(self):
+        cutoff = datetime(2026, 3, 9, 10, 0, tzinfo=timezone.utc)
+        assert AuditQuery._after("", cutoff)
+
     def test_after_naive_timestamp_treated_as_utc(self):
         cutoff = datetime(2026, 3, 9, 10, 0, tzinfo=timezone.utc)
         assert AuditQuery._after("2026-03-09T11:00:00", cutoff)
+
+    def test_after_naive_timestamp_before_cutoff(self):
+        cutoff = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
+        assert not AuditQuery._after("2026-03-09T10:00:00", cutoff)

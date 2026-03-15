@@ -143,3 +143,176 @@ class TestBuildCommand:
             result = runner.invoke(cli, ["--project", str(tmp_path), "build"])
         assert result.exit_code != 0
         assert "Agent timeout" in result.output
+
+    def test_build_shows_duration(self, runner, tmp_path):
+        mock_orch = MagicMock()
+        mock_orch.build = AsyncMock(return_value=BuildResult(
+            success=True,
+            waves_completed=2,
+            total_waves=2,
+            gate_passed=True,
+            errors=[],
+            duration=99.5,
+        ))
+
+        with patch("forge_orchestrator.ForgeOrchestrator", return_value=mock_orch):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "build", "--no-preview"])
+        assert result.exit_code == 0
+        assert "99.5s" in result.output
+
+
+class TestDeployCommand:
+    def test_deploy_success(self, runner, tmp_path):
+        mock_deployer = MagicMock()
+        mock_result = MagicMock()
+        mock_result.error = None
+        mock_result.url = "https://weather.herakles.dev"
+        mock_result.port = 8500
+        mock_result.container_id = "abc123"
+        mock_result.health_status = True
+        mock_deployer.deploy = AsyncMock(return_value=mock_result)
+
+        with patch("forge_deployer.ForgeDeployer", return_value=mock_deployer):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "deploy", "--domain", "weather.herakles.dev"])
+        assert result.exit_code == 0
+        assert "weather.herakles.dev" in result.output
+        assert "8500" in result.output
+
+    def test_deploy_error_exits_nonzero(self, runner, tmp_path):
+        mock_deployer = MagicMock()
+        mock_result = MagicMock()
+        mock_result.error = "Docker not running"
+        mock_deployer.deploy = AsyncMock(return_value=mock_result)
+
+        with patch("forge_deployer.ForgeDeployer", return_value=mock_deployer):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "deploy"])
+        assert result.exit_code != 0
+
+
+class TestAuditCommand:
+    def test_audit_no_log(self, runner, tmp_path):
+        result = runner.invoke(cli, ["--project", str(tmp_path), "audit"])
+        assert result.exit_code == 0
+        assert "No audit log" in result.output
+
+    def test_audit_with_entries(self, runner, tmp_path):
+        import json as json_mod
+        audit_dir = tmp_path / ".forge" / "audit"
+        audit_dir.mkdir(parents=True)
+        audit_file = audit_dir / "audit.jsonl"
+        entries = [
+            json_mod.dumps({"timestamp": "2026-03-15T12:00:00", "tool": "write_file", "agent_id": "agent-1"}),
+            json_mod.dumps({"timestamp": "2026-03-15T12:01:00", "tool": "read_file", "agent_id": "agent-2"}),
+        ]
+        audit_file.write_text("\n".join(entries))
+
+        result = runner.invoke(cli, ["--project", str(tmp_path), "audit"])
+        assert result.exit_code == 0
+        assert "2 entries" in result.output
+        assert "write_file" in result.output
+
+
+class TestModelsCommandDetailed:
+    def test_models_includes_key_aliases(self, runner):
+        result = runner.invoke(cli, ["models"])
+        assert result.exit_code == 0
+        # Should list several model aliases
+        assert "nova-lite" in result.output
+        assert "gemini-flash" in result.output
+        # Output should have arrow showing mapping
+        assert "->" in result.output
+
+
+class TestInitCommand:
+    def test_init_creates_forge_dir(self, runner, tmp_path):
+        result = runner.invoke(cli, ["--project", str(tmp_path), "init"])
+        assert result.exit_code == 0
+        assert ".forge/" in result.output or "initialized" in result.output
+
+    def test_init_idempotent(self, runner, tmp_path):
+        # First init
+        runner.invoke(cli, ["--project", str(tmp_path), "init"])
+        # Second init should not error
+        result = runner.invoke(cli, ["--project", str(tmp_path), "init"])
+        assert result.exit_code == 0
+        assert "already exists" in result.output.lower() or "initialized" in result.output.lower()
+
+
+class TestHandoffCommand:
+    def test_handoff_outputs_context(self, runner, tmp_path):
+        mock_orch = MagicMock()
+        mock_orch.handoff.return_value = "## Handoff Context\nProject: test-app"
+
+        with patch("forge_orchestrator.ForgeOrchestrator", return_value=mock_orch):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "handoff"])
+        assert result.exit_code == 0
+        assert "Handoff Context" in result.output
+
+
+class TestFormationCommand:
+    def test_formation_select(self, runner):
+        result = runner.invoke(cli, ["formation", "--complexity", "medium", "--scope", "medium"])
+        assert result.exit_code == 0
+        assert "Formation:" in result.output
+        assert "Roles:" in result.output
+        assert "Wave" in result.output
+
+    def test_formation_invalid_complexity(self, runner):
+        result = runner.invoke(cli, ["formation", "--complexity", "impossible", "--scope", "medium"])
+        # Should either show an error or default
+        # Just verify it doesn't crash unexpectedly
+        assert isinstance(result.exit_code, int)
+
+
+class TestNewCommandExtended:
+    def test_new_shows_compliance_status(self, runner, tmp_path):
+        result = runner.invoke(cli, ["--project", str(tmp_path), "new", "test-app"])
+        assert result.exit_code == 0
+        assert "Compliance:" in result.output or "gates" in result.output
+
+    def test_new_with_nonexistent_template_warns(self, runner, tmp_path):
+        result = runner.invoke(cli, ["--project", str(tmp_path), "new", "test-app2", "--template", "nonexistent-template"])
+        assert result.exit_code == 0
+        assert "not found" in result.output.lower() or "Warning" in result.output
+
+
+class TestStatusCommandExtended:
+    def test_status_shows_all_categories(self, runner, tmp_path):
+        mock_orch = MagicMock()
+        mock_orch.status.return_value = StatusReport(
+            project_name="my-project",
+            total_tasks=20,
+            completed=10,
+            in_progress=3,
+            pending=5,
+            failed=1,
+            blocked=1,
+            percent=50.0,
+        )
+        with patch("forge_orchestrator.ForgeOrchestrator", return_value=mock_orch):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "status"])
+        assert result.exit_code == 0
+        assert "Completed" in result.output
+        assert "In Progress" in result.output
+        assert "Pending" in result.output
+        assert "Failed" in result.output
+        assert "Blocked" in result.output
+        assert "50%" in result.output
+
+
+class TestListCommandExtended:
+    def test_list_shows_status_markers_correctly(self, runner, tmp_path):
+        mock_orch = MagicMock()
+        mock_orch.list_tasks.return_value = [
+            Task(id="1", subject="Task A", description="", status="completed"),
+            Task(id="2", subject="Task B", description="", status="in_progress"),
+            Task(id="3", subject="Task C", description="", status="failed"),
+            Task(id="4", subject="Task D", description="", status="blocked"),
+        ]
+        with patch("forge_orchestrator.ForgeOrchestrator", return_value=mock_orch):
+            result = runner.invoke(cli, ["--project", str(tmp_path), "list"])
+        assert result.exit_code == 0
+        assert "[+]" in result.output   # completed
+        assert "[>]" in result.output   # in_progress
+        assert "[!]" in result.output   # failed
+        assert "[x]" in result.output   # blocked
