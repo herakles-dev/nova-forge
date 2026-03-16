@@ -580,6 +580,14 @@ body {
 }
 .quickstart-card .code-block.compact {
   margin-bottom: 0;
+  height: auto;
+  min-height: 48px;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+.quickstart-card .code-block.compact code {
+  white-space: normal;
+  word-break: break-all;
 }
 .quickstart-hint {
   font-size: 0.75rem;
