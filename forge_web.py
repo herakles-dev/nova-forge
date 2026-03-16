@@ -44,7 +44,7 @@ one-line description in under 3 minutes (Lite 144s, Pro 167s, Premier 1110s).
 
 ## Quick Start
 1. Clone: `git clone https://github.com/herakles-dev/nova-forge.git && cd nova-forge`
-2. Install: `pip install -r requirements.txt`
+2. Setup venv: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
 3. Configure AWS credentials: `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1`
 4. Launch: `python3 forge_cli.py`
 5. Type what you want to build — Nova handles the rest.
