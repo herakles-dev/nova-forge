@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Nova Invaders — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud">
+            <span id="score-display">SCORE: 0</span>
+            <span id="level-display">WAVE: 1</span>
+            <span id="lives-display">♥♥♥</span>
+        </div>
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">NOVA<br>INVADERS</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Lite</p>
+            <button id="start-btn" class="game-btn">▶ START GAME</button>
+            <p class="controls-hint">Arrow Keys / WASD to move · Space to shoot</p>
+            <p class="controls-hint">Touch: tap sides to move, tap center to shoot</p>
+        </div>
+        <div id="game-over-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">GAME OVER</h1>
+            <p class="final-score">Score: <span id="final-score">0</span></p>
+            <p class="final-wave">Wave: <span id="final-wave">1</span></p>
+            <button id="restart-btn" class="game-btn">↻ PLAY AGAIN</button>
+        </div>
+        <div id="badge">⚡ Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
