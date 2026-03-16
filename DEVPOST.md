@@ -32,7 +32,7 @@ Nova Forge takes a natural language description of what you want to build and or
 ### Key capabilities:
 - **3 Amazon Nova models** — Lite (32K, fast), Pro (300K, balanced), Premier (1M, deep reasoning)
 - **11 agent formations** — Pre-built team layouts from single-file edits to full-stack multi-agent builds
-- **12 agent tools** — read, write, edit, bash, glob, grep, and more
+- **13 agent tools** — read, write, edit, bash, glob, grep, remember, and more
 - **6-level autonomy system** — A0 (ask for everything) through A5 (fully autonomous)
 - **14-stack preview detection** — Auto-detects Flask, FastAPI, Node, React, and 10 more
 - **Circuit breaker** — Auto-disables failing tools to prevent infinite retry loops
@@ -43,7 +43,7 @@ Nova Forge takes a natural language description of what you want to build and or
 **Pure Python, no dependencies on proprietary agent frameworks.** Nova Forge is a standalone tool-use loop that calls Amazon Nova via AWS Bedrock's Converse API.
 
 **Architecture**:
-- `ForgeAgent` — The core loop: send prompt → Nova responds with tool calls → execute tools → loop until done. 12 tools available (read_file, write_file, bash, etc.)
+- `ForgeAgent` — The core loop: send prompt → Nova responds with tool calls → execute tools → loop until done. 13 tools available (read_file, write_file, bash, remember, etc.)
 - `ModelRouter` — Adapter for AWS Bedrock with custom `botocore.Config` (300s read timeout for Premier's ~100s inference time)
 - `WaveExecutor` — Runs independent tasks in parallel using `asyncio.gather()` with semaphore throttling
 - `GateReviewer` — Spawns a read-only reviewer agent that adversarially checks the build output

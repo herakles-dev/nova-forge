@@ -154,7 +154,7 @@ Auto-escalation capped at A3. Full audit logging at all levels.
 | Tests | 1,670 (50 test files) |
 | Agent definitions | 20 |
 | Formations | 11 |
-| Agent tools | 12 |
+| Agent tools | 13 |
 | JSON schemas | 8 |
 | App templates | 4 |
 | Hook implementations | 12 |

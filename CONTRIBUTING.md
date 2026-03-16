@@ -46,7 +46,7 @@ python3 forge_cli.py                # Launch the CLI
 ```
 forge.py              # Click CLI (14 commands)
 forge_cli.py          # Interactive shell (main entry point)
-forge_agent.py        # Core agent loop + 12 tools
+forge_agent.py        # Core agent loop + 13 tools
 forge_orchestrator.py # Plan/build/deploy pipeline
 forge_pipeline.py     # WaveExecutor + GateReviewer
 model_router.py       # LLM provider adapters (Bedrock/OpenAI/Anthropic)

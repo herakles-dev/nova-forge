@@ -20,7 +20,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-from prompt_toolkit import PromptSession
+try:
+    from prompt_toolkit import PromptSession  # noqa: F811
+except ModuleNotFoundError:
+    print("\n  Missing dependencies. Run this first:\n")
+    print("    ./setup.sh")
+    print("    source .venv/bin/activate\n")
+    print("  Or manually:")
+    print("    python3 -m venv .venv && source .venv/bin/activate")
+    print("    pip install -r requirements.txt\n")
+    sys.exit(1)
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style as PTStyle

@@ -73,7 +73,7 @@
           <span style="color:var(--dim);">&middot;</span>
           <span style="color:var(--muted);">Arrow keys to play</span>
         </div>
-        <div style="position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(167,139,250,0.15);box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+        <div style="position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius);overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.4),0 0 0 1px rgba(167,139,250,0.15);">
           <iframe src="/demos/breakout/index.html" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;background:#000;" title="Breakout Game — built by Nova AI"></iframe>
         </div>
       </div>
@@ -93,7 +93,7 @@
         <span class="hero-stat-label">Tests</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value" id="s-tools">12</span>
+        <span class="hero-stat-value" id="s-tools">13</span>
         <span class="hero-stat-label">Agent Tools</span>
       </div>
       <div class="hero-stat">
@@ -162,7 +162,7 @@
         <div class="chat-side-stats">
           <div class="chat-side-stat"><span class="chat-side-stat-value">39</span><span class="chat-side-stat-label">Modules</span></div>
           <div class="chat-side-stat"><span class="chat-side-stat-value">1670</span><span class="chat-side-stat-label">Tests</span></div>
-          <div class="chat-side-stat"><span class="chat-side-stat-value">12</span><span class="chat-side-stat-label">Tools</span></div>
+          <div class="chat-side-stat"><span class="chat-side-stat-value">13</span><span class="chat-side-stat-label">Tools</span></div>
           <div class="chat-side-stat"><span class="chat-side-stat-value">19</span><span class="chat-side-stat-label">Sprints</span></div>
         </div>
       </div>
@@ -478,6 +478,23 @@
         <p>Spec review with 4 parallel reviewers (architecture, feasibility, security, UX) then synthesizer combines findings.</p>
         <div class="formation-cmd"><code>/formation all-hands-planning</code></div>
       </div>
+
+      <div class="formation-card new-badge">
+        <svg class="formation-topo" viewBox="0 0 80 60" width="80" height="60">
+          <line x1="40" y1="14" x2="40" y2="26" stroke="var(--dim)" stroke-width="1"/>
+          <line x1="40" y1="34" x2="40" y2="46" stroke="var(--dim)" stroke-width="1"/>
+          <circle cx="40" cy="10" r="6" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+          <circle cx="40" cy="30" r="6" fill="rgba(103,232,249,0.2)" stroke="#67e8f9" stroke-width="1.5"/>
+          <circle cx="40" cy="50" r="6" fill="rgba(74,222,128,0.2)" stroke="#4ade80" stroke-width="1.5"/>
+        </svg>
+        <div class="formation-header">
+          <h4>integration-check</h4>
+          <span class="formation-badge new">New</span>
+        </div>
+        <div class="formation-roles">3 roles</div>
+        <p>Post-build cross-file verification. Auditor checks references, fixer repairs mismatches, verifier confirms.</p>
+        <div class="formation-cmd"><code>/formation integration-check</code></div>
+      </div>
     </div>
   </section>
 
@@ -748,15 +765,14 @@
     <p class="section-desc">Use Nova Forge as a library, not just a CLI.</p>
 
     <div class="code-block">
-      <pre><code><span class="kw">from</span> forge_pipeline <span class="kw">import</span> WaveExecutor, ArtifactManager, GateReviewer
+      <pre><code><span class="kw">from</span> config <span class="kw">import</span> get_model_config
 <span class="kw">from</span> forge_agent <span class="kw">import</span> ForgeAgent
-<span class="kw">from</span> model_router <span class="kw">import</span> ModelRouter
 
-<span class="c"># Create a build agent with Nova</span>
-router = ModelRouter(<span class="s">"bedrock/us.amazon.nova-2-lite-v1:0"</span>)
+<span class="c"># Create a build agent with Nova Lite</span>
+model = get_model_config(<span class="s">"nova-lite"</span>)
 agent = ForgeAgent(
+    model_config=model,
     project_root=<span class="s">"./my-project"</span>,
-    router=router,
     max_turns=<span class="n">30</span>,
 )
 
@@ -767,13 +783,12 @@ result = <span class="kw">await</span> agent.run(
 )
 
 <span class="kw">print</span>(result.output)
-<span class="kw">print</span>(result.artifacts)  <span class="c"># {"/path/to/app.py": "# code..."}</span></code></pre>
-      <button class="copy-btn" data-copy="from forge_pipeline import WaveExecutor, ArtifactManager, GateReviewer
+<span class="kw">print</span>(result.artifacts)  <span class="c"># {"app.py": {"action": "write", "size": 1024}}</span></code></pre>
+      <button class="copy-btn" data-copy="from config import get_model_config
 from forge_agent import ForgeAgent
-from model_router import ModelRouter
 
-router = ModelRouter('bedrock/us.amazon.nova-2-lite-v1:0')
-agent = ForgeAgent(project_root='./my-project', router=router, max_turns=30)
+model = get_model_config('nova-lite')
+agent = ForgeAgent(model_config=model, project_root='./my-project', max_turns=30)
 result = await agent.run(prompt='Create a Flask REST API', system='Write working code.')
 print(result.output)" aria-label="Copy">
         <span class="copy-icon">&#x2398;</span>

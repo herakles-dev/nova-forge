@@ -117,7 +117,7 @@ Tasks are organized into **waves** using topological sort (Kahn's algorithm). In
 
 Each task is assigned to a **ForgeAgent** — an autonomous tool-use loop that calls Amazon Nova via AWS Bedrock.
 
-**12 Agent Tools:**
+**13 Agent Tools:**
 
 | Tool | Purpose |
 |------|---------|
@@ -132,6 +132,7 @@ Each task is assigned to a **ForgeAgent** — an autonomous tool-use loop that c
 | `search_replace_all` | Bulk find-and-replace |
 | `think` | Internal reasoning (no side effects) |
 | `claim_file` | Claim file ownership (multi-agent) |
+| `remember` | Store a note in persistent memory |
 | `check_context` | Check remaining context budget |
 
 **Safety features during build:**
@@ -226,7 +227,7 @@ Production deployment with Docker + nginx:
 Nova Forge automatically adapts prompts based on context window:
 
 - **Slim** (32K models like Lite): ~600 chars, 8 essential tools, output coaching
-- **Focused** (300K+ models): ~1,500 chars, full 12 tools
+- **Focused** (300K+ models): ~1,500 chars, full 13 tools
 - **Full** (1M+ models): ~5,000 chars with pre-seeded upstream context
 
 This is why Nova Lite scores S-tier despite having 1/31 the context of Premier.

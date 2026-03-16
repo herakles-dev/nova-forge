@@ -197,6 +197,7 @@ export AWS_DEFAULT_REGION="us-east-1"</code></pre>
     <tr><td>search_replace_all</td><td>Bulk find-and-replace</td></tr>
     <tr><td>think</td><td>Internal reasoning (no side effects)</td></tr>
     <tr><td>claim_file</td><td>Claim ownership (multi-agent)</td></tr>
+    <tr><td>remember</td><td>Store a note in persistent memory</td></tr>
     <tr><td>check_context</td><td>Check remaining context budget</td></tr>
   </table>
   </div>
@@ -253,7 +254,7 @@ export AWS_DEFAULT_REGION="us-east-1"</code></pre>
   <p>Nova Forge auto-adapts prompts to each model&rsquo;s context window:</p>
   <ul>
     <li><strong>Slim</strong> (32K) &mdash; ~600 chars, 8 essential tools, output coaching</li>
-    <li><strong>Focused</strong> (300K+) &mdash; ~1,500 chars, full 12 tools</li>
+    <li><strong>Focused</strong> (300K+) &mdash; ~1,500 chars, full 13 tools</li>
     <li><strong>Full</strong> (1M+) &mdash; ~5,000 chars with pre-seeded upstream context</li>
   </ul>
   <pre><code>/model nova-pro          # Switch directly
