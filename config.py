@@ -188,8 +188,10 @@ def get_model_config(model_str: str, **overrides) -> ModelConfig:
         mt = 4096
     elif ctx <= 200_000:
         mt = 4096      # Claude-class: 4K is sufficient, good discipline
+    elif ctx <= 500_000:
+        mt = 8192      # Nova Pro (300K), Gemini: allow longer writes
     else:
-        mt = 8192      # 300K+ (Nova Pro, Premier, Gemini): allow longer writes
+        mt = 16384     # Nova Premier (1M): needs more output room to avoid truncation
 
     return ModelConfig(
         model_id=model_id,

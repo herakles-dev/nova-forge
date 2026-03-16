@@ -644,6 +644,20 @@ class ForgeAgent:
 
             tool_calls = self.router.extract_tool_calls(response)
 
+            # Detect output truncation — model hit max_tokens mid-response
+            if response.stop_reason in ("max_tokens", "length") and tool_calls:
+                # Tool calls may have truncated content — treat as malformed
+                adapter = self.router.route(self.model_config.model_id)
+                messages.append(adapter.format_assistant_message(response))
+                messages.append({"role": "user", "content": (
+                    "Your response was TRUNCATED (hit output token limit). "
+                    "The tool call content is incomplete. Write SHORTER content: "
+                    "max ~80 lines per write_file call. "
+                    "Use write_file for the first ~80 lines, then append_file for the rest."
+                )})
+                turn += 1
+                continue
+
             # Clear read-proof flag when model uses tools (it's doing work)
             if tool_calls and self._awaiting_read_proof:
                 self._awaiting_read_proof = False
