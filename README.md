@@ -164,6 +164,10 @@ Auto-escalation capped at A3. Full audit logging at all levels.
 
 | Sprint | Key Deliverable |
 |--------|-----------------|
+| 1 | Core framework, agent loop, basic tools, Bedrock adapter |
+| 2 | V11 ecosystem port — pipeline architecture, formations, hooks |
+| 3 | Interactive CLI shell, guided build experience |
+| 4 | Credential management, /resume, retry logic, herakles command |
 | 5 | 12 tools, parallel waves, artifact handoffs, gate review |
 | 7-8 | Light model optimization (SLIM_TOOLS, slim prompts) |
 | 9 | Assistant layer, A0-A5 autonomy, adaptive UX |
