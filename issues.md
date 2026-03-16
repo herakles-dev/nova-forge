@@ -1,7 +1,41 @@
 # Nova Forge — Issues & Improvements Backlog
 
-> 5-agent architecture review (2026-03-15). 72 raw findings deduplicated to 44.
-> Agents: pipeline-reviewer, prompt-reviewer, error-reviewer, security-reviewer, agent-loop-reviewer.
+> 8-agent architecture review (2026-03-15/16). 102 raw findings deduplicated.
+> Agents: pipeline, prompt, error, security, agent-loop, ux-flow, decomposer, verification.
+
+---
+
+## CRITICAL — User Experience Blockers (Sprint 20 targets)
+
+### UX1. `python3 app.py &` hangs 120s — subprocess PIPEs don't detach backgrounded processes
+- **File**: `forge_agent.py:1486` (_tool_bash)
+- **Problem**: `asyncio.create_subprocess_shell` with `stdout=PIPE` keeps pipe open for backgrounded child. `communicate()` blocks until 120s timeout. Verifier hits this 2-3x = 360s+ wasted.
+- **Fix**: When command ends with `&`, redirect to `/dev/null`: `cmd + " > /dev/null 2>&1"` before backgrounding. Or add `start_server` tool.
+
+### UX2. Decomposer times out on simple projects — no fallback for 0 tasks
+- **File**: `forge_orchestrator.py:302-450`
+- **Problem**: Decomposer uses 10-turn LLM agent with Flask-centric example for ALL projects. For a 1-file game it over-thinks, produces malformed JSON, and returns 0 tasks. No fallback — user gets "try a more specific description."
+- **Fix**: (a) Add deterministic fast-path for 1-3 file projects. (b) Extract JSON from decomposer's text response when write_file wasn't called. (c) Fallback single-task from spec.md.
+
+### UX3. No post-build pipeline time budget — 5 stages run 10+ minutes
+- **File**: `forge_cli.py:2277-2450`
+- **Problem**: Pre-verify → integration-check (3 agents) → re-verify → gate → functional repair. No aggregate time limit. Verifier bash timeout (UX1) makes this 6+ minutes.
+- **Fix**: Add 120s total pipeline budget. Skip later stages when budget exhausted.
+
+### UX4. Natural language input falls through to chat instead of build
+- **File**: `forge_cli.py:350-420` (run loop)
+- **Problem**: User types "Build me a Breakout game" → routed to chat assistant, not build pipeline. Only `/plan` or `/build` trigger actual builds.
+- **Fix**: Detect build-intent phrases ("build", "create", "make") and route to `_guided_build`.
+
+### UX5. `/new` reuses existing directory without cleaning old tasks
+- **File**: `forge_cli.py` (/new command)
+- **Problem**: `/new game` in a directory with old .forge/tasks.json contaminates the new project with stale tasks and file references from previous builds.
+- **Fix**: Clear .forge/state/ when creating a new project in an existing directory.
+
+### UX6. _recover_json never invoked on decomposer text output
+- **File**: `forge_orchestrator.py:438-452`
+- **Problem**: When decomposer outputs JSON in text (common with Nova Lite) instead of calling write_file, the JSON recovery code is never reached. Valid task JSON is silently discarded.
+- **Fix**: Check `decomp_result.output` for JSON when tasks.json doesn't exist on disk.
 
 ---
 
