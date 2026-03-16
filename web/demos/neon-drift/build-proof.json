@@ -1,0 +1,25 @@
+{
+  "demo": "Neon Drift",
+  "description": "Endless runner — neon orb weaves through scrolling gates with trail effects and close-call bonuses",
+  "prompt": "Build a neon-themed endless runner game with HTML5 canvas. A glowing orb moves left and right to dodge scrolling gates. Add: particle trail behind the orb, close-call bonus points for near misses, increasing speed, score tracking, neon glow effects. Use dark theme with purple (#a78bfa) and cyan (#67e8f9) color scheme. Mobile touch support.",
+  "model": "Nova Lite",
+  "model_id": "bedrock/us.amazon.nova-lite-v1:0",
+  "context_window": "32K",
+  "tier": "lite",
+  "formation": "lightweight-feature",
+  "max_tokens": 4096,
+  "build_stats": {
+    "tasks": 3,
+    "waves": 2,
+    "turns": 28,
+    "duration_secs": 152,
+    "files_created": 3,
+    "total_lines": 280,
+    "cost_usd": 0.001
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create game canvas and core loop", "status": "pass", "turns": 12, "files": ["game.js"]},
+    {"id": 2, "subject": "Create HTML structure and overlays", "status": "pass", "turns": 8, "files": ["index.html"]},
+    {"id": 3, "subject": "Create styling with neon effects", "status": "pass", "turns": 8, "files": ["style.css"]}
+  ]
+}

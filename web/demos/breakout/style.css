@@ -1,214 +1,120 @@
-/* 
- * Breakout Arcade Game - Stylesheet
- * Modern CSS for responsive layout, visual appeal, and game UI components
- */
-
-/* Reset and base styles */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* Breakout — Nova Forge Brand Theme */
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #1a2a6c, #b21f1f, #1a2a6c);
-  color: #fff;
-  min-height: 100vh;
+  background: #0a0a12;
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  padding: 20px;
-  overflow-x: hidden;
-}
-
-.container {
-  max-width: 900px;
-  width: 100%;
-  text-align: center;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 16px;
-  padding: 25px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Game header with title */
-h1 {
-  font-size: 2.8rem;
-  margin-bottom: 15px;
-  background: linear-gradient(to right, #ff9966, #ff5e62);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  letter-spacing: 1px;
-}
-
-/* Game stats container */
-.stats {
-  display: flex;
-  justify-content: space-around;
-  margin: 20px 0;
-  font-size: 1.3rem;
-  background: rgba(0, 0, 0, 0.4);
-  padding: 12px 20px;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-}
-
-.stat-value {
-  font-size: 1.8rem;
-  font-weight: bold;
-  color: #ffcc00;
-  margin-top: 5px;
-}
-
-/* Canvas container */
-.canvas-container {
-  position: relative;
-  margin: 20px auto;
-  border: 3px solid #ff5e62;
-  border-radius: 8px;
+  min-height: 100vh;
+  font-family: 'Press Start 2P', monospace;
   overflow: hidden;
-  box-shadow: 0 0 20px rgba(255, 94, 98, 0.5);
-  background: #000;
 }
 
-#gameCanvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  background-color: #000;
+#game-container {
+  position: relative;
+  width: min(100vw, 800px);
+  height: min(100vh, 600px);
+  aspect-ratio: 4 / 3;
 }
 
-/* Game over overlay */
-.overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
+canvas {
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.85);
+  display: block;
+  background: #0a0a12;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 4px;
+}
+
+#hud {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #e4e4f0;
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.6);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  color: #fff;
-  font-size: 2rem;
-  text-align: center;
+  justify-content: center;
+  background: rgba(10, 10, 18, 0.92);
+  backdrop-filter: blur(8px);
   z-index: 10;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.4s ease;
+  gap: 16px;
 }
 
-.overlay.visible {
-  opacity: 1;
-  pointer-events: all;
+.game-title {
+  font-size: clamp(28px, 6vw, 48px);
+  background: linear-gradient(135deg, #a78bfa, #67e8f9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  letter-spacing: 4px;
 }
 
-.overlay h2 {
-  font-size: 3rem;
-  margin-bottom: 20px;
-  color: #ffcc00;
-  text-shadow: 0 0 10px rgba(255, 204, 0, 0.7);
+.subtitle {
+  font-size: 10px;
+  color: #7a7a94;
+  font-family: 'Press Start 2P', monospace;
 }
 
-.overlay p {
-  font-size: 1.5rem;
-  margin-bottom: 30px;
-}
-
-.restart-btn {
-  padding: 12px 35px;
-  font-size: 1.2rem;
-  background: linear-gradient(to right, #ff9966, #ff5e62);
+.game-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #a78bfa, #67e8f9);
+  color: #0a0a12;
   border: none;
-  border-radius: 50px;
-  color: white;
+  border-radius: 8px;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  font-weight: bold;
-  box-shadow: 0 4px 15px rgba(255, 94, 98, 0.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+  margin-top: 12px;
 }
 
-.restart-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(255, 94, 98, 0.6);
+.game-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 24px rgba(167, 139, 250, 0.4);
 }
 
-.restart-btn:active {
-  transform: translateY(1px);
+.final-score {
+  font-size: 14px;
+  color: #67e8f9;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .container {
-    padding: 15px;
-    margin: 10px;
-  }
-  
-  h1 {
-    font-size: 2.2rem;
-  }
-  
-  .stats {
-    flex-direction: column;
-    gap: 12px;
-  }
-  
-  .stat {
-    width: 100%;
-    justify-content: center;
-  }
-  
-  .canvas-container {
-    transform: scale(0.9);
-  }
+.controls-hint {
+  font-size: 8px;
+  color: #4a4a62;
+  margin-top: 8px;
 }
 
-@media (max-width: 480px) {
-  h1 {
-    font-size: 1.8rem;
-  }
-  
-  .stat-value {
-    font-size: 1.5rem;
-  }
-  
-  .overlay h2 {
-    font-size: 2rem;
-  }
-  
-  .overlay p {
-    font-size: 1.2rem;
-  }
-  
-  .restart-btn {
-    padding: 10px 25px;
-    font-size: 1rem;
-  }
+#badge {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  color: #4a4a62;
+  font-family: 'Press Start 2P', monospace;
+  z-index: 5;
 }
 
-/* Animation for game start */
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+#badge a {
+  color: #a78bfa;
+  text-decoration: none;
 }
 
-.start-pulse {
-  animation: pulse 1.5s infinite;
+#badge a:hover {
+  text-decoration: underline;
 }

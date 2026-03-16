@@ -1,0 +1,29 @@
+{
+  "demo": "Forge Defense",
+  "description": "Tower defense with 6 tower types, 3 upgrade tiers, A* pathfinding, 6 enemy types including healers and flyers, chain lightning, splash damage, economy with interest, 20 waves",
+  "prompt": "Build a full tower defense game with HTML5 canvas. 20x14 grid map with winding enemy path. 6 tower types: Bolt (fast single-target), Flame (area burn), Arc (chain lightning hits 3), Frost (slows 40%), Cannon (splash damage), Sniper (long range instant). Each tower has 3 upgrade tiers. 6 enemy types: Scout (fast), Soldier (balanced), Tank (high HP), Healer (heals nearby), Flyer (ignores path), Boss (every 5 waves, shield regen). Economy with kill gold and 5% interest between waves. Tower selector panel, speed controls (1x/2x/3x), wave preview. 20 waves of increasing difficulty. Dark theme with neon accents.",
+  "model": "Nova Pro",
+  "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+  "context_window": "300K",
+  "tier": "pro",
+  "formation": "full-stack",
+  "max_tokens": 8192,
+  "build_stats": {
+    "tasks": 7,
+    "waves": 3,
+    "turns": 39,
+    "duration_secs": 341,
+    "files_created": 3,
+    "total_lines": 600,
+    "cost_usd": 0.006
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create grid map and path system", "status": "pass", "turns": 6, "files": ["game.js"]},
+    {"id": 2, "subject": "Create 6 tower types with targeting", "status": "pass", "turns": 7, "files": ["game.js"]},
+    {"id": 3, "subject": "Create projectile system with unique behaviors", "status": "pass", "turns": 6, "files": ["game.js"]},
+    {"id": 4, "subject": "Create 6 enemy types and wave system", "status": "pass", "turns": 6, "files": ["game.js"]},
+    {"id": 5, "subject": "Create upgrade and economy system", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 6, "subject": "Create HTML UI panels and overlays", "status": "pass", "turns": 5, "files": ["index.html"]},
+    {"id": 7, "subject": "Create styling for HUD and tower selector", "status": "pass", "turns": 4, "files": ["style.css"]}
+  ]
+}

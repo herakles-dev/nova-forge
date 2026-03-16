@@ -128,8 +128,9 @@ class TestToolProfiles:
 
     def test_full_has_all_tools(self):
         assert TOOL_PROFILES["full"] == {
-            "read_file", "write_file", "append_file", "edit_file", "bash", "glob_files", "grep",
-            "claim_file", "check_context",
+            "read_file", "write_file", "append_file", "edit_file", "replace_lines",
+            "search_replace_all", "bash", "glob_files", "grep", "list_directory",
+            "think", "remember", "claim_file", "check_context",
         }
 
     def test_readonly_no_write(self):
@@ -274,6 +275,8 @@ class TestFormationEdgeCases:
         for name, f in FORMATIONS.items():
             assert f.description, f"{name} has empty description"
 
-    def test_coding_profile_matches_full_minus_nothing(self):
-        """Coding profile should be identical to full (both have all tools)."""
-        assert TOOL_PROFILES["coding"] == TOOL_PROFILES["full"]
+    def test_coding_profile_subset_of_full(self):
+        """Coding profile should be a subset of full (full adds remember)."""
+        assert TOOL_PROFILES["coding"].issubset(TOOL_PROFILES["full"])
+        assert "write_file" in TOOL_PROFILES["coding"]
+        assert "think" in TOOL_PROFILES["coding"]

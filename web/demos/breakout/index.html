@@ -2,98 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Breakout Arcade Game</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
-
-        #gameContainer {
-            position: relative;
-            width: 800px;
-            height: 600px;
-            transform-origin: center center;
-        }
-
-        canvas {
-            background-color: #000;
-            display: block;
-        }
-        
-        #scoreDisplay {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-size: 20px;
-        }
-        
-        #livesDisplay {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            color: white;
-            font-size: 20px;
-        }
-        
-        #gameOver {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            color: white;
-            display: none;
-        }
-        
-        #restartButton {
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Breakout — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="gameContainer">
+    <div id="game-container">
         <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div id="scoreDisplay">Score: 0</div>
-        <div id="livesDisplay">Lives: 3</div>
-        <div id="gameOver">
-            <h2>Game Over</h2>
-            <p>Your Score: <span id="finalScore">0</span></p>
-            <button id="restartButton">Play Again</button>
+        <div id="hud">
+            <span id="scoreDisplay">SCORE: 0</span>
+            <span id="livesDisplay">&hearts;&hearts;&hearts;</span>
         </div>
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">BREAKOUT</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Lite</p>
+            <button id="start-btn" class="game-btn">&#x25b6; START GAME</button>
+            <p class="controls-hint">Arrow Keys / Mouse to move paddle</p>
+        </div>
+        <div id="gameOver" class="overlay" style="display:none;">
+            <h1 class="game-title">GAME OVER</h1>
+            <p class="final-score">Score: <span id="finalScore">0</span></p>
+            <button id="restartButton" class="game-btn">&#x21bb; PLAY AGAIN</button>
+        </div>
+        <div id="badge">&#x26a1; Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
     </div>
-
     <script src="game.js"></script>
-    <script>
-    (function() {
-      function scaleGame() {
-        var container = document.getElementById('gameContainer');
-        var scaleX = window.innerWidth / 800;
-        var scaleY = window.innerHeight / 600;
-        var scale = Math.min(scaleX, scaleY);
-        container.style.transform = 'scale(' + scale + ')';
-      }
-      scaleGame();
-      window.addEventListener('resize', scaleGame);
-    })();
-    </script>
 </body>
 </html>

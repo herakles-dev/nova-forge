@@ -26,24 +26,48 @@ let leftPressed = false;
 function init() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
-    
+
+    // Responsive scaling
+    function scaleGame() {
+        var scaleX = window.innerWidth / 800;
+        var scaleY = window.innerHeight / 600;
+        var scale = Math.min(scaleX, scaleY, 1);
+        var container = document.getElementById('game-container');
+        container.style.width = (800 * scale) + 'px';
+        container.style.height = (600 * scale) + 'px';
+    }
+    scaleGame();
+    window.addEventListener('resize', scaleGame);
+
     // Initialize paddle position
     paddleX = (canvas.width - PADDLE_WIDTH) / 2;
-    
+
     // Initialize ball position and speed
     resetBall();
-    
+
     // Initialize bricks
     createBricks();
-    
+
     // Add event listeners
     document.addEventListener('keydown', keyDownHandler);
     document.addEventListener('keyup', keyUpHandler);
+    canvas.addEventListener('mousemove', function(e) {
+        var rect = canvas.getBoundingClientRect();
+        var scaleX = canvas.width / rect.width;
+        paddleX = (e.clientX - rect.left) * scaleX - PADDLE_WIDTH / 2;
+        paddleX = Math.max(0, Math.min(canvas.width - PADDLE_WIDTH, paddleX));
+    });
     document.getElementById('restartButton').addEventListener('click', restartGame);
-    
-    // Start game loop
-    gameRunning = true;
-    requestAnimationFrame(draw);
+
+    // Start screen
+    var startBtn = document.getElementById('start-btn');
+    if (startBtn) {
+        startBtn.addEventListener('click', function() {
+            document.getElementById('start-screen').style.display = 'none';
+            gameRunning = true;
+            requestAnimationFrame(draw);
+        });
+    }
 }
 
 // Reset ball position and speed
@@ -76,9 +100,9 @@ function createBricks() {
     }
 }
 
-// Get color for brick based on row
+// Get color for brick based on row — Nova Forge brand palette
 function getBrickColor(row) {
-    const colors = ['#FF0000', '#FF7F00', '#FFD700', '#7FFF00', '#00FFFF', '#0000FF'];
+    const colors = ['#f472b6', '#a78bfa', '#c084fc', '#67e8f9', '#4ade80', '#fb923c'];
     return colors[row % colors.length];
 }
 
@@ -89,15 +113,21 @@ function draw() {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw paddle
-    ctx.fillStyle = '#0095DD';
+    // Draw paddle — cyan with glow
+    ctx.shadowColor = '#67e8f9';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#67e8f9';
     ctx.fillRect(paddleX, canvas.height - PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT);
-    
-    // Draw ball
+    ctx.shadowBlur = 0;
+
+    // Draw ball — purple with glow
     ctx.beginPath();
     ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = '#0095DD';
+    ctx.shadowColor = '#a78bfa';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#a78bfa';
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.closePath();
     
     // Draw bricks
@@ -235,5 +265,5 @@ function restartGame() {
     requestAnimationFrame(draw);
 }
 
-// Start the game when page loads
+// Start the game when page loads (but wait for start button)
 window.onload = init;

@@ -406,6 +406,15 @@ class WaveExecutor:
                 logger.warning("Could not mark task %s in_progress: %s", task.id, exc)
             role = self._find_role_for_task(task)
             upstream_context = self._artifact_manager.inject_upstream(task, self.store)
+            # Inject spec.md so every agent has the full project description
+            spec_path = self.project_root / "spec.md"
+            if spec_path.exists():
+                try:
+                    spec_content = spec_path.read_text(encoding="utf-8", errors="replace")
+                    if len(spec_content) > 100:  # Skip empty/trivial specs
+                        upstream_context["project-spec"] = spec_content
+                except OSError:
+                    pass
             result = await self._execute_agent(task, role, upstream_context)
             return role.name, task, result
 
@@ -500,6 +509,7 @@ class WaveExecutor:
                     "subject": task.subject,
                     "description": task.description,
                     "metadata": task.metadata,
+                    "files": (task.metadata or {}).get("files", []),
                 },
                 context=context if context else None,
                 formation=formation_dict,

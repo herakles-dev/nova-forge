@@ -1,0 +1,29 @@
+{
+  "demo": "Synth Swarm",
+  "description": "Boid flocking simulation — control 200+ autonomous agents through procedural landscape, collect energy, avoid predators",
+  "prompt": "Build a boid flocking simulation game with HTML5 canvas. Player controls a leader entity among 200+ autonomous boids following separation/alignment/cohesion rules. Scrolling 2000x2000 map with camera following player. Collect green energy crystals (boids near crystal = more points). Red predator entities scatter boids on contact. Yellow spawn portals recruit new boids. Minimap in corner. Game ends when swarm drops below 20. Dark theme with purple boids, cyan leader, procedural landscape.",
+  "model": "Nova Premier",
+  "model_id": "bedrock/us.amazon.nova-premier-v1:0",
+  "context_window": "1M",
+  "tier": "premier",
+  "formation": "full-stack",
+  "max_tokens": 16384,
+  "build_stats": {
+    "tasks": 7,
+    "waves": 3,
+    "turns": 33,
+    "duration_secs": 1156,
+    "files_created": 3,
+    "total_lines": 550,
+    "cost_usd": 0.028
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create boid flocking system with 3 rules", "status": "pass", "turns": 6, "files": ["game.js"]},
+    {"id": 2, "subject": "Create player control and camera system", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 3, "subject": "Create world map and procedural entities", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 4, "subject": "Create predator AI and collision systems", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 5, "subject": "Create minimap and HUD rendering", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 6, "subject": "Create HTML interface and overlays", "status": "pass", "turns": 4, "files": ["index.html"]},
+    {"id": 7, "subject": "Create styling and visual effects", "status": "pass", "turns": 3, "files": ["style.css"]}
+  ]
+}

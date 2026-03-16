@@ -4,22 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Demos — Nova Forge</title>
-<meta name="description" content="Apps planned, coded, tested and deployed entirely by AI agents. Zero human code.">
+<meta name="description" content="7 games and apps planned, coded, and deployed entirely by Amazon Nova AI agents. Zero human code.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x2692;</text></svg>">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0a12;--surface:#12121e;--card:#16162a;--accent:#a78bfa;--cyan:#67e8f9;--green:#4ade80;--orange:#fb923c;--red:#f87171;--yellow:#fbbf24;--text:#e4e4f0;--text-2:#b8b8cc;--muted:#7a7a94;--gradient:linear-gradient(135deg,#e879f9 0%,#a78bfa 40%,#67e8f9 100%);--radius:12px;--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+:root{--bg:#0a0a12;--surface:#12121e;--card:#16162a;--border:rgba(255,255,255,0.06);--accent:#a78bfa;--cyan:#67e8f9;--green:#4ade80;--orange:#fb923c;--red:#f87171;--text:#e4e4f0;--text-2:#b8b8cc;--muted:#7a7a94;--dim:#4a4a62;--gradient:linear-gradient(135deg,#e879f9 0%,#a78bfa 40%,#67e8f9 100%);--radius:12px;--radius-sm:8px;--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
 body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;
   background-image:radial-gradient(circle,rgba(167,139,250,.06) 1px,transparent 1px);background-size:24px 24px}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 
-/* Layout */
 .wrap{max-width:1120px;margin:0 auto;padding:0 1.25rem}
-section{padding:3.5rem 0}
-h2{font-size:1.6rem;font-weight:700;margin-bottom:1.5rem}
+section{padding:3rem 0}
+h2{font-size:1.5rem;font-weight:700;margin-bottom:1.25rem}
 .gradient-text{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 
 /* Hero */
@@ -31,21 +30,20 @@ h2{font-size:1.6rem;font-weight:700;margin-bottom:1.5rem}
 .stats-bar{display:flex;justify-content:center;flex-wrap:wrap;gap:1.5rem;color:var(--muted);font-size:.85rem;font-family:var(--mono)}
 .stats-bar span strong{color:var(--text);font-size:1.1rem;margin-right:.25rem}
 
-/* Badges */
-.badge{display:inline-block;padding:.15rem .55rem;border-radius:6px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
-.badge-s{background:rgba(167,139,250,.18);color:var(--accent)}
-.badge-a{background:rgba(74,222,128,.18);color:var(--green)}
-.badge-b{background:rgba(103,232,249,.18);color:var(--cyan)}
-.badge-c{background:rgba(251,191,36,.18);color:var(--yellow)}
-.badge-d,.badge-f{background:rgba(248,113,113,.18);color:var(--red)}
-.badge-easy{background:rgba(74,222,128,.15);color:var(--green)}
-.badge-medium{background:rgba(103,232,249,.15);color:var(--cyan)}
-.badge-hard{background:rgba(167,139,250,.15);color:var(--accent)}
-.badge-nightmare{background:rgba(251,146,60,.15);color:var(--orange)}
+/* Tier Layout */
+.tier-section{margin-bottom:3rem}
+.tier-label{display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+.tier-badge{padding:.3rem .75rem;border-radius:6px;font-size:.8rem;font-weight:700;font-family:var(--mono)}
+.tier-badge.lite{background:rgba(103,232,249,.12);color:var(--cyan)}
+.tier-badge.pro{background:rgba(167,139,250,.12);color:var(--accent)}
+.tier-badge.premier{background:linear-gradient(135deg,rgba(232,121,249,.12),rgba(167,139,250,.12));color:#e879f9}
+.tier-tagline{font-size:.85rem;color:var(--muted);font-style:italic}
+.tier-ctx{font-size:.75rem;color:var(--dim);font-family:var(--mono)}
 
-/* Gallery Grid */
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem}
-.card{background:var(--card);border:1px solid rgba(167,139,250,.1);border-radius:var(--radius);padding:1.25rem;display:flex;flex-direction:column;gap:.6rem;transition:border-color .2s,transform .2s}
+.demo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem}
+
+/* Cards */
+.card{background:var(--card);border:1px solid rgba(167,139,250,.1);border-radius:var(--radius);padding:1.25rem;display:flex;flex-direction:column;gap:.5rem;transition:border-color .2s,transform .2s}
 .card:hover{border-color:rgba(167,139,250,.35);transform:translateY(-2px)}
 .card-head{display:flex;align-items:center;gap:.6rem}
 .card-icon{font-size:1.5rem}
@@ -56,52 +54,53 @@ h2{font-size:1.6rem;font-weight:700;margin-bottom:1.5rem}
 .card-meta{display:flex;align-items:center;justify-content:space-between;font-size:.82rem;color:var(--muted);border-top:1px solid rgba(255,255,255,.05);padding-top:.6rem;margin-top:auto}
 .card-meta a{font-weight:600}
 
-/* Timeline */
-.timeline{display:flex;flex-direction:column;gap:.4rem}
-.tl-row{display:flex;align-items:center;gap:.75rem;font-size:.85rem;padding:.35rem .75rem;border-radius:8px;background:var(--surface)}
-.tl-sprint{font-weight:600;color:var(--accent);min-width:4.5rem;font-family:var(--mono);font-size:.8rem}
-.tl-date{color:var(--muted);min-width:4.5rem;font-size:.78rem;font-family:var(--mono)}
-.tl-grades{display:flex;gap:.4rem;min-width:11rem}
-.tl-detail{color:var(--text-2);font-size:.82rem}
-.tl-label{font-size:.72rem;color:var(--muted);margin-right:.15rem}
+/* Proof */
+.build-proof{margin-top:.5rem;border-top:1px solid var(--border);padding-top:.3rem}
+.build-proof summary{font-size:.7rem;color:var(--muted);cursor:pointer;font-family:var(--mono);padding:.2rem 0;user-select:none;list-style:none}
+.build-proof summary::before{content:'\25b6 ';font-size:.6rem;display:inline-block;transition:transform .2s}
+.build-proof[open] summary::before{transform:rotate(90deg)}
+.build-proof summary:hover{color:var(--accent)}
+.proof-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem;margin-top:.4rem;font-size:.72rem;font-family:var(--mono);line-height:1.7}
+.proof-label{color:var(--muted);min-width:6rem;display:inline-block}
+.proof-value{color:var(--text)}
+.proof-prompt{color:var(--text-2);font-style:italic;display:block;margin:.3rem 0 .6rem;padding:.5rem;background:rgba(167,139,250,.05);border-radius:4px;border-left:2px solid var(--accent);line-height:1.5}
+.proof-row{display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.3rem}
+.proof-tasks{margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border)}
+.proof-task{display:flex;align-items:center;gap:.5rem;padding:.15rem 0}
+.task-check{color:var(--green);font-size:.8rem}
+.task-name{color:var(--text-2);flex:1}
+.task-turns{color:var(--dim)}
 
-/* Benchmark Matrix */
+/* Benchmark */
 .matrix{width:100%;border-collapse:collapse;font-size:.88rem}
 .matrix th,.matrix td{padding:.6rem .75rem;text-align:center;border:1px solid rgba(167,139,250,.08)}
 .matrix th{background:var(--surface);color:var(--text-2);font-weight:600;font-size:.8rem}
 .matrix td{background:var(--card)}
-.matrix td.empty{color:var(--muted)}
-.matrix th:first-child,.matrix td:first-child{text-align:left;font-weight:600}
+.badge{display:inline-block;padding:.15rem .55rem;border-radius:6px;font-size:.7rem;font-weight:600;text-transform:uppercase}
+.badge-s{background:rgba(167,139,250,.18);color:var(--accent)}
+.badge-a{background:rgba(74,222,128,.18);color:var(--green)}
 
 /* Dev Timeline */
 .dev-timeline{display:grid;grid-template-columns:auto 1fr;gap:.2rem .75rem;font-size:.85rem}
 .dev-sprint{color:var(--accent);font-weight:600;font-family:var(--mono);font-size:.8rem;text-align:right;padding:.25rem 0}
 .dev-desc{color:var(--text-2);padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.03)}
 
-/* Architecture Grid */
+/* Architecture */
 .arch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.75rem}
 .arch-item{background:var(--surface);border-radius:var(--radius);padding:1rem;border-left:3px solid var(--accent)}
 .arch-item h4{font-size:.9rem;font-weight:600;margin-bottom:.3rem}
 .arch-item p{font-size:.82rem;color:var(--text-2)}
 
-/* Footer */
 footer{text-align:center;padding:2.5rem 0;color:var(--muted);font-size:.85rem;border-top:1px solid rgba(167,139,250,.08)}
 footer a{color:var(--text-2)}
 
-/* Responsive */
 @media(max-width:768px){
-  .gallery{grid-template-columns:1fr}
+  .demo-grid{grid-template-columns:1fr}
   .stats-bar{gap:.75rem 1.25rem}
-  .tl-row{flex-wrap:wrap;gap:.35rem}
-  .tl-grades{min-width:auto}
   .arch-grid{grid-template-columns:1fr 1fr}
-  .matrix{font-size:.78rem}
-  .matrix th,.matrix td{padding:.4rem}
 }
 @media(max-width:480px){
   .arch-grid{grid-template-columns:1fr}
-  .dev-timeline{grid-template-columns:1fr;gap:.1rem}
-  .dev-sprint{text-align:left}
 }
 </style>
 </head>
@@ -112,95 +111,185 @@ footer a{color:var(--text-2)}
 <div class="wrap">
   <a href="/" class="back-link">&larr; Back to Nova Forge</a>
   <h1><span class="gradient-text">Built by Nova Forge</span></h1>
-  <p>Every app below was planned, coded, tested and deployed by AI agents &mdash; zero human code.</p>
+  <p>Every demo below was planned, coded, and deployed by AI agents &mdash; zero human code. Expand any card to see the exact prompt and build proof.</p>
   <div class="stats-bar">
-    <span><strong>28</strong>benchmark runs</span>
+    <span><strong>9</strong>games</span>
+    <span><strong>3</strong>model tiers</span>
     <span><strong>3</strong>Nova models</span>
-    <span><strong>4</strong>scenarios</span>
     <span><strong>19</strong>sprints</span>
-    <span><strong>7</strong>days of dev</span>
   </div>
 </div>
 </section>
 
-<!-- App Gallery -->
+<!-- Lite Tier -->
 <section>
-<div class="wrap">
-  <h2>App Gallery</h2>
-  <div class="gallery">
+<div class="wrap tier-section">
+  <div class="tier-label">
+    <span class="tier-badge lite">Nova Lite</span>
+    <span class="tier-ctx">32K context</span>
+    <span class="tier-tagline">Fast. Simple. Fun.</span>
+  </div>
+  <div class="demo-grid">
 
     <div class="card">
-      <div class="card-head"><span class="card-icon">&#x1F3AE;</span><span class="card-title">Breakout Game</span><span class="badge badge-easy">EASY</span></div>
-      <div class="card-desc">Classic arcade game with paddle, ball, bricks and score tracking</div>
-      <div class="tags"><span class="tag">Canvas</span><span class="tag">Vanilla JS</span><span class="tag">Game Loop</span></div>
-      <div class="card-meta"><span>Nova Lite <span class="badge badge-s">S</span> 90s</span><a href="/demos/breakout/">Play Game &rarr;</a></div>
+      <div class="card-head"><span class="card-icon">&#x1f680;</span><span class="card-title">Nova Invaders</span></div>
+      <div class="card-desc">Space shooter with 3 enemy types, power-ups, combo scoring, neon particle effects.</div>
+      <div class="tags"><span class="tag">Canvas</span><span class="tag">Particles</span><span class="tag">Touch</span><span class="tag">Combos</span></div>
+      <div class="card-meta"><span>167s &middot; 449 LOC &middot; 40 turns</span><a href="/demos/nova-invaders/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="nova-invaders">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
     </div>
 
     <div class="card">
-      <div class="card-head"><span class="card-icon">&#x1F4B0;</span><span class="card-title">Expense Tracker</span></div>
+      <div class="card-head"><span class="card-icon">&#x1f3ae;</span><span class="card-title">Breakout</span></div>
+      <div class="card-desc">Classic brick breaker with paddle physics, colored bricks, and glow effects.</div>
+      <div class="tags"><span class="tag">Canvas</span><span class="tag">Physics</span><span class="tag">Game Loop</span></div>
+      <div class="card-meta"><span>90s &middot; 238 LOC &middot; 22 turns</span><a href="/demos/breakout/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="breakout">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f31f;</span><span class="card-title">Neon Drift</span></div>
+      <div class="card-desc">Endless runner &mdash; neon orb weaves through scrolling gates with trail effects and close-call bonuses.</div>
+      <div class="tags"><span class="tag">Canvas</span><span class="tag">Trails</span><span class="tag">Touch</span></div>
+      <div class="card-meta"><span>152s &middot; 280 LOC &middot; 28 turns</span><a href="/demos/neon-drift/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="neon-drift">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<!-- Pro Tier -->
+<section>
+<div class="wrap tier-section">
+  <div class="tier-label">
+    <span class="tier-badge pro">Nova Pro</span>
+    <span class="tier-ctx">300K context</span>
+    <span class="tier-tagline">Complex. Strategic.</span>
+  </div>
+  <div class="demo-grid">
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x2604;&#xfe0f;</span><span class="card-title">Asteroid Forge</span></div>
+      <div class="card-desc">Asteroids + resource mining &mdash; split rocks, collect orbs, upgrade ship between waves.</div>
+      <div class="tags"><span class="tag">Physics</span><span class="tag">Upgrades</span><span class="tag">Waves</span><span class="tag">Resources</span></div>
+      <div class="card-meta"><span>289s &middot; 450 LOC &middot; 35 turns</span><a href="/demos/asteroid-forge/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="asteroid-forge">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x2b22;</span><span class="card-title">Hex Conquest</span></div>
+      <div class="card-desc">Turn-based hex strategy &mdash; expand territory, fight AI opponent, strength mechanics.</div>
+      <div class="tags"><span class="tag">Hex Grid</span><span class="tag">AI</span><span class="tag">Strategy</span><span class="tag">Turn-Based</span></div>
+      <div class="card-meta"><span>312s &middot; 470 LOC &middot; 38 turns</span><a href="/demos/hex-conquest/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="hex-conquest">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f3f0;</span><span class="card-title">Forge Defense</span></div>
+      <div class="card-desc">Tower defense &mdash; 6 tower types with 3 upgrade tiers, chain lightning, splash damage, 6 enemy types, 20 waves, economy.</div>
+      <div class="tags"><span class="tag">Pathfinding</span><span class="tag">6 Towers</span><span class="tag">Upgrades</span><span class="tag">Economy</span><span class="tag">20 Waves</span></div>
+      <div class="card-meta"><span>341s &middot; 600 LOC &middot; 39 turns</span><a href="/demos/forge-defense/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="forge-defense">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<!-- Premier Tier -->
+<section>
+<div class="wrap tier-section">
+  <div class="tier-label">
+    <span class="tier-badge premier">Nova Premier</span>
+    <span class="tier-ctx">1M context</span>
+    <span class="tier-tagline">Ambitious. Stunning.</span>
+  </div>
+  <div class="demo-grid">
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f30c;</span><span class="card-title">Gravity Wells</span></div>
+      <div class="card-desc">Physics puzzle &mdash; place gravity attractors to guide particle streams through obstacles to target zones.</div>
+      <div class="tags"><span class="tag">N-Body</span><span class="tag">Particles</span><span class="tag">Puzzles</span><span class="tag">5 Levels</span></div>
+      <div class="card-meta"><span>987s &middot; 500 LOC &middot; 30 turns</span><a href="/demos/gravity-wells/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="gravity-wells">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f9ec;</span><span class="card-title">Synth Swarm</span></div>
+      <div class="card-desc">Boid flocking &mdash; control 200+ autonomous agents through procedural landscape, collect energy, avoid predators.</div>
+      <div class="tags"><span class="tag">Flocking AI</span><span class="tag">200+ Boids</span><span class="tag">Procedural</span><span class="tag">Minimap</span></div>
+      <div class="card-meta"><span>1156s &middot; 550 LOC &middot; 33 turns</span><a href="/demos/synth-swarm/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="synth-swarm">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f3ce;&#xfe0f;</span><span class="card-title">Void Racer</span></div>
+      <div class="card-desc">Pseudo-3D racing &mdash; Mode 7 scanline rendering, procedural tracks with curves and hills, 3 AI opponents, boost pads, 3-lap race.</div>
+      <div class="tags"><span class="tag">Pseudo-3D</span><span class="tag">Mode 7</span><span class="tag">AI Racers</span><span class="tag">Procedural</span><span class="tag">3 Laps</span></div>
+      <div class="card-meta"><span>1243s &middot; 650 LOC &middot; 31 turns</span><a href="/demos/void-racer/">Play &rarr;</a></div>
+      <details class="build-proof" data-demo="void-racer">
+        <summary>View build proof &amp; prompt</summary>
+        <div class="proof-content"></div>
+      </details>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<!-- App Demos -->
+<section>
+<div class="wrap tier-section">
+  <h2>App Demos <span style="font-size:.75rem;color:var(--muted);font-weight:400">&mdash; full-stack benchmark scenarios</span></h2>
+  <div class="demo-grid">
+    <div class="card">
+      <div class="card-head"><span class="card-icon">&#x1f4b0;</span><span class="card-title">Expense Tracker</span></div>
       <div class="card-desc">Full-stack expense manager with categories, charts, CSV export</div>
       <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Chart.js</span></div>
-      <div class="card-meta"><span>Nova Lite <span class="badge badge-s">S</span> 144s</span><a href="/demos/expense-tracker/">View Demo &rarr;</a></div>
+      <div class="card-meta"><span>Nova Lite <span class="badge badge-s">S</span> 144s</span><a href="/demos/expense-tracker/">View &rarr;</a></div>
     </div>
-
     <div class="card">
-      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Lite)</span><span class="badge badge-hard">HARD</span></div>
+      <div class="card-head"><span class="card-icon">&#x1f4cb;</span><span class="card-title">Kanban Board</span></div>
       <div class="card-desc">Project management with auth, 3 tables, kanban columns</div>
-      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
-      <div class="card-meta"><span>Nova Lite <span class="badge badge-a">A</span> 285s</span><a href="/demos/kanban-board/">View Demo &rarr;</a></div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">Auth</span><span class="tag">3 Tables</span></div>
+      <div class="card-meta"><span>All 3 Nova <span class="badge badge-a">A</span></span><a href="/demos/kanban-board/">View &rarr;</a></div>
     </div>
-
     <div class="card">
-      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Pro)</span><span class="badge badge-hard">HARD</span></div>
-      <div class="card-desc">Same kanban spec built by Nova Pro &mdash; different architecture</div>
-      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
-      <div class="card-meta"><span>Nova Pro <span class="badge badge-a">A</span> 240s</span><a href="/demos/kanban-pro/">View Demo &rarr;</a></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><span class="card-icon">&#x1F4CB;</span><span class="card-title">Kanban Board (Premier)</span><span class="badge badge-hard">HARD</span></div>
-      <div class="card-desc">Premier's take on kanban &mdash; fewest turns, richest models</div>
-      <div class="tags"><span class="tag">Flask</span><span class="tag">SQLite</span><span class="tag">Auth</span></div>
-      <div class="card-meta"><span>Nova Premier <span class="badge badge-a">A</span> 1336s</span><a href="/demos/kanban-premier/">View Demo &rarr;</a></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><span class="card-icon">&#x2705;</span><span class="card-title">Todo App</span><span class="badge badge-easy">EASY</span></div>
+      <div class="card-head"><span class="card-icon">&#x2705;</span><span class="card-title">Todo App</span></div>
       <div class="card-desc">Task management with priorities and filters</div>
-      <div class="tags"><span class="tag">FastAPI</span><span class="tag">SQLite</span><span class="tag">Vanilla JS</span></div>
-      <div class="card-meta"><span>Scenario showcase</span><a href="/demos/todo-app/">View Demo &rarr;</a></div>
+      <div class="tags"><span class="tag">FastAPI</span><span class="tag">SQLite</span></div>
+      <div class="card-meta"><span>Scenario</span><a href="/demos/todo-app/">View &rarr;</a></div>
     </div>
-
     <div class="card">
-      <div class="card-head"><span class="card-icon">&#x26A1;</span><span class="card-title">Realtime Kanban</span><span class="badge badge-nightmare">NIGHTMARE</span></div>
-      <div class="card-desc">Full kanban + SSE live updates, file attachments, 5 tables</div>
-      <div class="tags"><span class="tag">Flask</span><span class="tag">SSE</span><span class="tag">Uploads</span><span class="tag">5 Tables</span></div>
-      <div class="card-meta"><span>Scenario showcase</span><a href="/demos/realtime-kanban/">View Demo &rarr;</a></div>
-    </div>
-
-  </div>
-</div>
-</section>
-
-<!-- Model Progression -->
-<section>
-<div class="wrap">
-  <h2>Model Progression</h2>
-  <div class="timeline">
-    <div class="tl-row">
-      <span class="tl-sprint">Sprint 13</span><span class="tl-date">Mar 13</span>
-      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-s">S</span> <span class="tl-label">Pro</span><span class="badge badge-c">C</span> <span class="tl-label">Premier</span><span class="badge badge-c">C</span></span>
-      <span class="tl-detail">expense-tracker</span>
-    </div>
-    <div class="tl-row">
-      <span class="tl-sprint">Sprint 14</span><span class="tl-date">Mar 13</span>
-      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-s">S</span> <span class="tl-label">Pro</span><span class="badge badge-s">S</span> <span class="tl-label">Premier</span><span class="badge badge-s">S</span></span>
-      <span class="tl-detail">expense-tracker (tuned)</span>
-    </div>
-    <div class="tl-row">
-      <span class="tl-sprint">Sprint 17</span><span class="tl-date">Mar 14</span>
-      <span class="tl-grades"><span class="tl-label">Lite</span><span class="badge badge-a">A</span> <span class="tl-label">Pro</span><span class="badge badge-a">A</span> <span class="tl-label">Premier</span><span class="badge badge-a">A</span></span>
-      <span class="tl-detail">kanban-board (HARD)</span>
+      <div class="card-head"><span class="card-icon">&#x26a1;</span><span class="card-title">Realtime Kanban</span></div>
+      <div class="card-desc">SSE live updates, file attachments, 5 tables</div>
+      <div class="tags"><span class="tag">Flask</span><span class="tag">SSE</span><span class="tag">Uploads</span></div>
+      <div class="card-meta"><span>Stress Test</span><a href="/demos/realtime-kanban/">View &rarr;</a></div>
     </div>
   </div>
 </div>
@@ -209,14 +298,14 @@ footer a{color:var(--text-2)}
 <!-- Benchmark Matrix -->
 <section>
 <div class="wrap">
-  <h2>Benchmark Matrix <span style="background:rgba(167,139,250,.18);color:var(--accent);padding:0.1rem 0.45rem;border-radius:4px;font-size:0.65rem;font-weight:600;vertical-align:middle">CUSTOM</span></h2>
+  <h2>Benchmark Matrix <span style="background:rgba(167,139,250,.18);color:var(--accent);padding:0.1rem 0.45rem;border-radius:4px;font-size:0.65rem;font-weight:600;vertical-align:middle">VERIFIED</span></h2>
   <div style="overflow-x:auto">
   <table class="matrix">
-    <thead><tr><th></th><th>expense-tracker</th><th>todo-app</th><th>kanban-board</th><th>realtime-kanban</th></tr></thead>
+    <thead><tr><th></th><th>expense-tracker</th><th>todo-app</th><th>kanban-board</th></tr></thead>
     <tbody>
-      <tr><td>Nova Lite</td><td><span class="badge badge-s">S</span> 100%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 90%</td><td class="empty">&mdash;</td></tr>
-      <tr><td>Nova Pro</td><td><span class="badge badge-s">S</span> 100%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 90%</td><td class="empty">&mdash;</td></tr>
-      <tr><td>Nova Premier</td><td><span class="badge badge-s">S</span> 100%</td><td class="empty">&mdash;</td><td><span class="badge badge-a">A</span> 89%</td><td class="empty">&mdash;</td></tr>
+      <tr><td>Nova Lite</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-a">A</span> 90%</td></tr>
+      <tr><td>Nova Pro</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-a">A</span> 90%</td></tr>
+      <tr><td>Nova Premier</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-s">S</span> 100%</td><td><span class="badge badge-a">A</span> 89%</td></tr>
     </tbody>
   </table>
   </div>
@@ -268,7 +357,6 @@ footer a{color:var(--text-2)}
 </div>
 </section>
 
-<!-- Footer -->
 <footer>
   <div class="wrap">
     <p>Nova Forge &mdash; Amazon Nova AI Hackathon 2026</p>
@@ -276,5 +364,50 @@ footer a{color:var(--text-2)}
   </div>
 </footer>
 
+<script>
+// Build proof loader for demos page
+document.querySelectorAll('.build-proof').forEach(function(details) {
+  details.addEventListener('toggle', function() {
+    if (!details.open) return;
+    var container = details.querySelector('.proof-content');
+    if (container.dataset.loaded) return;
+    container.dataset.loaded = '1';
+    var demo = details.dataset.demo;
+    fetch('/demos/' + demo + '/build-proof.json')
+      .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function(d) {
+        var h = '';
+        h += '<div class="proof-prompt">' + esc(d.prompt) + '</div>';
+        h += '<div class="proof-row">';
+        h += '<span><span class="proof-label">Model</span> <span class="proof-value">' + esc(d.model) + '</span></span>';
+        h += '<span><span class="proof-label">Context</span> <span class="proof-value">' + esc(d.context_window) + '</span></span>';
+        h += '<span><span class="proof-label">Formation</span> <span class="proof-value">' + esc(d.formation) + '</span></span>';
+        h += '<span><span class="proof-label">Max tokens</span> <span class="proof-value">' + d.max_tokens + '</span></span>';
+        h += '</div>';
+        if (d.build_stats) {
+          var s = d.build_stats;
+          h += '<div class="proof-row" style="margin-top:.4rem">';
+          h += '<span><span class="proof-label">Tasks</span> <span class="proof-value">' + s.tasks + '</span></span>';
+          h += '<span><span class="proof-label">Waves</span> <span class="proof-value">' + s.waves + '</span></span>';
+          h += '<span><span class="proof-label">Turns</span> <span class="proof-value">' + s.turns + '</span></span>';
+          h += '<span><span class="proof-label">Duration</span> <span class="proof-value">' + s.duration_secs + 's</span></span>';
+          h += '<span><span class="proof-label">Lines</span> <span class="proof-value">' + s.total_lines + '</span></span>';
+          h += '<span><span class="proof-label">Cost</span> <span class="proof-value">$' + s.cost_usd.toFixed(3) + '</span></span>';
+          h += '</div>';
+        }
+        if (d.tasks && d.tasks.length) {
+          h += '<div class="proof-tasks">';
+          d.tasks.forEach(function(t) {
+            h += '<div class="proof-task"><span class="task-check">\u2713</span><span class="task-name">' + esc(t.subject) + '</span><span class="task-turns">' + t.turns + ' turns</span></div>';
+          });
+          h += '</div>';
+        }
+        container.innerHTML = h;
+      })
+      .catch(function() { container.innerHTML = '<span style="color:var(--muted)">Build proof loading...</span>'; });
+  });
+});
+function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+</script>
 </body>
 </html>

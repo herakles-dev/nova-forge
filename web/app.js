@@ -285,6 +285,91 @@
     });
   });
 
+  // ── Build Proof Loader ───────────────────────────────────────────────
+
+  document.querySelectorAll('.build-proof').forEach(function (details) {
+    details.addEventListener('toggle', function () {
+      if (!details.open) return;
+      var container = details.querySelector('.proof-content');
+      if (container.dataset.loaded) return;
+      container.dataset.loaded = '1';
+
+      var demo = details.dataset.demo;
+      fetch('/demos/' + demo + '/build-proof.json')
+        .then(function (res) {
+          if (!res.ok) throw new Error('Not found');
+          return res.json();
+        })
+        .then(function (d) {
+          var html = '';
+          // Prompt
+          html += '<div class="proof-prompt">' + escapeHtml(d.prompt) + '</div>';
+          // Build settings row
+          html += '<div class="proof-row">';
+          html += '<span><span class="proof-label">Model</span> <span class="proof-value">' + escapeHtml(d.model) + '</span></span>';
+          html += '<span><span class="proof-label">Context</span> <span class="proof-value">' + escapeHtml(d.context_window) + '</span></span>';
+          html += '<span><span class="proof-label">Formation</span> <span class="proof-value">' + escapeHtml(d.formation) + '</span></span>';
+          html += '<span><span class="proof-label">Max tokens</span> <span class="proof-value">' + d.max_tokens + '</span></span>';
+          html += '</div>';
+          // Build stats row
+          if (d.build_stats) {
+            var bs = d.build_stats;
+            html += '<div class="proof-row" style="margin-top:0.4rem">';
+            html += '<span><span class="proof-label">Tasks</span> <span class="proof-value">' + bs.tasks + '</span></span>';
+            html += '<span><span class="proof-label">Waves</span> <span class="proof-value">' + bs.waves + '</span></span>';
+            html += '<span><span class="proof-label">Turns</span> <span class="proof-value">' + bs.turns + '</span></span>';
+            html += '<span><span class="proof-label">Duration</span> <span class="proof-value">' + bs.duration_secs + 's</span></span>';
+            html += '<span><span class="proof-label">Lines</span> <span class="proof-value">' + bs.total_lines + '</span></span>';
+            html += '<span><span class="proof-label">Cost</span> <span class="proof-value">$' + bs.cost_usd.toFixed(3) + '</span></span>';
+            html += '</div>';
+          }
+          // Task breakdown
+          if (d.tasks && d.tasks.length) {
+            html += '<div class="proof-tasks">';
+            d.tasks.forEach(function (t) {
+              html += '<div class="proof-task">';
+              html += '<span class="task-check">' + (t.status === 'pass' ? '\u2713' : '\u2717') + '</span>';
+              html += '<span class="task-name">' + escapeHtml(t.subject) + '</span>';
+              html += '<span class="task-turns">' + t.turns + ' turns</span>';
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+          // Debug session section (if present)
+          if (d.debug_session) {
+            var ds = d.debug_session;
+            html += '<div style="margin-top:0.6rem;padding-top:0.5rem;border-top:1px solid rgba(167,139,250,0.15)">';
+            html += '<div style="color:var(--orange);font-weight:600;margin-bottom:0.3rem">\u26a0 Debug Session</div>';
+            html += '<div style="color:var(--text-2);font-size:0.7rem;margin-bottom:0.3rem">' + escapeHtml(ds.symptoms || '') + '</div>';
+            if (ds.passes) {
+              ds.passes.forEach(function(p) {
+                html += '<div class="proof-task"><span class="task-check" style="color:var(--orange)">\u2699</span>';
+                html += '<span class="task-name">' + escapeHtml(p.model) + ' &mdash; ' + p.bugs_found + ' bugs found</span>';
+                html += '<span class="task-turns">' + p.duration_secs + 's</span></div>';
+              });
+            }
+            if (ds.fixes) {
+              ds.fixes.forEach(function(f) {
+                html += '<div class="proof-task"><span class="task-check">\u2713</span>';
+                html += '<span class="task-name">' + escapeHtml(f) + '</span></div>';
+              });
+            }
+            html += '<div style="color:var(--green);font-size:0.7rem;margin-top:0.3rem">' + escapeHtml(ds.verdict || '') + '</div>';
+            html += '</div>';
+          }
+          container.innerHTML = html;
+        })
+        .catch(function () {
+          container.innerHTML = '<span style="color:var(--muted)">Build proof not yet available for this demo.</span>';
+        });
+    });
+  });
+
+  function escapeHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   // ── Load Dynamic Stats ─────────────────────────────────────────────
 
   fetch('/api/info')

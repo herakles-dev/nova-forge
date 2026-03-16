@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Gravity Wells — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <div id="hud">
+            <span id="level-display">LEVEL 1</span>
+            <span id="score-display">0 / 20</span>
+            <span id="wells-display">WELLS: 3</span>
+        </div>
+
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">GRAVITY<br>WELLS</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Premier</p>
+            <p class="instructions">Click to place gravity wells.<br>Guide particles to the green zone.</p>
+            <button id="start-btn" class="game-btn">START</button>
+            <p class="controls-hint">Left-click: place well &middot; Right-click: remove last well</p>
+        </div>
+
+        <div id="level-complete-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">LEVEL<br>COMPLETE</h1>
+            <p class="final-score">Particles collected: <span id="level-score">0</span></p>
+            <button id="next-level-btn" class="game-btn">NEXT LEVEL</button>
+        </div>
+
+        <div id="game-complete-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">YOU<br>WIN</h1>
+            <p class="final-score">Total score: <span id="total-score">0</span></p>
+            <p class="subtitle">All 5 levels cleared!</p>
+            <button id="replay-btn" class="game-btn">PLAY AGAIN</button>
+        </div>
+
+        <div id="badge">Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

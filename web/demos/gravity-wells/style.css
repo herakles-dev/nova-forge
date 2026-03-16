@@ -1,0 +1,144 @@
+/* Gravity Wells — Nova Forge Demo (Premier tier) */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: #0a0a12;
+    color: #e4e4f0;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#game-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+}
+
+/* --- HUD --- */
+#hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 24px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    color: #e4e4f0;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(167, 139, 250, 0.6);
+    z-index: 10;
+}
+
+/* --- Overlays --- */
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 10, 18, 0.92);
+    z-index: 20;
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.game-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(28px, 6vw, 56px);
+    text-align: center;
+    line-height: 1.4;
+    background: linear-gradient(135deg, #a78bfa, #67e8f9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 16px;
+}
+
+.subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 12px;
+}
+
+.instructions {
+    font-size: 15px;
+    color: #b0b0c8;
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 28px;
+}
+
+.controls-hint {
+    font-size: 12px;
+    color: #666;
+    margin-top: 14px;
+}
+
+.final-score {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 16px;
+    color: #4ade80;
+    margin-bottom: 24px;
+}
+
+.game-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 16px;
+    padding: 14px 40px;
+    border: 2px solid #a78bfa;
+    background: transparent;
+    color: #e4e4f0;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+}
+
+.game-btn:hover {
+    background: #a78bfa;
+    color: #0a0a12;
+    box-shadow: 0 0 24px rgba(167, 139, 250, 0.5);
+}
+
+/* --- Badge --- */
+#badge {
+    position: absolute;
+    bottom: 12px;
+    right: 16px;
+    font-size: 11px;
+    color: #555;
+    z-index: 10;
+}
+
+#badge a {
+    color: #a78bfa;
+    text-decoration: none;
+}
+
+#badge a:hover {
+    text-decoration: underline;
+}
+
+/* --- Pulsing well glow (CSS reference — actual rendering is canvas) --- */
+@keyframes wellPulse {
+    0%, 100% { box-shadow: 0 0 20px #f472b6; }
+    50%      { box-shadow: 0 0 40px #f472b6, 0 0 60px rgba(244, 114, 182, 0.4); }
+}

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge Defense — Built by Nova Forge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Start Screen -->
+  <div id="startScreen" class="overlay">
+    <h1>FORGE DEFENSE</h1>
+    <div class="subtitle">Built with Nova Forge + Amazon Nova Pro</div>
+    <button class="play-btn" onclick="startGame()">PLAY</button>
+  </div>
+
+  <!-- End Screen -->
+  <div id="endScreen" class="overlay">
+    <div id="endTitle">VICTORY!</div>
+    <div id="endScore">Score: 0</div>
+    <button class="play-btn" onclick="startGame()">PLAY AGAIN</button>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-item">
+      <span class="hud-label">Gold</span>
+      <span class="hud-val" id="goldVal">200</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Lives</span>
+      <span class="hud-val" id="livesVal">20</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Wave</span>
+      <span class="hud-val" id="waveVal">1/20</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Score</span>
+      <span class="hud-val" id="scoreVal">0</span>
+    </div>
+    <button id="waveBtn" onclick="onStartWave()">Send Wave</button>
+    <span id="waveInfo"></span>
+    <div class="speed-controls">
+      <button class="speed-btn active" data-speed="1" onclick="setSpeed(1)">1x</button>
+      <button class="speed-btn" data-speed="2" onclick="setSpeed(2)">2x</button>
+      <button class="speed-btn" data-speed="3" onclick="setSpeed(3)">3x</button>
+    </div>
+  </div>
+
+  <!-- Side Panel (Tower Selector) -->
+  <div id="sidePanel">
+    <div class="panel-title">TOWERS</div>
+
+    <button class="tower-btn" data-type="bolt" onclick="selectTowerType('bolt')">
+      <div class="tower-icon" style="background:rgba(103,232,249,0.15);color:#67e8f9">&#9889;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Bolt</span>
+        <span class="tower-cost">50g</span>
+      </div>
+    </button>
+
+    <button class="tower-btn" data-type="flame" onclick="selectTowerType('flame')">
+      <div class="tower-icon" style="background:rgba(251,146,60,0.15);color:#fb923c">&#128293;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Flame</span>
+        <span class="tower-cost">75g</span>
+      </div>
+    </button>
+
+    <button class="tower-btn" data-type="arc" onclick="selectTowerType('arc')">
+      <div class="tower-icon" style="background:rgba(167,139,250,0.15);color:#a78bfa">&#9733;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Arc</span>
+        <span class="tower-cost">100g</span>
+      </div>
+    </button>
+
+    <button class="tower-btn" data-type="frost" onclick="selectTowerType('frost')">
+      <div class="tower-icon" style="background:rgba(56,189,248,0.15);color:#38bdf8">&#10052;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Frost</span>
+        <span class="tower-cost">80g</span>
+      </div>
+    </button>
+
+    <button class="tower-btn" data-type="cannon" onclick="selectTowerType('cannon')">
+      <div class="tower-icon" style="background:rgba(244,114,182,0.15);color:#f472b6">&#9679;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Cannon</span>
+        <span class="tower-cost">120g</span>
+      </div>
+    </button>
+
+    <button class="tower-btn" data-type="sniper" onclick="selectTowerType('sniper')">
+      <div class="tower-icon" style="background:rgba(74,222,128,0.15);color:#4ade80">&#8982;</div>
+      <div class="tower-meta">
+        <span class="tower-name">Sniper</span>
+        <span class="tower-cost">150g</span>
+      </div>
+    </button>
+
+    <div id="towerInfo">
+      <div class="info-stat" style="color:#64748b">Select a tower to place</div>
+    </div>
+  </div>
+
+  <!-- Game Area -->
+  <div id="gameWrap">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <!-- Badge -->
+  <div class="badge">Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+
+  <script src="game.js"></script>
+</body>
+</html>

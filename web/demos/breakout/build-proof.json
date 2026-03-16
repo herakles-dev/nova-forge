@@ -1,0 +1,25 @@
+{
+  "demo": "Breakout",
+  "description": "Classic brick breaker with paddle, ball physics, colored brick rows, score tracking, and lives system",
+  "prompt": "Build a Breakout arcade game with HTML5 canvas. Paddle at the bottom controlled by mouse and arrow keys. Ball bounces off paddle and walls, destroys colored bricks arranged in rows. Multiple brick colors with different point values. Score tracking, 3 lives, game over and restart flow. Responsive canvas scaling.",
+  "model": "Nova Lite",
+  "model_id": "bedrock/us.amazon.nova-lite-v1:0",
+  "context_window": "32K",
+  "tier": "lite",
+  "formation": "lightweight-feature",
+  "max_tokens": 4096,
+  "build_stats": {
+    "tasks": 3,
+    "waves": 2,
+    "turns": 22,
+    "duration_secs": 90,
+    "files_created": 3,
+    "total_lines": 238,
+    "cost_usd": 0.001
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create game loop, paddle, ball, and physics", "status": "pass", "turns": 10, "files": ["game.js"]},
+    {"id": 2, "subject": "Create brick grid and collision detection", "status": "pass", "turns": 7, "files": ["game.js"]},
+    {"id": 3, "subject": "Create HTML structure and styling", "status": "pass", "turns": 5, "files": ["index.html"]}
+  ]
+}

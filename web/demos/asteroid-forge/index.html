@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Asteroid Forge — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud">
+            <span id="score-display">SCORE: 0</span>
+            <span id="wave-display">WAVE: 1/5</span>
+            <div id="resource-bar-container">
+                <div id="resource-bar"></div>
+                <span id="resource-text">0%</span>
+            </div>
+            <span id="shield-display">SHIELD: ON</span>
+        </div>
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">ASTEROID<br>FORGE</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Pro</p>
+            <button id="start-btn" class="game-btn">START GAME</button>
+            <p class="controls-hint">Arrow Keys to rotate/thrust &middot; Space to shoot</p>
+            <p class="controls-hint">Touch: left side = joystick &middot; right side = shoot</p>
+        </div>
+        <div id="upgrade-screen" class="overlay" style="display:none;">
+            <h2 class="upgrade-title">WAVE COMPLETE</h2>
+            <p class="upgrade-sub">Choose an upgrade</p>
+            <div id="upgrade-cards">
+                <button class="upgrade-card" data-upgrade="firerate">
+                    <span class="upgrade-icon">&#x1F525;</span>
+                    <span class="upgrade-name">FIRE RATE</span>
+                    <span class="upgrade-desc">Shoot 30% faster</span>
+                </button>
+                <button class="upgrade-card" data-upgrade="bulletsize">
+                    <span class="upgrade-icon">&#x1F4A0;</span>
+                    <span class="upgrade-name">HEAVY ROUNDS</span>
+                    <span class="upgrade-desc">+50% bullet size</span>
+                </button>
+                <button class="upgrade-card" data-upgrade="shield">
+                    <span class="upgrade-icon">&#x1F6E1;</span>
+                    <span class="upgrade-name">SHIELD</span>
+                    <span class="upgrade-desc">Restore shield</span>
+                </button>
+            </div>
+        </div>
+        <div id="game-over-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">GAME OVER</h1>
+            <p class="final-score">Score: <span id="final-score">0</span></p>
+            <p class="final-wave">Wave reached: <span id="final-wave">1</span></p>
+            <button id="restart-btn" class="game-btn">PLAY AGAIN</button>
+        </div>
+        <div id="win-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">FORGE<br>MASTER</h1>
+            <p class="final-score">Final Score: <span id="win-score">0</span></p>
+            <p class="upgrade-sub">All 5 waves cleared!</p>
+            <button id="win-restart-btn" class="game-btn">PLAY AGAIN</button>
+        </div>
+        <div id="badge">Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

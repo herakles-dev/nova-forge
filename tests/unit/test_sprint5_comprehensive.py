@@ -76,9 +76,9 @@ class TestEnhancedToolDescriptions:
 
     # ── Count / existence ────────────────────────────────────────────────────
 
-    def test_built_in_tools_has_thirteen_tools(self):
-        """BUILT_IN_TOOLS must define exactly 13 tools (10 core + append_file + claim_file + check_context)."""
-        assert len(BUILT_IN_TOOLS) == 13
+    def test_built_in_tools_has_fourteen_tools(self):
+        """BUILT_IN_TOOLS must define exactly 14 tools (11 core + append_file + claim_file + check_context)."""
+        assert len(BUILT_IN_TOOLS) == 14
 
     def test_all_tools_have_name_and_description(self):
         """Every tool entry must have 'name' and 'description' keys."""

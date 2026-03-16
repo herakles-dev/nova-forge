@@ -1,0 +1,26 @@
+{
+  "demo": "Nova Invaders",
+  "description": "Space arcade with 3 enemy types, power-ups, combo scoring, particle effects, and neon-glow visuals",
+  "prompt": "Build a colorful space invaders arcade game with HTML5 canvas. Include particle effects on explosions, multiple enemy types (3 kinds with different movement patterns), power-up drops (rapid fire, shield, spread shot), combo scoring system for consecutive kills, neon glow visual effects, wave progression with increasing difficulty. Mobile touch support. Dark theme with cyan player, orange/purple/green enemies.",
+  "model": "Nova Lite",
+  "model_id": "bedrock/us.amazon.nova-lite-v1:0",
+  "context_window": "32K",
+  "tier": "lite",
+  "formation": "lightweight-feature",
+  "max_tokens": 4096,
+  "build_stats": {
+    "tasks": 4,
+    "waves": 2,
+    "turns": 40,
+    "duration_secs": 167,
+    "files_created": 3,
+    "total_lines": 449,
+    "cost_usd": 0.002
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create game canvas, player, and controls", "status": "pass", "turns": 12, "files": ["game.js"]},
+    {"id": 2, "subject": "Create enemy types and wave system", "status": "pass", "turns": 12, "files": ["game.js"]},
+    {"id": 3, "subject": "Create HTML structure and overlays", "status": "pass", "turns": 8, "files": ["index.html"]},
+    {"id": 4, "subject": "Create styling with neon arcade theme", "status": "pass", "turns": 8, "files": ["style.css"]}
+  ]
+}

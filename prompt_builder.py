@@ -781,7 +781,8 @@ class PromptBuilder:
             lines.append(f"Your role: {role_description}")
         else:
             lines.append(
-                f"Your role: Complete assigned tasks precisely and report results clearly."
+                "Your role: Implement code by calling write_file, edit_file, and other tools. "
+                "You must USE TOOLS to create and modify files — never just describe what you would write."
             )
 
         if body.strip():
@@ -811,8 +812,14 @@ class PromptBuilder:
             f"Risk: {risk}",
         ]
 
+        # Include file paths from task
+        task_files = task.get("files") or metadata.get("files") or []
+        if task_files:
+            lines.append(f"Files to create/modify: {', '.join(task_files)}")
+            lines.append("IMPORTANT: Write files directly in the project root (e.g. write_file('game.js', ...)), NOT in a src/ subdirectory.")
+
         # Include any additional metadata fields that callers may add
-        extra_keys = {k for k in metadata if k not in {"sprint", "risk"}}
+        extra_keys = {k for k in metadata if k not in {"sprint", "risk", "files"}}
         for key in sorted(extra_keys):
             value = metadata[key]
             if isinstance(value, (str, int, float, bool)):
@@ -833,7 +840,10 @@ class PromptBuilder:
                     text[:_CONTEXT_ITEM_MAX_CHARS]
                     + f"\n... [truncated: {len(text)} chars total]"
                 )
-            parts.append(f"## Context: {key}\n{text}")
+            if key == "project-spec":
+                parts.insert(0, f"## Project Specification (implement according to this)\n{text}")
+            else:
+                parts.append(f"## Context: {key}\n{text}")
 
         return "\n\n".join(parts)
 
@@ -895,10 +905,14 @@ class PromptBuilder:
     def _build_section_output(self) -> str:
         """Section 7 — Expected deliverables."""
         return (
-            "## Expected Output\n"
-            "- Complete the task described above\n"
-            "- Report files changed and their purpose\n"
-            "- If blocked, explain why and what's needed"
+            "## How to Work\n"
+            "- You MUST call write_file/append_file tools to create files. Do NOT just describe code in text.\n"
+            "- For files >80 lines: write_file the first ~80 lines, then call append_file repeatedly for remaining sections.\n"
+            "- To modify an existing file: call read_file first, then edit_file or replace_lines.\n"
+            "- CRITICAL: Write COMPLETE, WORKING implementations — never stubs, never `// TODO`, never empty function bodies.\n"
+            "  Every function must have a full implementation. If the spec says 'scanline rendering', write the actual for-loop.\n"
+            "- Read the Project Specification carefully — it contains exact constants, colors, and algorithm details.\n"
+            "- When finished, briefly state which files you created/modified."
         )
 
     # ── Frontmatter parsing ───────────────────────────────────────────────────

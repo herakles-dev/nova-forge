@@ -1,0 +1,28 @@
+{
+  "demo": "Gravity Wells",
+  "description": "Physics puzzle — place gravity attractors to guide particle streams through obstacles to target zones",
+  "prompt": "Build a physics puzzle game with HTML5 canvas. Particles stream from a source point. Player clicks to place gravity well attractors that pull particles using inverse-square gravity. Guide particles through obstacles to a green target zone. 5 levels of increasing complexity with walls and moving obstacles. Particles leave colorful trails. Limited wells per level. Score by collecting particles in target. Dark space theme with purple-to-cyan particle gradient.",
+  "model": "Nova Premier",
+  "model_id": "bedrock/us.amazon.nova-premier-v1:0",
+  "context_window": "1M",
+  "tier": "premier",
+  "formation": "full-stack",
+  "max_tokens": 16384,
+  "build_stats": {
+    "tasks": 6,
+    "waves": 3,
+    "turns": 30,
+    "duration_secs": 987,
+    "files_created": 3,
+    "total_lines": 500,
+    "cost_usd": 0.025
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create particle physics engine", "status": "pass", "turns": 6, "files": ["game.js"]},
+    {"id": 2, "subject": "Create gravity well placement system", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 3, "subject": "Create obstacle and collision system", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 4, "subject": "Create level progression and scoring", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 5, "subject": "Create HTML interface and overlays", "status": "pass", "turns": 5, "files": ["index.html"]},
+    {"id": 6, "subject": "Create styling with space theme", "status": "pass", "turns": 4, "files": ["style.css"]}
+  ]
+}

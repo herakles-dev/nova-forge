@@ -1,0 +1,186 @@
+/* Void Racer — Style System */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0a12;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+  color: #e4e4f0;
+  width: 100vw;
+  height: 100vh;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+
+/* HUD Layer */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#speed-bar-container {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: 28px;
+  height: 180px;
+  background: rgba(10, 10, 18, 0.8);
+  border: 2px solid rgba(167, 139, 250, 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#speed-bar {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 0%;
+  background: linear-gradient(to top, #4ade80, #facc15, #f87171);
+  transition: height 0.1s;
+  border-radius: 0 0 4px 4px;
+}
+
+#speed-label {
+  position: absolute;
+  bottom: 208px;
+  left: 20px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: rgba(228, 228, 240, 0.7);
+}
+
+#position-badge {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 22px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(10, 10, 18, 0.8);
+  border: 2px solid rgba(167, 139, 250, 0.4);
+}
+#position-badge.pos-1 { color: #facc15; border-color: rgba(250, 204, 21, 0.5); }
+#position-badge.pos-2 { color: #d1d5db; border-color: rgba(209, 213, 219, 0.4); }
+#position-badge.pos-3 { color: #d97706; border-color: rgba(217, 119, 6, 0.4); }
+#position-badge.pos-4 { color: #9ca3af; }
+
+#lap-display, #timer-display {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  background: rgba(10, 10, 18, 0.8);
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+#lap-display { top: 18px; font-size: 13px; }
+#timer-display { top: 52px; font-size: 11px; color: rgba(228, 228, 240, 0.7); }
+
+#minimap-container {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 100px;
+  height: 100px;
+  background: rgba(10, 10, 18, 0.8);
+  border: 2px solid rgba(167, 139, 250, 0.4);
+  border-radius: 8px;
+}
+
+/* Overlays */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  background: rgba(10, 10, 18, 0.92);
+  transition: opacity 0.4s;
+}
+.overlay.hidden { opacity: 0; pointer-events: none; }
+
+#start-screen h1 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(28px, 5vw, 52px);
+  background: linear-gradient(135deg, #a78bfa, #67e8f9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+  text-shadow: none;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: rgba(228, 228, 240, 0.6);
+  margin-bottom: 40px;
+}
+
+.btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  padding: 14px 36px;
+  background: linear-gradient(135deg, #a78bfa, #67e8f9);
+  color: #0a0a12;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(167, 139, 250, 0.5); }
+
+#countdown {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 72px;
+  color: #facc15;
+  text-shadow: 0 0 40px rgba(250, 204, 21, 0.6);
+}
+
+#finish-screen h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  background: linear-gradient(135deg, #a78bfa, #67e8f9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 24px;
+}
+
+.result-line {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  margin: 8px 0;
+  color: rgba(228, 228, 240, 0.8);
+}
+
+.controls-hint {
+  position: absolute;
+  bottom: 24px;
+  font-size: 11px;
+  color: rgba(228, 228, 240, 0.35);
+}
+
+.badge {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(228, 228, 240, 0.25);
+  z-index: 5;
+  pointer-events: none;
+}

@@ -1,0 +1,27 @@
+{
+  "demo": "Hex Conquest",
+  "description": "Turn-based hex strategy — expand territory, fight AI opponent, strength mechanics",
+  "prompt": "Build a turn-based hex grid strategy game with HTML5 canvas. 7x7 hex map, player vs AI. Each hex has strength 1-6. Click your hex then click adjacent hex to attack or expand. If attacker strength > defender, capture the hex. Hexes regenerate +1 strength per turn. AI uses greedy strategy. Win by controlling 60% of hexes. Purple for player, orange for AI. Dark theme with neon accents.",
+  "model": "Nova Pro",
+  "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+  "context_window": "300K",
+  "tier": "pro",
+  "formation": "feature-impl",
+  "max_tokens": 8192,
+  "build_stats": {
+    "tasks": 5,
+    "waves": 3,
+    "turns": 38,
+    "duration_secs": 312,
+    "files_created": 3,
+    "total_lines": 470,
+    "cost_usd": 0.005
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create hex grid coordinate system and rendering", "status": "pass", "turns": 10, "files": ["game.js"]},
+    {"id": 2, "subject": "Create combat and expansion mechanics", "status": "pass", "turns": 8, "files": ["game.js"]},
+    {"id": 3, "subject": "Create AI opponent logic", "status": "pass", "turns": 8, "files": ["game.js"]},
+    {"id": 4, "subject": "Create HTML overlays and HUD", "status": "pass", "turns": 6, "files": ["index.html"]},
+    {"id": 5, "subject": "Create styling with strategy theme", "status": "pass", "turns": 6, "files": ["style.css"]}
+  ]
+}

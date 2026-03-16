@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Hex Conquest — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud">
+            <div class="hud-group">
+                <span class="hud-label">TURN</span>
+                <span id="turn-count" class="hud-value">1</span>
+            </div>
+            <div class="hud-group player-group">
+                <span class="hud-label">YOU</span>
+                <span id="player-hexes" class="hud-value purple">2</span>
+                <span class="hud-sub">STR <span id="player-strength">4</span></span>
+            </div>
+            <div id="turn-indicator">YOUR TURN</div>
+            <div class="hud-group enemy-group">
+                <span class="hud-label">ENEMY</span>
+                <span id="enemy-hexes" class="hud-value orange">2</span>
+                <span class="hud-sub">STR <span id="enemy-strength">4</span></span>
+            </div>
+            <div class="hud-group">
+                <span class="hud-label">CONTROL</span>
+                <span id="control-pct" class="hud-value">0%</span>
+            </div>
+        </div>
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">HEX<br>CONQUEST</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Pro</p>
+            <button id="start-btn" class="game-btn">&#9654; CONQUER</button>
+            <div class="instructions">
+                <p><strong>How to play:</strong></p>
+                <p>1. Click one of your <span class="purple">purple</span> hexes to select it</p>
+                <p>2. Click an adjacent hex to expand or attack</p>
+                <p>3. Strength &gt; defender = capture. Otherwise both lose strength.</p>
+                <p>4. Hexes regenerate +1 strength each turn (max 6)</p>
+                <p>5. Control 60% of the map to win!</p>
+            </div>
+        </div>
+        <div id="victory-screen" class="overlay" style="display:none;">
+            <h1 class="game-title victory-text">VICTORY</h1>
+            <p class="final-stat">You conquered the grid in <span id="victory-turns">0</span> turns</p>
+            <p class="final-stat">Hexes controlled: <span id="victory-hexes">0</span></p>
+            <button id="victory-restart-btn" class="game-btn">&#8635; PLAY AGAIN</button>
+        </div>
+        <div id="defeat-screen" class="overlay" style="display:none;">
+            <h1 class="game-title defeat-text">DEFEATED</h1>
+            <p class="final-stat">The enemy overwhelmed you on turn <span id="defeat-turns">0</span></p>
+            <button id="defeat-restart-btn" class="game-btn">&#8635; TRY AGAIN</button>
+        </div>
+        <div id="badge">&#9889; Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

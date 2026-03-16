@@ -250,13 +250,14 @@ class ForgeOrchestrator:
         sandbox = PathSandbox(self.project_path)
 
         # Phase 1: Planning — generate spec.md
+        planner_turns = 15 if mc.context_window <= 32_000 else 10
         planning_agent = ForgeAgent(
             model_config=mc,
             project_root=self.project_path,
             hooks=hooks,
             sandbox=sandbox,
             tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file", "glob_files"}],
-            max_turns=10,
+            max_turns=planner_turns,
             agent_id="forge-planner",
         )
 
@@ -277,21 +278,28 @@ class ForgeOrchestrator:
             prompt=(
                 f"Create a project specification for: {goal}\n\n"
                 f"Write a file called 'spec.md' in the project root with:\n"
-                f"- Project name and description\n"
-                f"- Tech stack (pick appropriate defaults)\n"
-                f"- API endpoints or pages\n"
-                f"- Data models\n"
-                f"- Dependencies\n"
-                f"- Deployment notes\n"
+                f"1. **Original Goal** (COPY THE USER'S GOAL VERBATIM below as the first section — "
+                f"this is critical so build agents know ALL technical details):\n"
+                f"```\n{goal}\n```\n"
+                f"2. Project name and description\n"
+                f"3. Tech stack\n"
+                f"4. API endpoints or pages\n"
+                f"5. Data models\n"
+                f"6. Dependencies\n"
+                f"7. Deployment notes\n"
                 f"{template_hint}"
                 f"{interview_block}\n"
-                f"Be concise. Write the spec.md file now."
+                f"CRITICAL: The 'Original Goal' section MUST contain the EXACT user prompt above, "
+                f"including ALL color values, constants, algorithm descriptions, and constraints. "
+                f"Build agents will read spec.md — if details are lost, they'll write wrong code.\n\n"
+                f"Write the spec.md file now."
             ),
             system=(
                 "You are a project planner. Generate clear, actionable specifications. "
-                "Write files using the write_file tool. Be concise — spec should be under 80 lines. "
-                "If interview context is provided, honor ALL user-confirmed decisions "
-                "(database, auth, visual aesthetic, features, etc.) exactly as specified."
+                "Write files using the write_file tool. "
+                "MOST IMPORTANT: Copy the user's goal text EXACTLY into the spec as the first section. "
+                "Do NOT summarize or paraphrase — preserve every technical detail, constant, and color value. "
+                "If interview context is provided, honor ALL user-confirmed decisions."
             ),
         )
 
@@ -300,13 +308,16 @@ class ForgeOrchestrator:
             return PlanResult(error=f"Planning failed: {plan_result.error}")
 
         # Phase 2: Decomposition — generate tasks.json
+        # Scale decomposer budget by context window — small models need more turns
+        # because compaction eats into available context, requiring more inference cycles
+        decomp_turns = 15 if mc.context_window <= 32_000 else 12
         decomp_agent = ForgeAgent(
             model_config=mc,
             project_root=self.project_path,
             hooks=hooks,
             sandbox=sandbox,
             tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
-            max_turns=10,
+            max_turns=decomp_turns,
             agent_id="forge-decomposer",
         )
         decomp_agent._verify_budget = 2  # Don't over-verify a JSON file
@@ -349,7 +360,10 @@ class ForgeOrchestrator:
                 "1. Each task MUST list the files it will create in the 'files' field.\n"
                 "2. ONE TASK PER FILE — each file appears in exactly one task.\n"
                 "3. Backend files first (blocked_by: []), frontend files depend on backend.\n"
-                "4. The task description MUST include ALL features that go into that file.\n"
+                "4. **PRESERVE ALL TECHNICAL DETAIL** — The task description MUST include ALL features, "
+                "constants, algorithms, color values, and implementation specifics from the spec. "
+                "Do NOT summarize. Copy exact details like 'ACCEL=0.9', 'use scanline rendering', "
+                "'color #a78bfa'. The build agent only sees the task description, NOT the spec.\n"
                 "5. If the spec says 'NOT X' or 'do NOT use X', repeat that constraint in the task description.\n"
                 "6. Target 3-8 tasks total. More tasks = more interface mismatches.\n"
                 "7. File paths in 'files' field must be ROOT-RELATIVE — use 'index.html' not 'src/index.html'.\n"
@@ -418,7 +432,7 @@ class ForgeOrchestrator:
                 model_config=mc,
                 project_root=self.project_path,
                 tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
-                max_turns=10,
+                max_turns=decomp_turns,
                 agent_id="forge-decomposer-retry",
             )
             decomp_result = await retry_agent.run(
@@ -627,11 +641,23 @@ class ForgeOrchestrator:
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning("Failed to parse tasks.json: %s", e)
 
+        # Clear error when tasks were successfully recovered despite decomposer issues
+        plan_error = decomp_result.error if task_count == 0 else None
+
+        # Auto-fix compliance gates (settings.json, autonomy, FORGE.md)
+        if task_count > 0:
+            try:
+                from forge_compliance import ComplianceChecker
+                cc = ComplianceChecker(self.project_path)
+                cc.fix()
+            except Exception:
+                pass  # Non-fatal — compliance is nice-to-have
+
         return PlanResult(
             spec_path=spec_path if spec_path.exists() else None,
             tasks_path=tasks_path if tasks_path.exists() else None,
             task_count=task_count,
-            error=decomp_result.error,
+            error=plan_error,
         )
 
     # ── Build ────────────────────────────────────────────────────────────────

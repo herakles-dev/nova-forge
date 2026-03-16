@@ -1,0 +1,27 @@
+{
+  "demo": "Asteroid Forge",
+  "description": "Asteroids + resource mining — split rocks, collect orbs, upgrade ship between waves",
+  "prompt": "Build an Asteroids-style space game with resource mining. Player ship rotates and thrusts through space, shooting asteroids that split into smaller pieces. Destroyed asteroids drop colored resource orbs. Collect enough resources to complete each wave. Between waves, choose from 3 ship upgrades (fire rate, bullet size, shield). 5 waves of increasing difficulty. Add particle effects, starfield background, and neon color scheme. HTML5 canvas, dark theme.",
+  "model": "Nova Pro",
+  "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+  "context_window": "300K",
+  "tier": "pro",
+  "formation": "feature-impl",
+  "max_tokens": 8192,
+  "build_stats": {
+    "tasks": 5,
+    "waves": 3,
+    "turns": 35,
+    "duration_secs": 289,
+    "files_created": 3,
+    "total_lines": 450,
+    "cost_usd": 0.004
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create ship physics and controls", "status": "pass", "turns": 8, "files": ["game.js"]},
+    {"id": 2, "subject": "Create asteroid system with splitting", "status": "pass", "turns": 8, "files": ["game.js"]},
+    {"id": 3, "subject": "Create resource collection and wave system", "status": "pass", "turns": 7, "files": ["game.js"]},
+    {"id": 4, "subject": "Create HTML and upgrade UI", "status": "pass", "turns": 6, "files": ["index.html"]},
+    {"id": 5, "subject": "Create styling with space theme", "status": "pass", "turns": 6, "files": ["style.css"]}
+  ]
+}

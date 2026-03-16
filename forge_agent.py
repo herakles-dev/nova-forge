@@ -278,6 +278,27 @@ BUILT_IN_TOOLS: list[dict] = [
         },
     },
     {
+        "name": "replace_lines",
+        "description": (
+            "Replace a range of lines in a file by line number. Perfect for structural edits:\n"
+            "wrapping a block in an if-statement, re-indenting code, replacing multi-line sections.\n\n"
+            "- You MUST read_file first to see current line numbers.\n"
+            "- Lines are 1-based and inclusive (start_line=5, end_line=10 replaces lines 5 through 10).\n"
+            "- new_content replaces ALL specified lines — include proper indentation.\n"
+            "- Runs a syntax check after editing (.py, .json, .yaml)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path"},
+                "start_line": {"type": "integer", "description": "First line to replace (1-based, inclusive)"},
+                "end_line": {"type": "integer", "description": "Last line to replace (1-based, inclusive)"},
+                "new_content": {"type": "string", "description": "Replacement text (replaces all lines from start to end)"},
+            },
+            "required": ["path", "start_line", "end_line", "new_content"],
+        },
+    },
+    {
         "name": "check_context",
         "description": (
             "Check what other agents have done: files claimed/written, "
@@ -330,6 +351,13 @@ SLIM_TOOLS: list[dict] = [
      "parameters": {"type": "object", "properties": {
          "path": {"type": "string", "description": "Directory path (default: project root)"}
      }, "required": []}},
+    {"name": "replace_lines", "description": "Replace a range of lines in a file by line number. Great for structural edits like wrapping a block in an if-statement, re-indenting, or replacing multi-line sections. Must read_file first.",
+     "parameters": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "File path"},
+         "start_line": {"type": "integer", "description": "First line to replace (1-based, inclusive)"},
+         "end_line": {"type": "integer", "description": "Last line to replace (1-based, inclusive)"},
+         "new_content": {"type": "string", "description": "Replacement text (replaces all lines from start to end)"}
+     }, "required": ["path", "start_line", "end_line", "new_content"]}},
 ]
 
 
@@ -532,8 +560,10 @@ class ForgeAgent:
                 )
 
             # Convergence detection: if stuck in read-only loops, disable writes
-            if artifacts and self._convergence.should_stop():
-                WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all"}
+            # But only after using at least 40% of turn budget — early turns need room for multi-step creation
+            past_early_phase = turn >= self.max_turns * 0.4
+            if artifacts and past_early_phase and self._convergence.should_stop():
+                WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all", "replace_lines"}
                 self._disabled_tools.update(WRITE_TOOLS)
                 logger.info("Convergence detected at turn %d — write tools disabled", turn)
 
@@ -541,7 +571,7 @@ class ForgeAgent:
             if self._in_verify_phase:
                 self._verify_turns_used += 1
                 if self._verify_turns_used >= self._verify_budget:
-                    WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all"}
+                    WRITE_TOOLS = {"write_file", "append_file", "edit_file", "search_replace_all", "replace_lines"}
                     self._disabled_tools.update(WRITE_TOOLS)
                     logger.info("Verify budget exhausted (%d turns) — write tools disabled",
                                 self._verify_turns_used)
@@ -699,9 +729,31 @@ class ForgeAgent:
             if not tool_calls:
                 self._convergence.end_turn()  # Record zero-write turn
 
+                # Don't enter verify too early — wait until at least 40% of turn budget used
+                # This prevents premature verify after a single write_file in multi-write tasks
+                past_verify_threshold = turn >= self.max_turns * 0.4
+
+                # Early stop nudge: if model stops calling tools but hasn't used enough turns,
+                # remind it to keep writing (the file is likely incomplete)
+                if (not past_verify_threshold
+                        and total_tool_calls > 0
+                        and artifacts
+                        and not self._in_verify_phase
+                        and response.text and response.text.strip()):
+                    adapter = self.router.route(self.model_config.model_id)
+                    messages.append(adapter.format_assistant_message(response))
+                    messages.append({"role": "user", "content": (
+                        "The file may be incomplete. If the file needs more content, "
+                        "use append_file to add the remaining sections. "
+                        "If the file is truly complete, say 'done'."
+                    )})
+                    turn += 1
+                    continue
+
                 # Enter verify phase: first time model says "done" with artifacts
                 if (self.auto_verify
                         and not self._in_verify_phase
+                        and past_verify_threshold
                         and total_tool_calls > 0
                         and artifacts
                         and response.text and response.text.strip()):
@@ -829,7 +881,8 @@ class ForgeAgent:
                 # Determine file action
                 _fa = {"read_file": "read", "write_file": "write", "append_file": "append",
                        "edit_file": "edit", "bash": "run", "glob_files": "search",
-                       "grep": "search", "search_replace_all": "edit"}.get(call.name, "")
+                       "grep": "search", "search_replace_all": "edit",
+                       "replace_lines": "edit"}.get(call.name, "")
                 _tool_err = ""
                 if result_str and ("ERROR" in result_str[:80] or "BLOCKED" in result_str[:80]):
                     _tool_err = result_str[:200]
@@ -853,12 +906,12 @@ class ForgeAgent:
                 )
 
                 # Track writes for convergence detection
-                if call.name in ("write_file", "append_file", "edit_file", "search_replace_all"):
+                if call.name in ("write_file", "append_file", "edit_file", "search_replace_all", "replace_lines"):
                     _content = call.args.get("content", call.args.get("new_string", "")) if isinstance(call.args, dict) else ""
                     self._convergence.record_write(len(_content))
 
                 # Track syntax errors for post-turn fix injection
-                if call.name in ("write_file", "append_file", "edit_file"):
+                if call.name in ("write_file", "append_file", "edit_file", "replace_lines"):
                     if result_str and ("Syntax issue" in result_str or "HTML ERROR" in result_str or "CSS ERROR" in result_str):
                         _file = call.args.get("path", "unknown") if isinstance(call.args, dict) else "unknown"
                         _syntax_error_files.append(str(_file))
@@ -1080,6 +1133,8 @@ class ForgeAgent:
             return await self._tool_list_directory(args)
         elif name == "search_replace_all":
             return await self._tool_search_replace_all(args, artifacts)
+        elif name == "replace_lines":
+            return await self._tool_replace_lines(args, artifacts)
         elif name == "remember":
             return await self._tool_remember(args)
         elif name == "claim_file":
@@ -1674,6 +1729,79 @@ class ForgeAgent:
         rel = self._relative_path(path)
         verify = await self._auto_verify(path)
         return f"Replaced {count} occurrence(s) of '{old[:40]}' in {rel}{verify}"
+
+    async def _tool_replace_lines(self, args: dict, artifacts: dict) -> str:
+        """Replace a range of lines in a file by line number.
+
+        Perfect for structural edits: wrapping blocks in conditionals,
+        re-indenting, replacing multi-line sections. Solves the problem
+        where edit_file struggles with exact multi-line match.
+        """
+        if "new_content" in args:
+            args["new_content"] = self._unescape_content(args["new_content"])
+        path = self._resolve_path(args["path"])
+        self.sandbox.validate_write(path)
+        rel = self._relative_path(path)
+
+        if not path.exists():
+            return f"File not found: {rel}"
+
+        # Must read file first (same guard as edit_file)
+        if str(path) not in self._files_read:
+            return (
+                f"BLOCKED: You must read_file('{rel}') before using replace_lines. "
+                f"Read the file first to see current line numbers."
+            )
+
+        # Auto-claim via BuildContext if available
+        if self.build_context is not None:
+            if not self.build_context.claim_file(str(rel), self.agent_id):
+                existing = self.build_context.is_claimed(str(rel))
+                owner = existing.agent_id if existing else "unknown"
+                return f"CONFLICT: {rel} is owned by agent '{owner}'. SKIP this file."
+            if str(rel) not in self._claimed_files:
+                self._claimed_files.add(str(rel))
+
+        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        total_lines = len(lines)
+        start = int(args["start_line"])
+        end = int(args["end_line"])
+
+        # Validate line range
+        if start < 1:
+            return f"start_line must be >= 1, got {start}"
+        if end > total_lines:
+            return f"end_line {end} exceeds file length ({total_lines} lines)"
+        if start > end:
+            return f"start_line ({start}) must be <= end_line ({end})"
+
+        new_content = args["new_content"]
+        # Ensure new_content ends without trailing newline (we re-join with \n)
+        new_lines = new_content.split("\n")
+
+        # Replace: keep lines before start, insert new content, keep lines after end
+        result = lines[:start - 1] + new_lines + lines[end:]
+        path.write_text("\n".join(result), encoding="utf-8")
+
+        replaced_count = end - start + 1
+        inserted_count = len(new_lines)
+        artifacts[str(path)] = {
+            "action": "replace_lines",
+            "start": start,
+            "end": end,
+            "lines_removed": replaced_count,
+            "lines_inserted": inserted_count,
+        }
+        verify = await self._auto_verify(path)
+
+        # Announce edit if in build context
+        if self.build_context is not None:
+            summary = self._extract_interface_summary(path)
+            self.build_context.announce(self.agent_id, "file_edited", f"{rel}: {summary}")
+
+        return (
+            f"Replaced lines {start}-{end} ({replaced_count} lines) with {inserted_count} lines in {rel}{verify}"
+        )
 
     async def _tool_remember(self, args: dict) -> str:
         """Append a note to project memory file."""

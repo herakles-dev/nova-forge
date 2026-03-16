@@ -1,0 +1,24 @@
+{
+  "type": "debug-session",
+  "target": "Void Racer (game.js, 719 LOC)",
+  "symptoms": "Player doesn't move, visual glitchiness, game non-functional",
+  "method": "Nova Pro agent with replace_lines tool — read code, applied all 5 fixes autonomously in single pass",
+  "model": "Nova Pro",
+  "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+  "context_window": "300K",
+  "duration_secs": 25.9,
+  "turns": 9,
+  "tool_calls": 13,
+  "self_corrections": 1,
+  "tools_used": ["read_file", "edit_file", "replace_lines"],
+  "fixes_applied": [
+    {"bug": "Acceleration too slow", "change": "ACCEL 0.45 → 0.9", "tool": "edit_file"},
+    {"bug": "Road scrolls too slowly", "change": "Position factor 0.05 → 0.12", "tool": "edit_file"},
+    {"bug": "AI speed mismatch", "change": "AI position factor 0.05 → 0.12", "tool": "edit_file"},
+    {"bug": "All keyboard events blocked", "change": "e.preventDefault scoped to game keys only", "tool": "edit_file"},
+    {"bug": "Collision penalty every frame", "change": "Wrapped in if (shakeDur<=0) guard + break", "tool": "replace_lines"}
+  ],
+  "key_insight": "The replace_lines tool enabled Nova to handle the structural edit (wrapping a loop in a conditional) that previously required manual intervention. Nova Pro's 300K context held the full 719-line file comfortably.",
+  "cost_usd": 0.005,
+  "verdict": "5/5 bugs fixed autonomously. Single pass. 26 seconds. Zero manual intervention."
+}

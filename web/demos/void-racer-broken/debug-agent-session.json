@@ -1,0 +1,10 @@
+{
+  "type": "nova-pro-debug-final",
+  "model": "Nova Pro",
+  "model_id": "bedrock/us.amazon.nova-pro-v1:0",
+  "context_window": "300K",
+  "duration_secs": 25.9,
+  "turns": 9,
+  "tool_calls": 13,
+  "self_corrections": 1
+}

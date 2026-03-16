@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Synth Swarm — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <div id="hud">
+            <span id="swarm-display">SWARM: 200</span>
+            <span id="energy-display">ENERGY: 0</span>
+            <span id="score-display">SCORE: 0</span>
+        </div>
+
+        <canvas id="minimap"></canvas>
+
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">SYNTH<br>SWARM</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Premier</p>
+            <p class="instructions">Control a leader among 200+ autonomous boids.<br>Collect energy crystals. Avoid predators.</p>
+            <button id="start-btn" class="game-btn">START</button>
+            <p class="controls-hint">WASD / Arrow Keys to steer &middot; Recruit boids at yellow portals</p>
+        </div>
+
+        <div id="gameover-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">SWARM<br>LOST</h1>
+            <p class="final-score">Final Score: <span id="final-score">0</span></p>
+            <p class="final-stats">
+                Energy Collected: <span id="final-energy">0</span><br>
+                Peak Swarm: <span id="final-peak">0</span><br>
+                Crystals: <span id="final-crystals">0</span>
+            </p>
+            <button id="restart-btn" class="game-btn">PLAY AGAIN</button>
+        </div>
+
+        <div id="badge">Powered by <strong>Nova Forge</strong></div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

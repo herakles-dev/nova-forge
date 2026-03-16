@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neon Drift — Built by Nova Forge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud">
+            <span id="score-display">SCORE: 0</span>
+            <span id="speed-display">x1.0</span>
+        </div>
+        <div id="start-screen" class="overlay">
+            <h1 class="game-title">NEON<br>DRIFT</h1>
+            <p class="subtitle">Built with Nova Forge + Amazon Nova Lite</p>
+            <button id="start-btn" class="game-btn">&#9654; START GAME</button>
+            <p class="controls-hint">Arrow Keys / WASD / Mouse to move</p>
+            <p class="controls-hint">Touch: drag left and right</p>
+        </div>
+        <div id="game-over-screen" class="overlay" style="display:none;">
+            <h1 class="game-title">GAME OVER</h1>
+            <p class="final-score">Score: <span id="final-score">0</span></p>
+            <p class="final-gates">Gates: <span id="final-gates">0</span></p>
+            <button id="restart-btn" class="game-btn">&#8635; PLAY AGAIN</button>
+        </div>
+        <div id="close-call-flash" class="close-call-text">CLOSE CALL +50</div>
+        <div id="badge">&#9889; Powered by <a href="https://forge.herakles.dev" target="_blank">Nova Forge</a></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

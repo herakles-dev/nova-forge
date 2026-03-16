@@ -26,10 +26,10 @@ from config import DEFAULT_MODELS
 # ── Tool policy profiles ─────────────────────────────────────────────────────
 
 TOOL_PROFILES: dict[str, set[str]] = {
-    "full":     {"read_file", "write_file", "append_file", "edit_file", "bash", "glob_files", "grep", "claim_file", "check_context"},
-    "coding":   {"read_file", "write_file", "append_file", "edit_file", "bash", "glob_files", "grep", "claim_file", "check_context"},
-    "testing":  {"read_file", "bash", "glob_files", "grep"},   # No write/edit
-    "readonly": {"read_file", "glob_files", "grep"},            # Read-only
+    "full":     {"read_file", "write_file", "append_file", "edit_file", "replace_lines", "search_replace_all", "bash", "glob_files", "grep", "list_directory", "think", "remember", "claim_file", "check_context"},
+    "coding":   {"read_file", "write_file", "append_file", "edit_file", "replace_lines", "search_replace_all", "bash", "glob_files", "grep", "list_directory", "think", "claim_file", "check_context"},
+    "testing":  {"read_file", "bash", "glob_files", "grep", "list_directory"},   # No write/edit
+    "readonly": {"read_file", "glob_files", "grep", "list_directory"},            # Read-only
     "minimal":  set(),                                          # No tools
 }
 

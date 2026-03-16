@@ -107,14 +107,14 @@ async def test_execute_tool_call_rejects_raw_args():
 # ── Change 2: SLIM_TOOLS and get_tools_for_model ────────────────────────────
 
 
-def test_slim_tools_has_8_tools():
-    """SLIM_TOOLS should contain exactly 8 essential tools."""
+def test_slim_tools_has_9_tools():
+    """SLIM_TOOLS should contain exactly 9 essential tools (including replace_lines)."""
     from forge_agent import SLIM_TOOLS
-    assert len(SLIM_TOOLS) == 8
+    assert len(SLIM_TOOLS) == 9
     names = {t["name"] for t in SLIM_TOOLS}
     assert names == {
         "read_file", "write_file", "append_file", "edit_file",
-        "bash", "glob_files", "grep", "list_directory",
+        "bash", "glob_files", "grep", "list_directory", "replace_lines",
     }
 
 
@@ -124,10 +124,11 @@ def test_get_tools_for_model_routes_by_context():
 
     # 32K model without build context
     tools_32k = get_tools_for_model(32_000)
-    assert len(tools_32k) == 8
+    assert len(tools_32k) == 9
     names_32k = {t["name"] for t in tools_32k}
     assert "claim_file" not in names_32k
     assert "think" not in names_32k
+    assert "replace_lines" in names_32k
 
     # 32K model with build context — adds claim_file + check_context
     tools_32k_bc = get_tools_for_model(32_000, has_build_context=True)

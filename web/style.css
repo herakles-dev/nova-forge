@@ -1631,6 +1631,239 @@ a.gallery-card:hover::after {
   transform: translateX(0);
 }
 
+/* ── Tier Grid Layout ──────────────────────────────────────────── */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+.tier-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.tier-header {
+  text-align: center;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+.tier-header .tier-ctx {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-top: 0.25rem;
+  font-family: var(--mono);
+}
+.tier-header .tier-tagline {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  font-style: italic;
+}
+.tier-header.lite {
+  background: rgba(103, 232, 249, 0.1);
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  color: var(--cyan);
+}
+.tier-header.pro {
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  color: var(--accent);
+}
+.tier-header.premier {
+  background: linear-gradient(135deg, rgba(232, 121, 249, 0.1), rgba(167, 139, 250, 0.1));
+  border: 1px solid rgba(232, 121, 249, 0.25);
+  color: #e879f9;
+}
+
+/* Tier demo cards */
+.tier-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  transition: border-color 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+}
+.tier-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.tier-card .card-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.4rem;
+}
+.tier-card h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.tier-card .card-desc {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  line-height: 1.4;
+  margin-bottom: 0.6rem;
+  flex: 1;
+}
+.tier-card .card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+.tier-card .card-tag {
+  background: rgba(167, 139, 250, 0.1);
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+.tier-card .card-stats {
+  display: flex;
+  gap: 0.8rem;
+  font-size: 0.7rem;
+  color: var(--dim);
+  font-family: var(--mono);
+}
+/* "Play" affordance */
+a.tier-card::after {
+  content: 'Play Demo \2192';
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity var(--ease), transform var(--ease);
+}
+a.tier-card:hover::after {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ── Build Proof (Expandable) ──────────────────────────────────── */
+.build-proof {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+.build-proof summary {
+  font-size: 0.7rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  padding: 0.3rem 0;
+  user-select: none;
+  list-style: none;
+}
+.build-proof summary::before {
+  content: '\25b6 ';
+  font-size: 0.6rem;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.build-proof[open] summary::before {
+  transform: rotate(90deg);
+}
+.build-proof summary:hover {
+  color: var(--accent);
+}
+.proof-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  line-height: 1.7;
+}
+.proof-content .proof-label {
+  color: var(--muted);
+  min-width: 6rem;
+  display: inline-block;
+}
+.proof-content .proof-value {
+  color: var(--text);
+}
+.proof-content .proof-prompt {
+  color: var(--text-2);
+  font-style: italic;
+  display: block;
+  margin: 0.3rem 0 0.6rem;
+  padding: 0.5rem;
+  background: rgba(167, 139, 250, 0.05);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  line-height: 1.5;
+}
+.proof-content .proof-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+.proof-content .proof-tasks {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+.proof-content .proof-task {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.proof-content .proof-task .task-check {
+  color: var(--green);
+  font-size: 0.8rem;
+}
+.proof-content .proof-task .task-name {
+  color: var(--text-2);
+  flex: 1;
+}
+.proof-content .proof-task .task-turns {
+  color: var(--dim);
+}
+
+/* Tier grid responsive */
+@media (max-width: 900px) {
+  .tier-grid {
+    grid-template-columns: 1fr;
+  }
+  .tier-column {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .tier-column .tier-header {
+    width: 100%;
+  }
+  .tier-column .tier-card {
+    flex: 1;
+    min-width: 260px;
+  }
+}
+@media (max-width: 600px) {
+  .tier-column {
+    flex-direction: column;
+  }
+  .tier-column .tier-card {
+    min-width: 0;
+  }
+}
+
 /* ── Formation "New" Badge ───────────────────────────────────────── */
 .formation-badge.new {
   background: rgba(74, 222, 128, 0.15);

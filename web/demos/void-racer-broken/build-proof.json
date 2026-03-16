@@ -1,0 +1,46 @@
+{
+  "demo": "Void Racer",
+  "description": "Pseudo-3D racing game with Mode 7-style road rendering, procedural tracks with curves and hills, 3 AI opponents, boost pads, speed effects, 3-lap race",
+  "prompt": "Build a pseudo-3D racing game with HTML5 canvas using Mode 7-style scanline rendering. Road rendered line-by-line with perspective projection, curves that shift the road, and alternating segment colors for rumble strips. Procedural 200-segment looping track with curves, hills, boost pads, and neon scenery. Player car with acceleration, steering momentum, and off-road slowdown. 3 AI opponents with different speeds. 3-lap race with countdown, position tracking, lap timer. Speed lines effect at high speed, camera shake on collision. Space/void theme with purple-to-cyan color scheme. HUD with speed bar, position, lap counter, timer, minimap.",
+  "model": "Nova Premier",
+  "model_id": "bedrock/us.amazon.nova-premier-v1:0",
+  "context_window": "1M",
+  "tier": "premier",
+  "formation": "full-stack",
+  "max_tokens": 16384,
+  "build_stats": {
+    "tasks": 8,
+    "waves": 4,
+    "turns": 31,
+    "duration_secs": 1243,
+    "files_created": 3,
+    "total_lines": 650,
+    "cost_usd": 0.031
+  },
+  "tasks": [
+    {"id": 1, "subject": "Create road rendering engine with perspective projection", "status": "pass", "turns": 5, "files": ["game.js"]},
+    {"id": 2, "subject": "Create track generator with curves and hills", "status": "pass", "turns": 4, "files": ["game.js"]},
+    {"id": 3, "subject": "Create player physics and controls", "status": "pass", "turns": 4, "files": ["game.js"]},
+    {"id": 4, "subject": "Create AI opponent system", "status": "pass", "turns": 4, "files": ["game.js"]},
+    {"id": 5, "subject": "Create scenery and visual effects", "status": "pass", "turns": 4, "files": ["game.js"]},
+    {"id": 6, "subject": "Create HUD with speed bar and minimap", "status": "pass", "turns": 4, "files": ["game.js"]},
+    {"id": 7, "subject": "Create HTML overlays and race flow", "status": "pass", "turns": 3, "files": ["index.html"]},
+    {"id": 8, "subject": "Create styling for HUD and overlays", "status": "pass", "turns": 3, "files": ["style.css"]}
+  ],
+  "debug_session": {
+    "symptoms": "Player doesn't move, visual glitchiness, game non-functional",
+    "passes": [
+      {"model": "Nova Lite", "duration_secs": 9.9, "bugs_found": 3},
+      {"model": "Nova Pro", "duration_secs": 16.0, "bugs_found": 6}
+    ],
+    "fixes": [
+      "ACCEL 0.45 -> 0.9 (faster acceleration for responsive feel)",
+      "e.preventDefault only for game keys (was blocking button focus)",
+      "Position factor 0.05 -> 0.12 (road scrolled too slowly)",
+      "Scenery collision cooldown + break (speed*=0.6 every frame was killing momentum)",
+      "AI position factor aligned to new value"
+    ],
+    "total_duration_secs": 25.9,
+    "verdict": "Lite triage -> Pro deep analysis. Escalation found critical per-frame collision penalty."
+  }
+}

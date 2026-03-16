@@ -91,7 +91,7 @@ class TestBuild:
             role="impl",
             task={"subject": "X", "description": "Y"},
         )
-        assert "Expected Output" in user
+        assert "How to Work" in user
 
 
 class TestTokenBudget:
