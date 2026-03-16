@@ -1373,9 +1373,9 @@ class ForgeShell:
 
         login_choices = [
             Choice(
-                title=f"{info['display']}  {'[ready]' if configured else '[not set up]'}",
+                title=f"{PROVIDER_CREDS[name]['display']}  {'[ready]' if configured else '[not set up]'}",
                 value=name,
-                description=f"Models: {', '.join(info['models'])}",
+                description=f"Models: {', '.join(PROVIDER_CREDS[name]['models'])}",
             )
             for name, configured in providers.items()
         ]
