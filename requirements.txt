@@ -8,3 +8,6 @@ questionary>=2.1.0,<3.0
 rich>=13.0
 prompt_toolkit>=3.0
 pydantic>=2.0
+flask>=3.0
+flask-cors>=4.0
+gunicorn
