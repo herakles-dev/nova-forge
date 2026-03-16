@@ -1,5 +1,65 @@
 # Benchmark Changelog
 
+## 2026-03-16
+
+| **nova-premier**: S (100%) |
+
+Git: `cebd7b3` on `main` (dirty)
+Duration: 1110s | Cost: $0.0296
+
+**Deltas:** nova-premier: C -> S
+
+---
+## 2026-03-16
+
+| **nova-premier**: C (64%) |
+
+Git: `9dca3fb` on `main` (dirty)
+Duration: 2674s | Cost: $0.0000
+
+---
+## 2026-03-16
+
+| **nova-pro**: S (100%) |
+
+Git: `9dca3fb` on `main` (dirty)
+Duration: 167s | Cost: $0.0000
+
+---
+## 2026-03-16
+
+| **nova-lite**: S (100%) |
+
+Git: `9dca3fb` on `main` (dirty)
+Duration: 144s | Cost: $0.0000
+
+**Deltas:** nova-lite: A -> S
+
+---
+## 2026-03-15
+
+| **nova-lite**: A (92%) |
+
+Git: `433f149` on `main` (dirty)
+Duration: 203s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-pro**: A (95%) |
+
+Git: `433f149` on `main` (dirty)
+Duration: 120s | Cost: $0.0000
+
+---
+## 2026-03-15
+
+| **nova-lite**: A (88%) |
+
+Git: `433f149` on `main` (dirty)
+Duration: 216s | Cost: $0.0000
+
+---
 ## 2026-03-15
 
 | **nova-pro**: B (81%) |

@@ -17,24 +17,20 @@
 
 ## Project Status
 
-**Phase: Final polish.** Core framework complete (16 sprints, ~25,600 LOC, 39 modules).
+**Phase: Submission ready.** Core framework complete (19 sprints, ~30,000 LOC, 35 modules, 1,670 tests).
 
-### Benchmark Scores (Sprint 14, 2026-03-13)
+### Benchmark Scores (Sprint 19, 2026-03-16)
 | Model | Grade | Score | Time | Turns |
 |-------|-------|-------|------|-------|
-| Nova Lite (32K) | S | 95% | 143s | 45 |
-| Nova Pro (300K) | A | 91% | 468s | 59 |
-| Nova Premier (1M) | S | 100% | 443s | 10 |
-
-### Remaining Work
-- **Website**: forge.herakles.dev visual polish, demo recording
-- **Submission**: Devpost, demo video (deadline March 16)
+| Nova Lite (32K) | S | 100% | 144s | 40 |
+| Nova Pro (300K) | S | 100% | 167s | 39 |
+| Nova Premier (1M) | S | 100% | 1110s | 33 |
 
 ## Commands
 
 ```bash
 # Tests
-pytest tests/ -x -q                                      # Quick (1108 tests)
+pytest tests/ -x -q                                      # Quick (1670 tests)
 pytest tests/unit/test_pipeline.py -v                    # Single module
 python3 -c "import py_compile; py_compile.compile('FILE.py', doraise=True)"  # Syntax check
 
@@ -65,7 +61,7 @@ cd web/ && python3 -m http.server 8160                   # Local preview
 - **CLI**: Click (forge.py) + custom interactive shell (forge_cli.py)
 - **LLM Providers**: AWS Bedrock (Nova Lite/Pro/Premier), OpenRouter (Gemini), Anthropic (Claude)
 - **UI**: Rich (live progress, tables, panels, spinners)
-- **Testing**: pytest (1108 tests, 50 test files)
+- **Testing**: pytest (1,670 tests, 50 test files)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
 - **Website**: Static HTML/CSS/JS at web/ (forge.herakles.dev, port 8160)
 
@@ -91,7 +87,7 @@ User Goal -> Interview (3-phase deep planning)
 - **Convergence detector**: `ConvergenceTracker` disables writes after 5 idle turns
 - **Verify phase budget**: Capped at soft//4 turns, prevents endless read-back loops
 
-## Module Map (35 files, 27,047 LOC)
+## Module Map (35 files, ~30,000 LOC)
 
 | Module | LOC | Purpose |
 |--------|-----|---------|
@@ -178,7 +174,7 @@ nova-forge/
 ├── schemas/                    # 8 JSON schemas
 ├── templates/                  # 4 app skeletons
 ├── scripts/                    # Demo recording tools
-├── tests/unit/                 # 1108 tests (50 test files)
+├── tests/unit/                 # 1,670 tests (50 test files)
 ├── web/                        # Website (forge.herakles.dev)
 │   ├── index.html, style.css, app.js, demo.cast
 ├── Dockerfile, docker-compose.yml, requirements.txt
@@ -190,7 +186,7 @@ nova-forge/
 - **V11 workflow**: Always use TaskCreate/TaskUpdate for tracking. No untracked work.
 - **Read before edit**: Always read files before modifying them
 - **Syntax check after edit**: `python3 -c "import py_compile; py_compile.compile('FILE.py', doraise=True)"`
-- **Test after changes**: `pytest tests/ -x -q` (1108 tests, all must pass)
+- **Test after changes**: `pytest tests/ -x -q` (1,670 tests, all must pass)
 - **No docs unless asked**: Don't create README/docs files unprompted
 - **Secrets**: Never commit credentials; load via `source ~/.secrets/hercules.env`
 - **Benchmark after model changes**: `python3 benchmark_nova_models.py --all -v` to verify no regressions
@@ -212,5 +208,7 @@ nova-forge/
 | 15 | 03-14 | Preview resilience (3x retry, health monitor), agent circuit breaker, /health + /competition commands, website stats fix, todo-app benchmark scenario |
 | 16 | 03-14 | 2 new formations (recovery, all-hands-planning), agent self-correction, demo recording script, benchmark resilience checks |
 | 17 | 03-15 | Agent loop convergence: adaptive turn budgets, ConvergenceTracker, verify phase budget, escalation budget reduction, hard limit tightening, benchmark aligned to CLI path, completeness directive |
+| 18 | 03-15 | 5-agent architecture review (78 issues found), fix _auto_verify shlex bug, prompt contradictions resolved, agent loop hardening (6 fixes), preview 127.0.0.1, artifact 4KB threshold |
+| 19 | 03-16 | 8-agent test swarm (1108→1670 tests), Premier max_tokens 16384 + stop_reason detection, all 3 models S 100%, submission prep |
 
 Full details: memory/sprint_history.md
