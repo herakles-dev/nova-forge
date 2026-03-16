@@ -27,7 +27,7 @@ Nova Forge takes a natural language description of what you want to build and or
 5. **Previews** the result via Cloudflare Tunnel (shareable URL, no account needed)
 6. **Deploys** to production with Docker + nginx + SSL in one command
 
-**Result**: A working Flask application with 5 files in 170 seconds. Benchmark grade: S (100%).
+**Result**: A working Flask application with 5 files in 144 seconds. Benchmark grade: S (100%).
 
 ### Key capabilities:
 - **3 Amazon Nova models** — Lite (32K, fast), Pro (300K, balanced), Premier (1M, deep reasoning)
@@ -69,7 +69,7 @@ Nova Forge takes a natural language description of what you want to build and or
 
 ## Accomplishments that we're proud of
 
-- **All 3 Nova models at S-tier** on the Expense Tracker benchmark (100%, 99%, 100%)
+- **All 3 Nova models at S-tier** on the Expense Tracker benchmark (100%, 100%, 100%)
 - **A-tier on the Hard scenario** (Kanban Board: auth + 3 tables + 7 files) across all 3 models
 - **1,670 tests passing** across 50 test files — comprehensive coverage of the entire framework
 - **19 sprints in 7 days** — from zero to competition-ready with disciplined iteration
@@ -86,13 +86,31 @@ Nova Forge takes a natural language description of what you want to build and or
 
 4. **Amazon Nova is genuinely capable of complex multi-file builds.** With the right orchestration, even Nova Lite (the smallest model) can build a full-stack app with auth, database, and frontend — and score S-tier.
 
+## Enterprise & Community Impact
+
+**For developers and teams:**
+- **Democratizes AI-powered development** — Any developer with AWS credentials can go from idea to deployed app in minutes, not days. No proprietary frameworks, no vendor lock-in.
+- **Open-source with community infrastructure** — MIT license, CONTRIBUTING.md, issue templates, CI pipeline, and a comprehensive User Guide. Ready for community contributions from day one.
+- **Model-agnostic architecture** — While built on Amazon Nova, the provider adapter pattern supports any LLM with function calling. Teams can swap in their preferred model without rewriting orchestration logic.
+- **Production patterns, not demos** — The formations, autonomy system, gate review, and circuit breaker patterns come from managing 89+ production services. These are battle-tested patterns, not hackathon prototypes.
+
+**For the Amazon Nova ecosystem:**
+- **Proves Nova can build real software** — All 3 Nova models score S-tier on our benchmark. This is evidence that Nova is production-capable for agentic coding, not just chat.
+- **Showcases Bedrock Converse API** — Pure boto3 integration with documented solutions for undocumented challenges (300s timeout, stop_reason detection, max_tokens scaling).
+- **Reference implementation** — 30,000 lines of well-tested Python showing how to build a serious agent framework on Amazon Nova. Forkable, extensible, and ready for enterprise adoption.
+
+**For education:**
+- **Comprehensive user guide** at [forge.herakles.dev/guide.html](https://forge.herakles.dev/guide.html) — 12 sections covering models, formations, autonomy, and advanced usage.
+- **7 interactive demo apps** built entirely by Nova agents — browse the source to learn how AI builds software.
+- **1,670 tests** serve as executable documentation of every framework behavior.
+
 ## What's next
 
 - **More benchmark scenarios** — Expand beyond Expense Tracker and Kanban Board to test against more diverse application types
 - **Real-time streaming UI** — Replace the CLI spinner with a web-based build monitor showing live agent activity
 - **Multi-model orchestration** — Use Lite for simple tasks and Premier for complex ones within the same build, automatically routing by task complexity
 - **Community templates** — Let users contribute app templates and formation patterns
-- **Plugin system** — Allow custom tools beyond the built-in 12
+- **Plugin system** — Allow custom tools beyond the built-in 13
 
 ## Built with
 
@@ -107,8 +125,13 @@ Nova Forge takes a natural language description of what you want to build and or
 - Docker + nginx (deployment)
 - Cloudflare Tunnels (preview)
 
+## Category
+
+**Agentic AI** — Nova Forge orchestrates multiple Amazon Nova agents in parallel waves with formation-based team patterns, adversarial quality gates, and a 6-level autonomy system.
+
 ## Links
 
 - **Live demo**: [forge.herakles.dev](https://forge.herakles.dev)
 - **Interactive demos**: [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/)
+- **User Guide**: [forge.herakles.dev/guide.html](https://forge.herakles.dev/guide.html)
 - **GitHub**: [github.com/herakles-dev/nova-forge](https://github.com/herakles-dev/nova-forge)
