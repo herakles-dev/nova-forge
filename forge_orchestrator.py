@@ -306,9 +306,10 @@ class ForgeOrchestrator:
             hooks=hooks,
             sandbox=sandbox,
             tools=[t for t in BUILT_IN_TOOLS if t["name"] in {"write_file", "read_file"}],
-            max_turns=25,
+            max_turns=10,
             agent_id="forge-decomposer",
         )
+        decomp_agent._verify_budget = 2  # Don't over-verify a JSON file
 
         # Inject size constraint when build model has small context
         size_hint = ""
