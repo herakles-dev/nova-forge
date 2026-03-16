@@ -1496,6 +1496,13 @@ class ForgeAgent:
         if not cwd_path.exists():
             cwd_path = self.project_root
 
+        # Detect backgrounded commands — redirect stdout/stderr to prevent
+        # PIPE hanging (child inherits pipes, communicate() blocks forever)
+        _bg_command = command.rstrip()
+        if _bg_command.endswith("&"):
+            _bg_command = _bg_command[:-1].rstrip() + " > /dev/null 2>&1 &"
+            command = _bg_command
+
         proc = None
         try:
             proc = await asyncio.create_subprocess_shell(

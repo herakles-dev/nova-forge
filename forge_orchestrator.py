@@ -435,6 +435,30 @@ class ForgeOrchestrator:
             )
             if decomp_result.error:
                 logger.warning("Decomposer retry error: %s", decomp_result.error)
+
+        # Fallback: extract JSON from decomposer's text response if write_file was never called
+        if not tasks_path.exists() and decomp_result.output:
+            recovered = _recover_json(decomp_result.output)
+            if recovered and isinstance(recovered, list):
+                tasks_path.write_text(json.dumps(recovered, indent=2))
+                logger.info("Recovered %d tasks from decomposer text output", len(recovered))
+
+        # Last resort: create a single build-from-spec task
+        if not tasks_path.exists():
+            spec_path = self.project_path / "spec.md"
+            if spec_path.exists():
+                spec_text = spec_path.read_text()[:2000]
+                fallback_task = [{
+                    "subject": "Build complete project from spec",
+                    "description": spec_text,
+                    "files": [],
+                    "sprint": "sprint-01",
+                    "risk": "medium",
+                    "blocked_by": [],
+                }]
+                tasks_path.write_text(json.dumps(fallback_task, indent=2))
+                logger.info("Created fallback single-task from spec.md")
+
         task_count = 0
         if tasks_path.exists():
             try:

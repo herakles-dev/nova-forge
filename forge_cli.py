@@ -2275,15 +2275,22 @@ class ForgeShell:
             )
 
         # ── Post-build pipeline: verify → integration-check → re-verify → gate ──
+        _pipeline_start = time.time()
+        _PIPELINE_BUDGET = 120  # seconds — hard cap on post-build processing
+
         if not build_paused:
             # Step 1: Early verification BEFORE integration-check can touch files
             pre_verify_result = None
             if "--no-verify" not in arg:
                 pre_verify_result = await self._run_verification(store)
 
-            # Step 2: Integration check (formation-based) — only if issues found
+            # Step 2: Integration check (formation-based) — only if issues found AND budget remains
             from forge_verify import scan_file_references
             issues = scan_file_references(self.project_path)
+            _elapsed = time.time() - _pipeline_start
+            if _elapsed > _PIPELINE_BUDGET:
+                issues = []  # Skip integration check — time budget exhausted
+                logger.info("Pipeline budget exhausted (%.0fs) — skipping integration check", _elapsed)
             if issues:
                 console.print()
                 console.print(f"  [warning]Integration issues detected ({len(issues)}):[/]")
@@ -2415,11 +2422,13 @@ class ForgeShell:
 
             # Step 3: Re-verify after integration fixes (if fixes were applied)
             verify_result = pre_verify_result
-            if "--no-verify" not in arg and issues:
+            _elapsed = time.time() - _pipeline_start
+            if "--no-verify" not in arg and issues and _elapsed < _PIPELINE_BUDGET:
                 verify_result = await self._run_verification(store)
 
-            # Step 4: Gate review (skip with --no-review)
-            if "--no-review" not in arg:
+            # Step 4: Gate review (skip with --no-review, or if pipeline budget exhausted)
+            _elapsed = time.time() - _pipeline_start
+            if "--no-review" not in arg and _elapsed < _PIPELINE_BUDGET:
                 spec_text = ""
                 spec_path = self.project_path / "spec.md"
                 if spec_path.exists():
