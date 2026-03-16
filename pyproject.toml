@@ -1,3 +1,30 @@
+[project]
+name = "nova-forge"
+version = "0.5.0"
+description = "Open-source agent orchestration framework powered by Amazon Nova. Describe it — Nova builds it."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [{name = "Hercules Platform"}]
+keywords = ["ai", "agents", "orchestration", "amazon-nova", "bedrock", "llm", "code-generation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+
+[project.urls]
+Homepage = "https://forge.herakles.dev"
+Repository = "https://github.com/herakles-dev/nova-forge"
+Documentation = "https://forge.herakles.dev/guide.html"
+Demos = "https://forge.herakles.dev/demos/"
+
+[project.scripts]
+forge = "forge:cli"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120

@@ -25,7 +25,7 @@ _WEB_DIR = Path(__file__).parent / "web"
 app = Flask(__name__, static_folder=str(_WEB_DIR), static_url_path="")
 CORS(app)
 
-_VERSION = "0.4.0"
+_VERSION = "0.5.0"
 
 # ── Documentation context for chat ──────────────────────────────────────────
 

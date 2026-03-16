@@ -693,6 +693,13 @@ class ForgeShell:
         _add_recent_project(self.state, str(self.project_path), name)
         _save_state(self.state)
 
+        # Step 6: Offer to preview if build succeeded
+        summary = self._get_task_summary()
+        if summary and summary.get("failed", 0) == 0 and summary.get("completed", 0) > 0:
+            console.print()
+            if await ask_confirm("Launch a live preview?", default=True):
+                await self._cmd_preview("")
+
     # ── Celebration ──────────────────────────────────────────────────────
 
     def _celebrate(self) -> None:
@@ -993,7 +1000,7 @@ class ForgeShell:
             case "/preview":
                 await self._cmd_preview(arg)
             case "/deploy":
-                self._cmd_deploy(arg)
+                await self._cmd_deploy(arg)
             case "/interview":
                 await self._cmd_interview()
             case "/autonomy":
@@ -3557,14 +3564,47 @@ class ForgeShell:
 
     # ── /deploy ─────────────────────────────────────────────────────────
 
-    def _cmd_deploy(self, arg: str) -> None:
+    async def _cmd_deploy(self, arg: str) -> None:
         """Deploy project with Docker + nginx."""
-        console.print("  [info]Deploy:[/] Coming soon!")
+        if not self.project_path:
+            console.print("  [warning]No project open. Build something first.[/]")
+            return
+
+        domain = arg.strip()
+        if not domain:
+            from forge_prompt import ask_text
+            domain = await ask_text(
+                "Domain name (e.g. myapp.herakles.dev):",
+                default=f"{self.project_path.name}.herakles.dev",
+            )
+            if not domain:
+                console.print("  [muted]Deploy cancelled.[/]")
+                return
+
         console.print()
-        console.print("  [muted]For now, use the CLI command:[/]")
-        console.print(f"    [accent]forge deploy --domain yourapp.example.com[/]")
+        console.print(f"  [step]Deploying to[/] [bold]{domain}[/]...")
         console.print()
-        console.print("  [hint]Or try /preview for a quick shareable URL.[/]")
+
+        try:
+            from forge_deployer import ForgeDeployer
+            from config import ForgeProject as _FP
+
+            project = _FP(root=self.project_path)
+            deployer = ForgeDeployer()
+            result = await deployer.deploy(project, domain)
+
+            if result.error:
+                console.print(f"  [error]Deploy failed:[/] {result.error}")
+                console.print(f"  [hint]Try /preview for a quick shareable URL instead.[/]")
+            elif result.health_status:
+                console.print(f"  [success]Deployed![/] [bold]{result.url}[/]")
+                console.print(f"  [muted]Port {result.port} · Container {result.container_id[:12]}[/]")
+            else:
+                console.print(f"  [warning]Deployed but health check failed.[/]")
+                console.print(f"  [muted]{result.url} (port {result.port})[/]")
+        except Exception as exc:
+            console.print(f"  [error]Deploy error:[/] {exc}")
+            console.print(f"  [hint]Try /preview for a quick shareable URL instead.[/]")
 
     # ── /autonomy ────────────────────────────────────────────────────────
 

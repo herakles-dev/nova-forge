@@ -546,8 +546,9 @@ body {
 /* ── Quick Start Cards ─────────────────────────────────────────────── */
 .quickstart-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 1rem;
+  max-width: 640px;
 }
 .quickstart-card {
   background: var(--surface);

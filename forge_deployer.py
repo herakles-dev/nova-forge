@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -24,7 +25,10 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-PORT_REGISTRY_PATH = Path("/home/hercules/system-apps-config/PORT_REGISTRY.json")
+PORT_REGISTRY_PATH = Path(
+    os.environ.get("PORT_REGISTRY_PATH",
+                   str(Path.home() / "system-apps-config" / "PORT_REGISTRY.json"))
+)
 NOVA_FORGE_PORT_START = 8161
 NOVA_FORGE_PORT_END   = 8199
 HERAKLES_DOMAIN       = "herakles.dev"

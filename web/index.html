@@ -9,7 +9,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<!-- asciinema removed — replaced with live playable demo -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x2692;</text></svg>">
 </head>
 <body>
@@ -35,6 +34,7 @@
     <li><a href="#commands">Commands</a></li>
     <li><a href="#api">API</a></li>
     <li><a href="#gallery">Built with Nova</a></li>
+    <li><a href="/guide.html">User Guide</a></li>
   </ul>
   <div class="sidebar-footer">
     <div class="sidebar-meta">
@@ -66,8 +66,16 @@
 
     <div class="demo-player-wrap" style="max-width:820px;">
       <div style="position:relative;text-align:center;">
-        <div style="color:var(--dim);font-size:0.75rem;margin-bottom:0.5rem;">Built by Nova Lite in 90 seconds — use arrow keys to play</div>
-        <iframe src="/demos/breakout/index.html" style="width:100%;height:640px;border:none;border-radius:8px;background:#000;" title="Breakout Game — built by Nova AI"></iframe>
+        <div style="display:inline-flex;align-items:center;gap:0.5rem;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.2);border-radius:6px;padding:0.3rem 0.75rem;margin-bottom:0.75rem;font-size:0.8rem;">
+          <span style="color:var(--accent);font-weight:600;">LIVE DEMO</span>
+          <span style="color:var(--dim);">&middot;</span>
+          <span style="color:var(--text-2);">Built by Nova Lite in 90s &mdash; zero human code</span>
+          <span style="color:var(--dim);">&middot;</span>
+          <span style="color:var(--muted);">Arrow keys to play</span>
+        </div>
+        <div style="position:relative;width:100%;aspect-ratio:4/3;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(167,139,250,0.15);box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+          <iframe src="/demos/breakout/index.html" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;background:#000;" title="Breakout Game — built by Nova AI"></iframe>
+        </div>
       </div>
     </div>
 
@@ -77,7 +85,7 @@
         <span class="hero-stat-label">Nova Models</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value" id="s-formations">10</span>
+        <span class="hero-stat-value" id="s-formations">11</span>
         <span class="hero-stat-label">Formations</span>
       </div>
       <div class="hero-stat">
@@ -89,7 +97,7 @@
         <span class="hero-stat-label">Agent Tools</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">20</span>
+        <span class="hero-stat-value">19</span>
         <span class="hero-stat-label">Sprints</span>
       </div>
     </div>
@@ -101,7 +109,7 @@
     </div>
 
     <div class="demo-result" id="demo-result">
-      <a href="/demos/" class="demo-result-link">See what Nova built &rarr; 6 apps, 3 models, all grades &amp; scenarios</a>
+      <a href="/demos/" class="demo-result-link">See what Nova built &rarr; 7 apps, 3 models, all grades &amp; scenarios</a>
     </div>
   </section>
 
@@ -144,7 +152,7 @@
         <ul class="chat-topics">
           <li>Nova Lite vs Pro vs Premier</li>
           <li>Benchmark scores &amp; grading</li>
-          <li>10 agent formations</li>
+          <li>11 agent formations</li>
           <li>3-tier prompt system</li>
           <li>Autonomy levels (A0-A5)</li>
           <li>Circuit breaker &amp; self-correction</li>
@@ -155,7 +163,7 @@
           <div class="chat-side-stat"><span class="chat-side-stat-value">39</span><span class="chat-side-stat-label">Modules</span></div>
           <div class="chat-side-stat"><span class="chat-side-stat-value">1670</span><span class="chat-side-stat-label">Tests</span></div>
           <div class="chat-side-stat"><span class="chat-side-stat-value">12</span><span class="chat-side-stat-label">Tools</span></div>
-          <div class="chat-side-stat"><span class="chat-side-stat-value">16</span><span class="chat-side-stat-label">Sprints</span></div>
+          <div class="chat-side-stat"><span class="chat-side-stat-value">19</span><span class="chat-side-stat-label">Sprints</span></div>
         </div>
       </div>
     </div>
@@ -167,8 +175,8 @@
     <p class="section-desc">Switch models with <code>/model &lt;alias&gt;</code>. Same pipeline, different brain.</p>
 
     <div class="benchmark-scorecard">
-      <h3 style="margin-bottom:0.5rem;color:var(--accent)">Benchmark Results</h3>
-      <p style="color:var(--dim);font-size:0.85rem;margin-bottom:0.75rem">4 scenarios from Easy to Nightmare. 25+ verification checks per run, real HTTP testing, interface fidelity analysis.</p>
+      <h3 style="margin-bottom:0.5rem;color:var(--accent)">Benchmark Results <span style="background:rgba(167,139,250,0.15);color:var(--accent);padding:0.15rem 0.5rem;border-radius:4px;font-size:0.65rem;font-weight:600;vertical-align:middle;margin-left:0.3rem;">CUSTOM SUITE</span></h3>
+      <p style="color:var(--dim);font-size:0.85rem;margin-bottom:0.75rem">Nova Forge's own benchmark suite: 4 scenarios from Easy to Nightmare. 25+ automated verification checks per run including HTTP endpoint testing, code quality analysis, and interface fidelity scoring. <a href="https://github.com/herakles-dev/nova-forge/blob/main/benchmark_nova_models.py" style="color:var(--cyan);font-size:0.8rem;">View source &rarr;</a></p>
 
       <div style="margin-bottom:1rem">
         <p style="color:var(--text);font-size:0.8rem;font-weight:600;margin-bottom:0.4rem">Expense Tracker <span style="color:var(--dim);font-weight:400">— 5 tasks, 5 files, Flask + SQLite</span></p>
@@ -791,6 +799,22 @@ print(result.output)" aria-label="Copy">
     <p class="section-desc">Real projects built by Nova in a single session. Each one: describe it, build, preview, deploy. <a href="/demos/" style="color:var(--accent);font-weight:600">View all demos &rarr;</a></p>
 
     <div class="gallery-grid">
+      <a href="/demos/breakout/" class="gallery-card" style="text-decoration:none;color:inherit;border-color:var(--cyan)">
+        <div class="gallery-icon">&#x1f3ae;</div>
+        <h4>Breakout Game <span style="background:var(--cyan);color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">S</span></h4>
+        <p>Classic arcade game with paddle, ball, bricks, scoring, and game-over logic. Playable in browser.</p>
+        <div class="gallery-meta">
+          <span class="gallery-tag">Canvas</span>
+          <span class="gallery-tag">Vanilla JS</span>
+          <span class="gallery-tag">Game Loop</span>
+        </div>
+        <div class="gallery-stats">
+          <span>Nova Lite</span>
+          <span>90s</span>
+          <span>3 files</span>
+        </div>
+      </a>
+
       <a href="/demos/expense-tracker/" class="gallery-card" style="text-decoration:none;color:inherit">
         <div class="gallery-icon">&#x1f4b0;</div>
         <h4>Expense Tracker <span style="background:var(--accent);color:#000;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.6rem;font-weight:700;vertical-align:middle">S</span></h4>
@@ -802,7 +826,7 @@ print(result.output)" aria-label="Copy">
         </div>
         <div class="gallery-stats">
           <span>Nova Lite</span>
-          <span>170s</span>
+          <span>144s</span>
           <span>5 files</span>
         </div>
       </a>

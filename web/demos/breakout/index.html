@@ -16,13 +16,14 @@
             font-family: Arial, sans-serif;
             overflow: hidden;
         }
-        
+
         #gameContainer {
             position: relative;
             width: 800px;
             height: 600px;
+            transform-origin: center center;
         }
-        
+
         canvas {
             background-color: #000;
             border: 2px solid #fff;
@@ -81,5 +82,18 @@
     </div>
 
     <script src="game.js"></script>
+    <script>
+    (function() {
+      function scaleGame() {
+        var container = document.getElementById('gameContainer');
+        var scaleX = window.innerWidth / 800;
+        var scaleY = window.innerHeight / 600;
+        var scale = Math.min(scaleX, scaleY, 1);
+        container.style.transform = 'scale(' + scale + ')';
+      }
+      scaleGame();
+      window.addEventListener('resize', scaleGame);
+    })();
+    </script>
 </body>
 </html>

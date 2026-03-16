@@ -1,25 +1,9 @@
 /* Nova Forge — Interactive UI v5
-   asciinema player, inline chat, pipeline diagrams, scroll reveals
+   inline chat, pipeline diagrams, scroll reveals
    ─────────────────────────────────── */
 
 (function () {
   'use strict';
-
-  // ── Asciinema Player ──────────────────────────────────────────────
-
-  var playerEl = document.getElementById('demo-player');
-  if (playerEl && typeof AsciinemaPlayer !== 'undefined') {
-    AsciinemaPlayer.create('/demo.cast', playerEl, {
-      autoPlay: true,
-      loop: true,
-      speed: 1,
-      theme: 'monokai',
-      fit: 'width',
-      idleTimeLimit: 2,
-      cols: 100,
-      rows: 30
-    });
-  }
 
   // ── Copy to Clipboard ──────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 > Open-source agent orchestration framework powered by Amazon Nova. Describe what you want — Nova plans, builds, reviews, and deploys it.
 
 [![Amazon Nova AI Hackathon 2026](https://img.shields.io/badge/Amazon%20Nova-AI%20Hackathon%202026-ff9900?style=flat-square)](https://amazon-nova.devpost.com/)
-[![Tests](https://img.shields.io/badge/tests-1051%20passing-4ade80?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-1670%20passing-4ade80?style=flat-square)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square)](LICENSE)
 
 **Live demo**: [forge.herakles.dev](https://forge.herakles.dev) | **Interactive demos**: [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/)
@@ -32,12 +32,12 @@ All 3 Amazon Nova models benchmarked across 4 difficulty scenarios with 25+ auto
 
 | Scenario | Nova Lite (32K) | Nova Pro (300K) | Nova Premier (1M) |
 |----------|:-:|:-:|:-:|
-| **Expense Tracker** (Easy) | **S** 100% · 170s | **S** 99% · 130s | **S** 100% · 443s |
+| **Expense Tracker** (Easy) | **S** 100% · 144s | **S** 100% · 167s | **S** 100% · 1110s |
 | **Kanban Board** (Hard) | **A** 90% · 285s | **A** 90% · 240s | **A** 89% · 1336s |
 | Todo App (Easy) | Scenario defined | Scenario defined | Scenario defined |
 | Realtime Kanban (Nightmare) | Stress test | Stress test | Stress test |
 
-**Grade progression over development**: C → A → S (sprints 13-14). Key breakthroughs: 3-tier prompt system, pre-seeded upstream context, Bedrock 300s timeout configuration.
+**Grade progression over 19 sprints**: C → A → S. Key breakthroughs: 3-tier prompt system, pre-seeded upstream context, Bedrock 300s timeout, convergence tracking, stop_reason detection.
 
 ## Architecture
 
@@ -98,7 +98,7 @@ python3 forge_cli.py          # Launch Nova Forge
 | `/preview` | Live preview via Cloudflare Tunnel (3x retry with backoff) |
 | `/deploy` | Production deployment (Docker + nginx + SSL) |
 | `/model <name>` | Switch model (`nova-lite`, `nova-pro`, `nova-premier`) |
-| `/formation <name>` | Set agent team layout (10 formations) |
+| `/formation <name>` | Set agent team layout (11 formations) |
 | `/autonomy <0-5>` | Set agent trust level (A0 manual → A5 unattended) |
 | `/health` | System health dashboard |
 | `/competition` | Hackathon submission readiness check (8 gates) |
@@ -112,7 +112,7 @@ forge preview
 forge deploy --domain app.example.com
 ```
 
-## 10 Agent Formations
+## 11 Agent Formations
 
 Pre-configured multi-agent team layouts with automatic DAAO routing:
 
@@ -128,6 +128,7 @@ Pre-configured multi-agent team layouts with automatic DAAO routing:
 | `code-review` | 3 | Three parallel reviewers (read-only) |
 | `recovery` | 3 | Investigator → fixer → validator |
 | `all-hands-planning` | 5 | 4 parallel reviewers → synthesizer |
+| `integration-check` | 2 | Cross-file integration validation |
 
 ## Autonomy System (A0-A5)
 
@@ -148,16 +149,16 @@ Auto-escalation capped at A3. Full audit logging at all levels.
 
 | Metric | Value |
 |--------|-------|
-| Lines of code | ~25,600 |
-| Python modules | 39 |
-| Tests | 1,051 (48 test files) |
+| Lines of code | ~30,000 |
+| Python modules | 38 |
+| Tests | 1,670 (50 test files) |
 | Agent definitions | 20 |
-| Formations | 10 |
+| Formations | 11 |
 | Agent tools | 12 |
 | JSON schemas | 8 |
 | App templates | 4 |
 | Hook implementations | 12 |
-| Sprints completed | 16 (in 5 days) |
+| Sprints completed | 19 |
 
 ## Development Timeline
 
@@ -171,21 +172,25 @@ Auto-escalation capped at A3. Full audit logging at all levels.
 | 14 | Pre-seeded context, Bedrock 300s timeout — Premier A→S |
 | 15 | Preview resilience, circuit breaker, /health + /competition |
 | 16 | Agent self-correction, recovery + all-hands-planning formations |
+| 17 | Convergence tracking, adaptive turn budgets, verify phase budget |
+| 18 | 5-agent architecture review (78 issues), agent loop hardening |
+| 19 | 8-agent test swarm (1108→1670 tests), all 3 models S 100% |
 
 ## Tech Stack
 
 - **Language**: Python 3.11+ (pure Python, no JS/TS dependencies)
 - **LLM Provider**: AWS Bedrock (Amazon Nova Lite, Pro, Premier)
 - **CLI**: Click + custom interactive shell with Rich live UI
-- **Testing**: pytest (1,051 tests)
+- **Testing**: pytest (1,670 tests)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
 - **Website**: Static HTML/CSS/JS at [forge.herakles.dev](https://forge.herakles.dev)
 
 ## Live Demos
 
-6 interactive demo apps at [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/):
+7 interactive demo apps at [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/):
 
-- **Expense Tracker** — Nova Lite, S 100%, 170s
+- **Breakout Game** — Nova Lite, S 100%, 90s (playable arcade game)
+- **Expense Tracker** — Nova Lite, S 100%, 144s
 - **Kanban Board** — Nova Lite, A 90%, 285s
 - **Kanban Board** — Nova Pro, A 90%, 240s
 - **Kanban Board** — Nova Premier, A 89%, 1336s

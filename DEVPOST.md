@@ -12,7 +12,7 @@ We've built 89+ production services using multi-agent orchestration patterns —
 
 When Amazon announced the Nova AI Hackathon, we saw the opportunity to extract those battle-tested patterns into an open-source framework powered by Amazon Nova. The question wasn't "can Nova build software?" — it was "can we build an orchestration layer that makes Nova as productive as possible?"
 
-The answer is Nova Forge: 25,600 lines of Python, 1,051 tests, and all 3 Nova models achieving S-tier benchmark scores.
+The answer is Nova Forge: 30,000 lines of Python, 1,670 tests, and all 3 Nova models achieving S-tier benchmark scores.
 
 ## What it does
 
@@ -31,7 +31,7 @@ Nova Forge takes a natural language description of what you want to build and or
 
 ### Key capabilities:
 - **3 Amazon Nova models** — Lite (32K, fast), Pro (300K, balanced), Premier (1M, deep reasoning)
-- **10 agent formations** — Pre-built team layouts from single-file edits to full-stack multi-agent builds
+- **11 agent formations** — Pre-built team layouts from single-file edits to full-stack multi-agent builds
 - **12 agent tools** — read, write, edit, bash, glob, grep, and more
 - **6-level autonomy system** — A0 (ask for everything) through A5 (fully autonomous)
 - **14-stack preview detection** — Auto-detects Flask, FastAPI, Node, React, and 10 more
@@ -53,7 +53,7 @@ Nova Forge takes a natural language description of what you want to build and or
 
 **Pre-seeded upstream context** was the second breakthrough. Instead of letting dependent tasks discover files through tool calls (2-3 turns wasted), we inject the file content from completed upstream tasks directly into the prompt. Premier went from A to S with this change.
 
-**16 sprints in 5 days.** We tracked every change through a sprint system, enabling rapid iteration on model-specific optimizations.
+**19 sprints in 7 days.** We tracked every change through a sprint system, enabling rapid iteration on model-specific optimizations.
 
 ## Challenges we ran into
 
@@ -71,8 +71,8 @@ Nova Forge takes a natural language description of what you want to build and or
 
 - **All 3 Nova models at S-tier** on the Expense Tracker benchmark (100%, 99%, 100%)
 - **A-tier on the Hard scenario** (Kanban Board: auth + 3 tables + 7 files) across all 3 models
-- **1,051 tests passing** across 48 test files — comprehensive coverage of the entire framework
-- **16 sprints in 5 days** — from zero to competition-ready with disciplined iteration
+- **1,670 tests passing** across 50 test files — comprehensive coverage of the entire framework
+- **19 sprints in 7 days** — from zero to competition-ready with disciplined iteration
 - **Grade progression C → S** through systematic model-specific optimization (not prompt hacking)
 - **Pure Python** — no dependency on Claude Code, Cursor, or any proprietary agent framework. The orchestration patterns are the innovation, not the model.
 

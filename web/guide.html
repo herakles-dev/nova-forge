@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Guide — Nova Forge</title>
+<meta name="description" content="Complete guide to building software with Nova Forge AI agents. Models, formations, autonomy, and advanced usage.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x2692;</text></svg>">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a12;--surface:#12121e;--card:#16162a;--accent:#a78bfa;--cyan:#67e8f9;--green:#4ade80;--orange:#fb923c;--red:#f87171;--text:#e4e4f0;--text-2:#b8b8cc;--muted:#7a7a94;--dim:#4a4a62;--gradient:linear-gradient(135deg,#e879f9 0%,#a78bfa 40%,#67e8f9 100%);--radius:12px;--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.7;background-image:radial-gradient(circle,rgba(167,139,250,.06) 1px,transparent 1px);background-size:24px 24px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+
+/* Layout */
+.wrap{max-width:860px;margin:0 auto;padding:0 1.5rem}
+.gradient-text{background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* Header */
+.guide-header{text-align:center;padding:3rem 0 2rem;border-bottom:1px solid rgba(167,139,250,.1)}
+.back-link{display:inline-block;margin-bottom:1.5rem;color:var(--muted);font-size:.9rem}
+.back-link:hover{color:var(--accent)}
+.guide-header h1{font-size:clamp(1.8rem,4vw,2.5rem);font-weight:800;margin-bottom:.5rem}
+.guide-header p{color:var(--text-2);font-size:1rem;max-width:560px;margin:0 auto}
+
+/* TOC */
+.toc{background:var(--surface);border:1px solid rgba(167,139,250,.1);border-radius:var(--radius);padding:1.5rem 2rem;margin:2rem 0}
+.toc h2{font-size:1rem;font-weight:700;margin-bottom:.75rem;color:var(--accent)}
+.toc-grid{display:grid;grid-template-columns:1fr 1fr;gap:.3rem .75rem}
+.toc a{font-size:.88rem;color:var(--text-2);padding:.2rem 0;display:block}
+.toc a:hover{color:var(--accent);text-decoration:none}
+
+/* Sections */
+.section{padding:2.5rem 0;border-bottom:1px solid rgba(167,139,250,.06)}
+.section:last-child{border-bottom:none}
+.section h2{font-size:1.5rem;font-weight:700;margin-bottom:1rem}
+.section h2 .gradient-text{font-size:inherit}
+.section h3{font-size:1.1rem;font-weight:600;margin:1.5rem 0 .75rem;color:var(--text)}
+.section p{color:var(--text-2);margin-bottom:.75rem}
+.section ul,.section ol{color:var(--text-2);margin-bottom:.75rem;padding-left:1.5rem}
+.section li{margin-bottom:.3rem}
+.section strong{color:var(--text)}
+
+/* Code */
+pre{background:var(--surface);border:1px solid rgba(167,139,250,.08);border-radius:8px;padding:1rem 1.25rem;overflow-x:auto;margin:.75rem 0 1rem;font-family:var(--mono);font-size:.82rem;line-height:1.6;color:var(--text-2)}
+code{font-family:var(--mono);font-size:.85em;background:rgba(167,139,250,.1);padding:.1rem .35rem;border-radius:4px;color:var(--accent)}
+pre code{background:none;padding:0;color:inherit}
+
+/* Tables */
+.table-wrap{overflow-x:auto;margin:.75rem 0 1rem}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{padding:.55rem .75rem;text-align:left;border:1px solid rgba(167,139,250,.08)}
+th{background:var(--surface);color:var(--text-2);font-weight:600;font-size:.8rem;white-space:nowrap}
+td{background:var(--card);color:var(--text-2)}
+td:first-child{font-weight:500;color:var(--text)}
+
+/* Badges */
+.badge{display:inline-block;padding:.1rem .45rem;border-radius:5px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.badge-s{background:rgba(167,139,250,.18);color:var(--accent)}
+.badge-rec{background:rgba(74,222,128,.15);color:var(--green)}
+.badge-warn{background:rgba(251,146,60,.15);color:var(--orange)}
+
+/* Callout */
+.callout{background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:.75rem 1rem;margin:.75rem 0;font-size:.88rem}
+.callout.tip{border-left-color:var(--green)}
+.callout.warn{border-left-color:var(--orange)}
+.callout-label{font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem}
+.callout.tip .callout-label{color:var(--green)}
+.callout.warn .callout-label{color:var(--orange)}
+
+/* Formation cards */
+.formation-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.75rem;margin:.75rem 0}
+.f-card{background:var(--card);border:1px solid rgba(167,139,250,.08);border-radius:var(--radius);padding:1rem}
+.f-card h4{font-size:.92rem;font-weight:600;margin-bottom:.3rem}
+.f-card p{font-size:.82rem;color:var(--muted);margin-bottom:.4rem}
+.f-card .f-meta{font-size:.75rem;color:var(--dim);font-family:var(--mono)}
+
+/* Autonomy scale */
+.auto-grid{display:grid;grid-template-columns:1fr;gap:.5rem;margin:.75rem 0}
+.auto-row{display:flex;align-items:center;gap:.75rem;background:var(--surface);border-radius:8px;padding:.6rem 1rem;font-size:.85rem}
+.auto-level{font-weight:700;font-family:var(--mono);min-width:2rem;color:var(--accent)}
+.auto-name{font-weight:600;min-width:7rem}
+.auto-desc{color:var(--text-2);flex:1}
+.auto-row.active{border:1px solid rgba(74,222,128,.3);background:rgba(74,222,128,.05)}
+
+/* Footer */
+footer{text-align:center;padding:2.5rem 0;color:var(--muted);font-size:.85rem;border-top:1px solid rgba(167,139,250,.08)}
+footer a{color:var(--text-2)}
+
+/* Responsive */
+@media(max-width:768px){
+  .toc-grid{grid-template-columns:1fr}
+  .formation-grid{grid-template-columns:1fr}
+  table{font-size:.78rem}
+  th,td{padding:.4rem}
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="guide-header">
+<div class="wrap">
+  <a href="/" class="back-link">&larr; Back to Nova Forge</a>
+  <h1><span class="gradient-text">User Guide</span></h1>
+  <p>Everything you need to build software with AI agents &mdash; from first build to advanced orchestration.</p>
+</div>
+</div>
+
+<div class="wrap">
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h2>Contents</h2>
+  <div class="toc-grid">
+    <a href="#getting-started">Getting Started</a>
+    <a href="#first-build">Your First Build</a>
+    <a href="#pipeline">The Build Pipeline</a>
+    <a href="#models">Models &amp; When to Use Them</a>
+    <a href="#formations">Formations (Agent Teams)</a>
+    <a href="#autonomy">Autonomy System (A0&ndash;A5)</a>
+    <a href="#interview">Interview vs Quick Build</a>
+    <a href="#preview-deploy">Preview &amp; Deploy</a>
+    <a href="#commands">Commands Reference</a>
+    <a href="#config">Configuration</a>
+    <a href="#benchmarks">Benchmarking</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </div>
+</div>
+
+<!-- Getting Started -->
+<section id="getting-started" class="section">
+  <h2><span class="gradient-text">Getting Started</span></h2>
+
+  <h3>Install</h3>
+  <pre><code>git clone https://github.com/herakles-dev/nova-forge.git
+cd nova-forge
+./setup.sh                    # Creates venv + installs deps
+source .venv/bin/activate</code></pre>
+
+  <h3>Set Credentials</h3>
+  <p>Nova Forge needs API keys for at least one provider. Amazon Bedrock is recommended:</p>
+  <pre><code>export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+export AWS_DEFAULT_REGION="us-east-1"</code></pre>
+  <p>Or use <strong>OpenRouter</strong> (<code>OPENROUTER_API_KEY</code>) for Gemini models, or <strong>Anthropic</strong> (<code>ANTHROPIC_API_KEY</code>) for Claude models.</p>
+  <p>You can also run <code>/login</code> inside Nova Forge for an interactive setup wizard.</p>
+
+  <h3>Launch</h3>
+  <pre><code>python3 forge_cli.py</code></pre>
+  <p>On first run, Nova Forge asks your experience level (Beginner / Intermediate / Expert) and sets an appropriate autonomy level automatically.</p>
+</section>
+
+<!-- First Build -->
+<section id="first-build" class="section">
+  <h2><span class="gradient-text">Your First Build</span></h2>
+  <p>Just describe what you want:</p>
+  <pre><code>&gt; Build me an expense tracker with categories and charts</code></pre>
+  <p>Nova Forge detects your intent and runs the full pipeline automatically:</p>
+  <ol>
+    <li><strong>Smart Planning</strong> &mdash; Analyzes your goal, detects components (frontend, API, database, auth)</li>
+    <li><strong>Quick Scope</strong> &mdash; Asks 2&ndash;6 targeted questions about features, design, and data model</li>
+    <li><strong>Plan</strong> &mdash; Generates spec.md + tasks.json with dependency ordering</li>
+    <li><strong>Build</strong> &mdash; Executes tasks in parallel waves using AI agents</li>
+    <li><strong>Preview</strong> &mdash; Offers to launch a live shareable URL</li>
+  </ol>
+  <div class="callout tip">
+    <div class="callout-label">No commands needed</div>
+    Phrases like &ldquo;Build me&hellip;&rdquo;, &ldquo;Create a&hellip;&rdquo;, &ldquo;Make a&hellip;&rdquo;, &ldquo;I want&hellip;&rdquo;, or &ldquo;I need&hellip;&rdquo; automatically trigger the full pipeline.
+  </div>
+</section>
+
+<!-- Pipeline -->
+<section id="pipeline" class="section">
+  <h2><span class="gradient-text">The Build Pipeline</span></h2>
+
+  <h3>1. Plan</h3>
+  <p>The planner generates <code>spec.md</code> (project specification) and <code>tasks.json</code> (dependency-ordered task list). Tasks are sorted into parallel <strong>waves</strong> using topological sort.</p>
+  <p>If the decomposer fails, a 3-stage fallback guarantees tasks are always produced: retry &rarr; JSON recovery &rarr; single fallback task.</p>
+
+  <h3>2. Build</h3>
+  <p>Each task is assigned to a <strong>ForgeAgent</strong> &mdash; an autonomous tool-use loop calling Amazon Nova via AWS Bedrock.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Tool</th><th>Purpose</th></tr>
+    <tr><td>read_file</td><td>Read any project file</td></tr>
+    <tr><td>write_file</td><td>Create or overwrite a file</td></tr>
+    <tr><td>edit_file</td><td>Search-and-replace within a file</td></tr>
+    <tr><td>bash</td><td>Run shell commands</td></tr>
+    <tr><td>glob_files</td><td>Find files by pattern</td></tr>
+    <tr><td>grep</td><td>Search file contents</td></tr>
+    <tr><td>append_file</td><td>Add to end of file</td></tr>
+    <tr><td>list_directory</td><td>List directory contents</td></tr>
+    <tr><td>search_replace_all</td><td>Bulk find-and-replace</td></tr>
+    <tr><td>think</td><td>Internal reasoning (no side effects)</td></tr>
+    <tr><td>claim_file</td><td>Claim ownership (multi-agent)</td></tr>
+    <tr><td>check_context</td><td>Check remaining context budget</td></tr>
+  </table>
+  </div>
+  <p><strong>Safety:</strong> Circuit breaker (3 failures &rarr; tool disabled), convergence tracker (5 idle turns &rarr; writes disabled), verify phase (agent reads back files to check correctness), adaptive turn budgets.</p>
+
+  <h3>3. Gate Review</h3>
+  <p>An adversarial read-only reviewer inspects output: <span class="badge badge-s">PASS</span>, CONDITIONAL, or FAIL.</p>
+
+  <h3>4. Preview</h3>
+  <p>Auto-detects your stack (14 supported), starts a dev server, creates a Cloudflare Tunnel for a shareable URL.</p>
+
+  <h3>5. Deploy</h3>
+  <p>Docker + nginx + SSL deployment: auto-generates Dockerfile, builds container, writes reverse-proxy config, health-checks.</p>
+</section>
+
+<!-- Models -->
+<section id="models" class="section">
+  <h2><span class="gradient-text">Models</span></h2>
+
+  <h3>Amazon Nova (primary)</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Model</th><th>Alias</th><th>Context</th><th>Cost/1K</th><th>Best For</th></tr>
+    <tr><td>Nova Lite</td><td><code>nova-lite</code></td><td>32K</td><td>$0.00006</td><td>Fast prototypes, simple apps</td></tr>
+    <tr><td>Nova Pro</td><td><code>nova-pro</code></td><td>300K</td><td>$0.0008</td><td>Complex features, multi-file</td></tr>
+    <tr><td>Nova Premier</td><td><code>nova-premier</code></td><td>1M</td><td>$0.002</td><td>Deep reasoning, architecture</td></tr>
+  </table>
+  </div>
+
+  <h3>Additional Models</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Model</th><th>Alias</th><th>Context</th><th>Provider</th></tr>
+    <tr><td>Gemini Flash</td><td><code>gemini-flash</code></td><td>1M</td><td>OpenRouter</td></tr>
+    <tr><td>Gemini Pro</td><td><code>gemini-pro</code></td><td>1M</td><td>OpenRouter</td></tr>
+    <tr><td>Claude Sonnet</td><td><code>claude-sonnet</code></td><td>200K</td><td>Anthropic</td></tr>
+    <tr><td>Claude Haiku</td><td><code>claude-haiku</code></td><td>200K</td><td>Anthropic</td></tr>
+  </table>
+  </div>
+
+  <h3>When to Use Which</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Project Type</th><th>Model</th><th>Why</th></tr>
+    <tr><td>Quick prototype (1&ndash;3 files)</td><td><code>nova-lite</code> <span class="badge badge-rec">REC</span></td><td>Fast, cheap, S-tier on benchmarks</td></tr>
+    <tr><td>Multi-file feature (4&ndash;8 files)</td><td><code>nova-pro</code></td><td>Larger context, better coordination</td></tr>
+    <tr><td>Complex architecture (10+ files)</td><td><code>nova-premier</code></td><td>1M context, deep reasoning</td></tr>
+    <tr><td>Tight budget</td><td><code>nova-lite</code></td><td>33x cheaper than Pro</td></tr>
+    <tr><td>Speed priority</td><td><code>gemini-flash</code></td><td>Fastest inference</td></tr>
+  </table>
+  </div>
+
+  <h3>3-Tier Prompt System</h3>
+  <p>Nova Forge auto-adapts prompts to each model&rsquo;s context window:</p>
+  <ul>
+    <li><strong>Slim</strong> (32K) &mdash; ~600 chars, 8 essential tools, output coaching</li>
+    <li><strong>Focused</strong> (300K+) &mdash; ~1,500 chars, full 12 tools</li>
+    <li><strong>Full</strong> (1M+) &mdash; ~5,000 chars with pre-seeded upstream context</li>
+  </ul>
+  <pre><code>/model nova-pro          # Switch directly
+/model                   # Interactive selector
+/models                  # Compare all models</code></pre>
+</section>
+
+<!-- Formations -->
+<section id="formations" class="section">
+  <h2><span class="gradient-text">Formations</span></h2>
+  <p>Pre-configured multi-agent team layouts. Nova Forge auto-selects the right one, or you can override with <code>/formation</code>.</p>
+
+  <div class="formation-grid">
+    <div class="f-card"><h4>single-file</h4><p>Solo implementer. Config changes, small edits.</p><div class="f-meta">1 agent &middot; 1 wave</div></div>
+    <div class="f-card"><h4>lightweight-feature</h4><p>Implementer &rarr; Tester. Simple single-layer features.</p><div class="f-meta">2 agents &middot; 2 waves</div></div>
+    <div class="f-card"><h4>feature-impl</h4><p>Backend + Frontend &rarr; Integrator &rarr; Tester. Most common.</p><div class="f-meta">4 agents &middot; 3 waves</div></div>
+    <div class="f-card"><h4>new-project</h4><p>Architect &rarr; 2 parallel implementers. Greenfield builds.</p><div class="f-meta">3 agents &middot; 2 waves</div></div>
+    <div class="f-card"><h4>bug-investigation</h4><p>3 parallel investigators with different strategies.</p><div class="f-meta">3 agents &middot; 1 wave</div></div>
+    <div class="f-card"><h4>security-review</h4><p>Threat modeler + Scanner &rarr; Fixer. Security audits.</p><div class="f-meta">3 agents &middot; 2 waves</div></div>
+    <div class="f-card"><h4>perf-optimization</h4><p>Optimizer &rarr; Tester. Performance bottlenecks.</p><div class="f-meta">2 agents &middot; 2 waves</div></div>
+    <div class="f-card"><h4>code-review</h4><p>3 parallel reviewers (security, perf, coverage). Read-only.</p><div class="f-meta">3 agents &middot; 1 wave</div></div>
+    <div class="f-card"><h4>recovery</h4><p>Investigator &rarr; Fixer &rarr; Validator. Broken deployments.</p><div class="f-meta">3 agents &middot; 3 waves</div></div>
+    <div class="f-card"><h4>all-hands-planning</h4><p>4 reviewers &rarr; Synthesizer. Complex architecture decisions.</p><div class="f-meta">5 agents &middot; 2 waves</div></div>
+    <div class="f-card"><h4>integration-check</h4><p>Auditor &rarr; Fixer &rarr; Verifier. Cross-file validation.</p><div class="f-meta">3 agents &middot; 3 waves</div></div>
+  </div>
+
+  <h3>Auto-Selection (DAAO Routing)</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th></th><th>Small (1&ndash;3 tasks)</th><th>Medium (4&ndash;8)</th><th>Large (9+)</th></tr>
+    <tr><td>Routine</td><td>single-file</td><td>lightweight-feature</td><td>lightweight-feature</td></tr>
+    <tr><td>Medium</td><td>lightweight-feature</td><td>lightweight-feature</td><td>feature-impl</td></tr>
+    <tr><td>Complex</td><td>lightweight-feature</td><td>feature-impl</td><td>all-hands-planning</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- Autonomy -->
+<section id="autonomy" class="section">
+  <h2><span class="gradient-text">Autonomy System</span></h2>
+  <p>Six trust levels control how much agents can do without asking.</p>
+
+  <div class="auto-grid">
+    <div class="auto-row"><span class="auto-level">A0</span><span class="auto-name">Manual</span><span class="auto-desc">Everything blocked. Agent must explain every action.</span></div>
+    <div class="auto-row"><span class="auto-level">A1</span><span class="auto-name">Guided</span><span class="auto-desc">Reads auto-approved. Writes and bash blocked.</span></div>
+    <div class="auto-row active"><span class="auto-level">A2</span><span class="auto-name">Supervised <span class="badge badge-rec">DEFAULT</span></span><span class="auto-desc">Reads and writes auto-approved. Only high-risk commands blocked.</span></div>
+    <div class="auto-row"><span class="auto-level">A3</span><span class="auto-name">Trusted</span><span class="auto-desc">Nearly everything auto-approved. Only destructive ops blocked.</span></div>
+    <div class="auto-row"><span class="auto-level">A4</span><span class="auto-name">Autonomous</span><span class="auto-desc">Full autopilot. No interruptions. <span class="badge badge-warn">CAUTION</span></span></div>
+    <div class="auto-row"><span class="auto-level">A5</span><span class="auto-name">Unattended</span><span class="auto-desc">Like A4 with enhanced audit logging. For CI/CD pipelines.</span></div>
+  </div>
+
+  <h3>Auto-Escalation</h3>
+  <p>Trust grows with successful builds: A0&rarr;A1 (5 builds), A1&rarr;A2 (10), A2&rarr;A3 (25). <strong>A3&rarr;A4 is never automatic</strong> &mdash; must use <code>/autonomy 4</code>.</p>
+
+  <pre><code>/autonomy           # Show current level
+/autonomy ?         # Explain all levels
+/autonomy 3         # Set to Trusted</code></pre>
+</section>
+
+<!-- Interview vs Quick Build -->
+<section id="interview" class="section">
+  <h2><span class="gradient-text">Interview vs Quick Build</span></h2>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th></th><th>Quick Build (default)</th><th>/interview</th><th>/guide</th></tr>
+    <tr><td>Trigger</td><td>&ldquo;Build me a todo app&rdquo;</td><td><code>/interview</code></td><td><code>/guide</code></td></tr>
+    <tr><td>Questions</td><td>2&ndash;6 targeted</td><td>15&ndash;25 deep dive</td><td>Step-by-step wizard</td></tr>
+    <tr><td>Categories</td><td>Features, data, auth, design</td><td>8 categories (features, data, auth, visual, API, realtime, deploy, testing)</td><td>Conversational</td></tr>
+    <tr><td>Best for</td><td>Prototypes, known scope</td><td>Complex projects, precise control</td><td>First-time users</td></tr>
+    <tr><td>Time</td><td>~1 minute</td><td>~5 minutes</td><td>~3 minutes</td></tr>
+  </table>
+  </div>
+
+  <div class="callout tip">
+    <div class="callout-label">Pro tip</div>
+    Use <code>/interview</code> for important projects. The deep planning produces dramatically better specs &mdash; especially for projects with auth, real-time features, or complex data models.
+  </div>
+</section>
+
+<!-- Preview & Deploy -->
+<section id="preview-deploy" class="section">
+  <h2><span class="gradient-text">Preview &amp; Deploy</span></h2>
+
+  <h3>Preview</h3>
+  <pre><code>/preview              # Auto-detect stack, start server + tunnel
+/preview stop         # Stop the preview
+/preview status       # Check preview status</code></pre>
+  <p><strong>14 supported stacks:</strong> Flask, FastAPI, Django, Streamlit, Next.js, Vite, Node.js, Go, Rust, Rails, PHP, generic Python, Docker, static HTML.</p>
+  <p>Creates a Cloudflare Tunnel for a shareable URL &mdash; no account needed. Falls back to localhost if Cloudflare is unavailable.</p>
+
+  <h3>Deploy</h3>
+  <pre><code>/deploy                           # Interactive (asks for domain)
+/deploy myapp.herakles.dev        # Direct deployment</code></pre>
+  <p>Generates Dockerfile &rarr; builds image &rarr; runs container &rarr; nginx config &rarr; SSL &rarr; health check. All automated.</p>
+
+  <h3>Non-Interactive CLI</h3>
+  <pre><code>forge plan "expense tracker" --model nova-lite
+forge build
+forge preview
+forge deploy --domain myapp.herakles.dev</code></pre>
+</section>
+
+<!-- Commands -->
+<section id="commands" class="section">
+  <h2><span class="gradient-text">Commands Reference</span></h2>
+
+  <h3>Build</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Command</th><th>Description</th></tr>
+    <tr><td><code>/plan &lt;goal&gt;</code></td><td>Plan a project from description</td></tr>
+    <tr><td><code>/build</code></td><td>Execute all tasks with AI agents</td></tr>
+    <tr><td><code>/preview</code></td><td>Live preview via Cloudflare Tunnel</td></tr>
+    <tr><td><code>/deploy [domain]</code></td><td>Ship to production (Docker + nginx)</td></tr>
+    <tr><td><code>/status</code></td><td>Progress bar and overview</td></tr>
+    <tr><td><code>/tasks</code></td><td>All tasks with dependencies</td></tr>
+  </table>
+  </div>
+
+  <h3>Setup</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Command</th><th>Description</th></tr>
+    <tr><td><code>/guide</code></td><td>Smart setup wizard</td></tr>
+    <tr><td><code>/interview</code></td><td>5-step deep planning</td></tr>
+    <tr><td><code>/autonomy [0-5]</code></td><td>View or set autonomy level</td></tr>
+    <tr><td><code>/model [alias]</code></td><td>Switch model</td></tr>
+    <tr><td><code>/models</code></td><td>Compare all models</td></tr>
+    <tr><td><code>/config [key] [val]</code></td><td>View or edit settings</td></tr>
+    <tr><td><code>/login</code></td><td>Credential setup wizard</td></tr>
+    <tr><td><code>/formation [name]</code></td><td>View or set formation</td></tr>
+  </table>
+  </div>
+
+  <h3>Project</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Command</th><th>Description</th></tr>
+    <tr><td><code>/new &lt;name&gt;</code></td><td>Start fresh project</td></tr>
+    <tr><td><code>/resume [n]</code></td><td>Resume recent project</td></tr>
+    <tr><td><code>/cd &lt;path&gt;</code></td><td>Switch project directory</td></tr>
+    <tr><td><code>/audit</code></td><td>View build audit log</td></tr>
+    <tr><td><code>/builds [n]</code></td><td>Build history</td></tr>
+    <tr><td><code>/health</code></td><td>System health dashboard</td></tr>
+    <tr><td><code>/competition</code></td><td>Hackathon readiness check</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- Config -->
+<section id="config" class="section">
+  <h2><span class="gradient-text">Configuration</span></h2>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>default_model</code></td><td>nova-lite</td><td>Model for new builds</td></tr>
+    <tr><td><code>model_preset</code></td><td>nova</td><td><code>nova</code> / <code>mixed</code> / <code>premium</code></td></tr>
+    <tr><td><code>project_dir</code></td><td>~/projects</td><td>Where new projects are created</td></tr>
+    <tr><td><code>max_turns</code></td><td>50</td><td>Maximum turns per agent task</td></tr>
+    <tr><td><code>temperature</code></td><td>0.3</td><td>LLM sampling temperature</td></tr>
+    <tr><td><code>auto_build</code></td><td>true</td><td>Auto-confirm in guided flow</td></tr>
+    <tr><td><code>show_tips</code></td><td>true</td><td>Display contextual hints</td></tr>
+  </table>
+  </div>
+
+  <pre><code>/config                      # View all settings
+/config default_model nova-pro   # Change a setting</code></pre>
+</section>
+
+<!-- Benchmarks -->
+<section id="benchmarks" class="section">
+  <h2><span class="gradient-text">Benchmarking</span></h2>
+
+  <pre><code>python3 benchmark_nova_models.py --model nova-lite -v    # Single model
+python3 benchmark_nova_models.py --all                    # All 3 Nova models
+python3 benchmark_nova_models.py --scenario kanban-board   # Hard scenario</code></pre>
+
+  <h3>Scenarios</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Scenario</th><th>Difficulty</th><th>Stack</th></tr>
+    <tr><td>expense-tracker</td><td>Easy</td><td>Flask + SQLite + Chart.js</td></tr>
+    <tr><td>todo-app</td><td>Easy</td><td>FastAPI + SQLite</td></tr>
+    <tr><td>kanban-board</td><td>Hard</td><td>Flask + SQLite + Auth</td></tr>
+    <tr><td>realtime-kanban</td><td>Nightmare</td><td>Flask + SSE + Uploads</td></tr>
+  </table>
+  </div>
+
+  <h3>Current Scores (Sprint 19)</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Model</th><th>Expense Tracker</th><th>Time</th><th>Turns</th></tr>
+    <tr><td>Nova Lite (32K)</td><td><span class="badge badge-s">S</span> 100%</td><td>144s</td><td>40</td></tr>
+    <tr><td>Nova Pro (300K)</td><td><span class="badge badge-s">S</span> 100%</td><td>167s</td><td>39</td></tr>
+    <tr><td>Nova Premier (1M)</td><td><span class="badge badge-s">S</span> 100%</td><td>1110s</td><td>33</td></tr>
+  </table>
+  </div>
+
+  <p>Grades: <span class="badge badge-s">S</span> 95&ndash;100% &middot; A 85&ndash;94% &middot; B 75&ndash;84% &middot; C 60&ndash;74% &middot; D 40&ndash;59% &middot; F &lt;40%</p>
+</section>
+
+<!-- Troubleshooting -->
+<section id="troubleshooting" class="section">
+  <h2><span class="gradient-text">Troubleshooting</span></h2>
+
+  <h3>&ldquo;Need Amazon Bedrock credentials first&rdquo;</h3>
+  <p>Set AWS env vars or run <code>/login</code>. Or switch to a non-AWS model: <code>/model gemini-flash</code></p>
+
+  <h3>Build produces 0 tasks</h3>
+  <p>Shouldn&rsquo;t happen (3-stage fallback). Try a more specific description or use <code>/interview</code>.</p>
+
+  <h3>Preview won&rsquo;t start</h3>
+  <p>Check for port conflicts: <code>lsof -i :5000</code>. Try <code>/preview stop</code> then <code>/preview</code>.</p>
+
+  <h3>Agent stuck retrying</h3>
+  <p>Circuit breaker auto-disables after 3 failures. Re-run <code>/build</code> for a fresh attempt.</p>
+
+  <h3>Context exhaustion</h3>
+  <p>Auto-compaction handles this. For large builds, switch to <code>/model nova-pro</code> or <code>/model nova-premier</code>.</p>
+
+  <h3>Build partially completes</h3>
+  <p>Run <code>/build</code> again to retry only failed tasks. Or describe the issue and Nova will help fix it.</p>
+
+  <div class="callout tip">
+    <div class="callout-label">Power user tips</div>
+    <ul style="margin:0;padding-left:1.2rem">
+      <li>Start with Lite, upgrade if needed (33x cheaper)</li>
+      <li>Use <code>/interview</code> for important projects</li>
+      <li>Watch the gate review &mdash; CONDITIONAL results point to real issues</li>
+      <li>Check <code>/audit</code> to see every tool call and decision</li>
+      <li>Run benchmarks after model changes: <code>python3 benchmark_nova_models.py --all</code></li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<!-- Footer -->
+<footer>
+  <div class="wrap">
+    <p>Nova Forge &mdash; Amazon Nova AI Hackathon 2026</p>
+    <p style="margin-top:.5rem"><a href="/">Main Site</a> &nbsp;&middot;&nbsp; <a href="/demos/">Demos</a> &nbsp;&middot;&nbsp; <a href="https://github.com/herakles-dev/nova-forge">GitHub</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
