@@ -1565,7 +1565,11 @@ class ForgeAgent:
                 cwd=str(cwd_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, "FORGE_AGENT_ID": self.agent_id},
+                env={
+                    k: v for k, v in os.environ.items()
+                    if not any(s in k.upper() for s in ("SECRET", "TOKEN", "KEY", "PASSWORD", "CREDENTIAL"))
+                    or k in ("PATH", "HOME", "USER", "LANG", "TERM")
+                } | {"FORGE_AGENT_ID": self.agent_id},
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         except asyncio.TimeoutError:

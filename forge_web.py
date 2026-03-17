@@ -23,7 +23,7 @@ logger = logging.getLogger("forge.web")
 
 _WEB_DIR = Path(__file__).parent / "web"
 app = Flask(__name__, static_folder=str(_WEB_DIR), static_url_path="")
-CORS(app)
+CORS(app, origins=["https://forge.herakles.dev", "http://localhost:*"])
 
 _VERSION = "0.5.0"
 
@@ -217,6 +217,9 @@ def docs_chat():
     if not message:
         return jsonify({"error": "message is required"}), 400
 
+    if len(message) > 2000:
+        return jsonify({"error": "message too long (max 2000 chars)"}), 400
+
     # Try Bedrock Nova first, fall back to OpenRouter, then Anthropic
     response_text = _call_llm(message)
     return jsonify({"response": response_text})
@@ -310,4 +313,4 @@ def _call_anthropic(system: str, message: str) -> str:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8162, debug=True)
+    app.run(host="127.0.0.1", port=8162, debug=os.environ.get("FLASK_DEBUG", "").lower() == "true")

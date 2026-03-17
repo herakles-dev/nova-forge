@@ -9,9 +9,14 @@ build/
 .claude/
 .env
 *.env
+credentials.env
 .secrets/
 venv/
 .venv/
 node_modules/
 test-*/
 *.db
+*.log
+.DS_Store
+*.swp
+*.swo
