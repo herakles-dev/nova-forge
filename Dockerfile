@@ -14,8 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# Run as non-root user
-RUN useradd -r -s /bin/false forge
+# Run as non-root user. System accounts get no home dir by default, but
+# gunicorn's control socket falls back to $HOME/.gunicorn/ when
+# XDG_RUNTIME_DIR isn't set, so forge needs a real, writable home.
+RUN useradd -r -s /bin/false forge && \
+    mkdir -p /home/forge && \
+    chown forge:forge /home/forge
 USER forge
 
 # Health check
