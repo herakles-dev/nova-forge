@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/badge/tests-1670%20passing-4ade80?style=flat-square)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square)](LICENSE)
 
-**Live demo**: [forge.herakles.dev](https://forge.herakles.dev) | **Game demos**: [forge.herakles.dev/demos/](https://forge.herakles.dev/demos/)
+**Run it locally**: `python3 -m http.server 8000 --directory web` then open `http://localhost:8000/demos/` for the game grid.
 
 ## What is Nova Forge?
 
@@ -34,33 +34,33 @@ Every game below was planned, coded, and deployed by Nova agents — zero human 
 
 | Game | LOC | Time | What it demonstrates |
 |------|-----|------|---------------------|
-| [Nova Invaders](https://forge.herakles.dev/demos/nova-invaders/) | 449 | 167s | 3 enemy types, combos, particles, touch controls |
-| [Breakout](https://forge.herakles.dev/demos/breakout/) | 238 | 90s | Paddle physics, colored bricks, glow effects |
-| [Neon Drift](https://forge.herakles.dev/demos/neon-drift/) | 280 | 152s | Trail effects, close-call bonuses, speed ramp |
+| [Nova Invaders](web/demos/nova-invaders/) | 449 | 167s | 3 enemy types, combos, particles, touch controls |
+| [Breakout](web/demos/breakout/) | 238 | 90s | Paddle physics, colored bricks, glow effects |
+| [Neon Drift](web/demos/neon-drift/) | 280 | 152s | Trail effects, close-call bonuses, speed ramp |
 
 ### Pro (300K) — "Complex. Strategic."
 
 | Game | LOC | Time | What it demonstrates |
 |------|-----|------|---------------------|
-| [Asteroid Forge](https://forge.herakles.dev/demos/asteroid-forge/) | 558 | 289s | Resource mining, ship upgrades, 5 wave progression |
-| [Hex Conquest](https://forge.herakles.dev/demos/hex-conquest/) | 528 | 312s | Hex grid math, AI opponent, turn-based strategy |
-| [Forge Defense](https://forge.herakles.dev/demos/forge-defense/) | 802 | 341s | 6 tower types, chain lightning, splash damage, economy, 20 waves |
+| [Asteroid Forge](web/demos/asteroid-forge/) | 558 | 289s | Resource mining, ship upgrades, 5 wave progression |
+| [Hex Conquest](web/demos/hex-conquest/) | 528 | 312s | Hex grid math, AI opponent, turn-based strategy |
+| [Forge Defense](web/demos/forge-defense/) | 802 | 341s | 6 tower types, chain lightning, splash damage, economy, 20 waves |
 
 ### Premier (1M) — "Ambitious. Stunning."
 
 | Game | LOC | Time | What it demonstrates |
 |------|-----|------|---------------------|
-| [Gravity Wells](https://forge.herakles.dev/demos/gravity-wells/) | 632 | 987s | N-body gravity physics, 5 puzzle levels, particle trails |
-| [Synth Swarm](https://forge.herakles.dev/demos/synth-swarm/) | 688 | 1156s | 200+ boid flocking AI, predators, procedural landscape, minimap |
-| [Void Racer](https://forge.herakles.dev/demos/void-racer/) | 720 | 1243s | Pseudo-3D scanline rendering, 3 AI opponents, boost pads |
+| [Gravity Wells](web/demos/gravity-wells/) | 632 | 987s | N-body gravity physics, 5 puzzle levels, particle trails |
+| [Synth Swarm](web/demos/synth-swarm/) | 688 | 1156s | 200+ boid flocking AI, predators, procedural landscape, minimap |
+| [Void Racer](web/demos/void-racer/) | 720 | 1243s | Pseudo-3D scanline rendering, 3 AI opponents, boost pads |
 
 ### App Demos (Full-Stack Benchmarks)
 
 | App | Stack | Grade |
 |-----|-------|-------|
-| [Expense Tracker](https://forge.herakles.dev/demos/expense-tracker/) | Flask + SQLite + Chart.js | S 100% |
-| [Kanban Board](https://forge.herakles.dev/demos/kanban-board/) | Flask + Auth + 3 tables | A 90% |
-| [Todo App](https://forge.herakles.dev/demos/todo-app/) | FastAPI + SQLite | S 100% |
+| [Expense Tracker](web/demos/expense-tracker/) | Flask + SQLite + Chart.js | S 100% |
+| [Kanban Board](web/demos/kanban-board/) | Flask + Auth + 3 tables | A 90% |
+| [Todo App](web/demos/todo-app/) | FastAPI + SQLite | S 100% |
 
 ## Benchmark Results
 
@@ -234,7 +234,7 @@ Auto-escalation capped at A3. Full audit logging at all levels.
 - **CLI**: Click + custom interactive shell with Rich live UI
 - **Testing**: pytest (1,670 tests, 50 test files)
 - **Deployment**: Docker + nginx + SSL + Cloudflare Tunnels
-- **Website**: Static HTML/CSS/JS at [forge.herakles.dev](https://forge.herakles.dev)
+- **Website**: Static HTML/CSS/JS in `web/` — serve with `python3 -m http.server --directory web`
 
 ## Security
 

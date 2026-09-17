@@ -205,7 +205,7 @@ def get_model_config(model_str: str, **overrides) -> ModelConfig:
 # ── Project detection ────────────────────────────────────────────────
 # Port of v11_detect_project() (common.sh:64-89)
 
-HERCULES_ROOT = Path(os.environ.get("HERCULES_ROOT", "/home/hercules"))
+HERCULES_ROOT = Path(os.environ.get("HERCULES_ROOT", str(Path.home())))
 SESSIONS_ROOT = Path(os.environ.get("SESSIONS_ROOT", HERCULES_ROOT / "sessions"))
 
 # Files that are infrastructure, not project content
